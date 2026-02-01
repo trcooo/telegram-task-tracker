@@ -9,7 +9,8 @@ app = FastAPI()
 Base.metadata.create_all(bind=engine)
 
 # Подключаем статические файлы (frontend)
-app.mount("/", StaticFiles(directory="../web", html=True), name="web")
+app.mount("/", StaticFiles(directory="web", html=True), name="web")
+
 
 @app.get("/tasks/{user_id}")
 def get_tasks(user_id: int):
