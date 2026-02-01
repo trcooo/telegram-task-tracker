@@ -1,5 +1,8 @@
-fastapi
-uvicorn
-sqlalchemy
-aiogram
-python-multipart
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+aiogram==2.25.1
+python-multipart==0.0.6
+aiohttp==3.9.1
+python-dotenv==1.0.0
+pytz==2023.3.post1
