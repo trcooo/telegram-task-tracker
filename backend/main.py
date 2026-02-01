@@ -7,11 +7,11 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import os
 
+app = FastAPI()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-app.mount("/", StaticFiles(directory=os.path.join(BASE_DIR, "web"), html=True), name="web")
-
-app = FastAPI()
+WEB_DIR = os.path.join(BASE_DIR, "web")  # <-- папка web внутри backend
+app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
 
 # CORS для Mini App
 app.add_middleware(
