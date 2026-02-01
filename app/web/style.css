@@ -52,3 +52,136 @@ li {
     align-items: center;
     gap: 10px;
 }
+/* app/web/style.css */
+/* Дополнительные стили для улучшения дизайна */
+
+/* Прокрутка для списков задач */
+.tasks-list, .completed-list {
+    max-height: 400px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary-light) transparent;
+}
+
+.tasks-list::-webkit-scrollbar,
+.completed-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.tasks-list::-webkit-scrollbar-track,
+.completed-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.tasks-list::-webkit-scrollbar-thumb,
+.completed-list::-webkit-scrollbar-thumb {
+    background-color: var(--primary-light);
+    border-radius: 3px;
+}
+
+/* Адаптивные стили для календаря */
+@media (max-width: 400px) {
+    .calendar-day {
+        font-size: 12px;
+    }
+
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+
+    .priority-selector {
+        flex-direction: column;
+    }
+
+    .task-actions {
+        flex-direction: column;
+    }
+}
+
+/* Анимация для новых задач */
+@keyframes highlight {
+    0% { background-color: rgba(255, 107, 53, 0.1); }
+    100% { background-color: white; }
+}
+
+.task-item.new {
+    animation: highlight 2s ease-out;
+}
+
+/* Стили для перетаскивания задач (опционально) */
+.task-item.dragging {
+    opacity: 0.5;
+    transform: scale(0.98);
+}
+
+/* Тёмная тема (опционально) */
+body.dark-theme {
+    --primary: #FF8B5C;
+    --primary-dark: #FF6B35;
+    --primary-light: #FFB08E;
+    --secondary: #F5F6FA;
+    --secondary-dark: #DFE6E9;
+    --secondary-light: #B2BEC3;
+    --light: #2D3436;
+    --dark: #F5F6FA;
+    --gray: #636E72;
+    --gray-light: #3C4649;
+    background: #1A1E1F;
+}
+
+body.dark-theme .app-container {
+    background: #2D3436;
+    color: #F5F6FA;
+}
+
+body.dark-theme .task-item {
+    background: #3C4649;
+    color: #F5F6FA;
+}
+
+body.dark-theme .form-control {
+    background: #3C4649;
+    border-color: #636E72;
+    color: #F5F6FA;
+}
+
+/* Индикатор загрузки */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+
+.loading-overlay.active {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--gray-light);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Улучшенные уведомления */
+.notification {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}

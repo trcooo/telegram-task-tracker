@@ -240,3 +240,138 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+
+
+@app.get("/api/tasks/{user_id}")
+async def get_user_tasks(user_id: int, db: Session = Depends(get_db)):
+    """Получить задачи пользователя"""
+    tasks = db.query(Task).filter(Task.user_id == user_id).all()
+    return [
+        {
+            "id": t.id,
+            "user_id": t.user_id,
+            "title": t.title,
+            "description": t.description,
+            "due_date": t.due_date.isoformat() if t.due_date else None,
+            "priority": t.priority or "medium",
+            "completed": t.completed,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "updated_at": t.updated_at.isoformat() if t.updated_at else None
+        }
+        for t in tasks
+    ]
+
+
+@app.post("/api/tasks")
+async def create_task_api(request: Request, db: Session = Depends(get_db)):
+    """Создать задачу через API"""
+    try:
+        data = await request.json()
+
+        task = Task(
+            user_id=data.get("user_id"),
+            title=data.get("title"),
+            description=data.get("description"),
+            due_date=datetime.fromisoformat(data["due_date"]) if data.get("due_date") else None,
+            priority=data.get("priority", "medium"),
+            completed=data.get("completed", False)
+        )
+
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+
+        return {
+            "success": True,
+            "task": {
+                "id": task.id,
+                "title": task.title
+            }
+        }
+    except Exception as e:
+        logger.error(f"API Error creating task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/tasks/{task_id}")
+async def update_task_api(task_id: int, request: Request, db: Session = Depends(get_db)):
+    """Обновить задачу"""
+    try:
+        data = await request.json()
+        task = db.query(Task).filter(Task.id == task_id).first()
+
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        # Обновляем поля
+        if "title" in data:
+            task.title = data["title"]
+        if "description" in data:
+            task.description = data["description"]
+        if "due_date" in data:
+            task.due_date = datetime.fromisoformat(data["due_date"]) if data["due_date"] else None
+        if "priority" in data:
+            task.priority = data["priority"]
+        if "completed" in data:
+            task.completed = data["completed"]
+
+        task.updated_at = datetime.utcnow()
+        db.commit()
+
+        return {"success": True, "message": "Task updated"}
+    except Exception as e:
+        logger.error(f"API Error updating task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/tasks/{task_id}")
+async def delete_task_api(task_id: int, db: Session = Depends(get_db)):
+    """Удалить задачу"""
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        db.delete(task)
+        db.commit()
+
+        return {"success": True, "message": "Task deleted"}
+    except Exception as e:
+        logger.error(f"API Error deleting task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/tasks/{task_id}/done")
+async def complete_task_api(task_id: int, db: Session = Depends(get_db)):
+    """Отметить задачу как выполненную"""
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        task.completed = True
+        task.updated_at = datetime.utcnow()
+        db.commit()
+
+        return {"success": True, "message": "Task completed"}
+    except Exception as e:
+        logger.error(f"API Error completing task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/tasks/{task_id}/undone")
+async def uncomplete_task_api(task_id: int, db: Session = Depends(get_db)):
+    """Вернуть задачу в активные"""
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        task.completed = False
+        task.updated_at = datetime.utcnow()
+        db.commit()
+
+        return {"success": True, "message": "Task uncompleted"}
+    except Exception as e:
+        logger.error(f"API Error uncompleting task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -370,3 +370,145 @@ function setupNavigation() {
         });
     });
 }
+// app/web/app.js
+const API_URL = window.location.origin;
+
+// Функции для работы с API
+class TaskAPI {
+    static async getTasks(userId) {
+        try {
+            const response = await fetch(`${API_URL}/api/tasks/${userId}`);
+            if (!response.ok) throw new Error('Failed to fetch tasks');
+            return await response.json();
+        } catch (error) {
+            console.error('Error fetching tasks:', error);
+            return [];
+        }
+    }
+
+    static async createTask(taskData) {
+        try {
+            const response = await fetch(`${API_URL}/api/tasks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(taskData)
+            });
+            return await response.json();
+        } catch (error) {
+            console.error('Error creating task:', error);
+            throw error;
+        }
+    }
+
+    static async updateTask(taskId, taskData) {
+        try {
+            const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(taskData)
+            });
+            return await response.json();
+        } catch (error) {
+            console.error('Error updating task:', error);
+            throw error;
+        }
+    }
+
+    static async deleteTask(taskId) {
+        try {
+            const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
+                method: 'DELETE'
+            });
+            return await response.json();
+        } catch (error) {
+            console.error('Error deleting task:', error);
+            throw error;
+        }
+    }
+
+    static async toggleComplete(taskId, completed) {
+        try {
+            const endpoint = completed ? 'done' : 'undone';
+            const response = await fetch(`${API_URL}/api/tasks/${taskId}/${endpoint}`, {
+                method: 'POST'
+            });
+            return await response.json();
+        } catch (error) {
+            console.error('Error toggling task:', error);
+            throw error;
+        }
+    }
+}
+
+// Интеграция с основным скриптом
+function initAPIIntegration() {
+    // Заменяем функции сохранения на API вызовы
+    const originalSaveTasks = window.saveTasks;
+
+    window.saveTasks = async function() {
+        const tg = window.Telegram?.WebApp;
+        const userId = tg?.initDataUnsafe?.user?.id || 1;
+
+        try {
+            // Сохраняем в localStorage для оффлайн работы
+            localStorage.setItem('tasks', JSON.stringify(window.tasks));
+
+            // Синхронизируем с сервером
+            if (window.tasks.length > 0) {
+                // Здесь можно добавить логику синхронизации с сервером
+                // Например, отправлять каждую задачу через API
+                console.log('Tasks saved locally, ready for sync');
+            }
+
+            updateStats();
+            renderTasks();
+
+        } catch (error) {
+            console.error('Error saving tasks:', error);
+        }
+    };
+
+    // Функция синхронизации с сервером
+    window.syncWithServer = async function() {
+        const tg = window.Telegram?.WebApp;
+        const userId = tg?.initDataUnsafe?.user?.id;
+
+        if (!userId) {
+            console.log('No user ID for sync');
+            return;
+        }
+
+        try {
+            // Получаем задачи с сервера
+            const serverTasks = await TaskAPI.getTasks(userId);
+
+            // Получаем локальные задачи
+            const localTasks = JSON.parse(localStorage.getItem('tasks') || '[]');
+
+            // Здесь можно добавить логику синхронизации
+            // Например, объединение, разрешение конфликтов
+
+            console.log('Sync completed:', { serverTasks, localTasks });
+
+            return serverTasks;
+        } catch (error) {
+            console.error('Sync error:', error);
+            return [];
+        }
+    };
+}
+
+// Инициализация при загрузке
+document.addEventListener('DOMContentLoaded', function() {
+    // Добавляем интеграцию с API
+    initAPIIntegration();
+
+    // Пытаемся синхронизировать при загрузке
+    setTimeout(() => {
+        window.syncWithServer().then(serverTasks => {
+            if (serverTasks.length > 0) {
+                console.log('Synced with server:', serverTasks.length, 'tasks');
+            }
+        });
+    }, 2000);
+});
