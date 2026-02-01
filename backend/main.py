@@ -5,6 +5,11 @@ from backend.database import Base, engine, SessionLocal
 from backend.models import Task
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+import os
+
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app.mount("/", StaticFiles(directory=os.path.join(BASE_DIR, "web"), html=True), name="web")
 
 app = FastAPI()
 
@@ -20,8 +25,7 @@ app.add_middleware(
 # Создаем таблицы
 Base.metadata.create_all(bind=engine)
 
-# Статические файлы (frontend)
-app.mount("/", StaticFiles(directory="web", html=True), name="web")
+
 
 # ----------------- CRUD -----------------
 
