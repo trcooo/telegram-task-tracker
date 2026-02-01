@@ -1,20 +1,5 @@
-# Основные
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
-aiogram==2.25.1
-
-# Утилиты
 python-multipart==0.0.6
 python-dotenv==1.0.0
-pytz==2023.3.post1
-
-# Валидация
-pydantic==2.5.3
-pydantic-settings==2.1.0
-
-# HTTP клиент
-httpx==0.25.1
-
-# Дата и время
-python-dateutil==2.8.2
