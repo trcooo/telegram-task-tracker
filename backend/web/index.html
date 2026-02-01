@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Task Tracker</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <meta charset="UTF-8">
+  <title>Task Tracker Pro</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div id="app">
     <h1>📋 Мои задачи</h1>
-
-    <input id="taskInput" placeholder="Новая задача">
-    <button onclick="addTask()">Добавить</button>
-
-    <ul id="taskList"></ul>
-
-    <script src="script.js"></script>
+    <div id="task-list"></div>
+    <input type="text" id="title" placeholder="Название задачи">
+    <input type="text" id="description" placeholder="Описание">
+    <input type="number" id="due" placeholder="Срок в минутах">
+    <button id="add-task">Добавить задачу</button>
+  </div>
+  <script src="app.js"></script>
 </body>
 </html>
