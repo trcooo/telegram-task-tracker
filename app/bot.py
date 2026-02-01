@@ -1,30 +1,23 @@
 import os
 import logging
-import sys
-
-# Добавляем путь для импортов
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.contrib.middlewares.logging import LoggingMiddleware
+from aiogram.utils import executor
 
 # Настройки
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    print("❌ ОШИБКА: BOT_TOKEN не найден!")
-    sys.exit(1)
+API_TOKEN = os.getenv("BOT_TOKEN")
+WEB_APP_URL = os.getenv("WEB_APP_URL", "https://your-project.railway.app")
 
-WEB_APP_URL = os.getenv("WEB_APP_URL", "https://linkotracker.up.railway.app/")
+if not API_TOKEN:
+    raise ValueError("❌ BOT_TOKEN не найден!")
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Бот и диспетчер
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
-dp.middleware.setup(LoggingMiddleware())
 
 
 # Клавиатура с Mini App
@@ -33,7 +26,7 @@ def get_main_keyboard():
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
         InlineKeyboardButton("📱 Открыть Task Tracker", web_app=web_app),
-        InlineKeyboardButton("📋 Мои задачи", callback_data="my_tasks"),
+        InlineKeyboardButton("📋 Мои задачи", callback_data="tasks"),
         InlineKeyboardButton("❓ Помощь", callback_data="help")
     )
     return keyboard
@@ -42,16 +35,16 @@ def get_main_keyboard():
 # Обработчики
 @dp.message_handler(commands=["start", "help"])
 async def start_command(message: types.Message):
-    logger.info(f"User {message.from_user.id} started bot")
+    logger.info(f"👤 Пользователь {message.from_user.id} начал бота")
 
     welcome_text = (
         "👋 *Добро пожаловать в Task Tracker Bot!*\n\n"
-        "Я помогу тебе управлять задачами прямо в Telegram.\n\n"
         "✨ *Возможности:*\n"
-        "• 📱 Удобный интерфейс Mini App\n"
-        "• 📋 Создание и управление задачами\n"
-        "• ⏰ Напоминания о дедлайнах\n\n"
-        "Нажми кнопку ниже, чтобы начать 👇"
+        "• 📱 Удобный Mini App для управления задачами\n"
+        "• 📋 Создание, редактирование, удаление задач\n"
+        "• ⏰ Напоминания о сроках\n"
+        "• 📊 Статистика продуктивности\n\n"
+        "Нажми кнопку ниже, чтобы открыть Task Tracker 👇"
     )
 
     await message.answer(
@@ -71,8 +64,9 @@ async def tasks_command(message: types.Message):
     )
 
 
-@dp.callback_query_handler(text="my_tasks")
-async def callback_my_tasks(callback_query: types.CallbackQuery):
+# Callback обработчики
+@dp.callback_query_handler(text="tasks")
+async def callback_tasks(callback_query: types.CallbackQuery):
     await tasks_command(callback_query.message)
     await callback_query.answer()
 
@@ -83,19 +77,7 @@ async def callback_help(callback_query: types.CallbackQuery):
     await callback_query.answer()
 
 
-# Простой обработчик всех текстовых сообщений
-@dp.message_handler(content_types=types.ContentType.TEXT)
-async def handle_text(message: types.Message):
-    if not message.text.startswith('/'):
-        await message.answer(
-            "💡 Хочешь добавить это как задачу?\n"
-            "Используй Mini App для удобного управления задачами!",
-            reply_markup=get_main_keyboard()
-        )
-
-
+# Запуск бота
 if __name__ == "__main__":
-    from aiogram import executor
-
-    logger.info("Запуск Telegram бота...")
+    logger.info("🤖 Запуск Telegram бота...")
     executor.start_polling(dp, skip_updates=True)
