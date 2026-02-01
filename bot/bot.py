@@ -2,9 +2,10 @@ import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils import executor
+import os
 
-# ----------------- Настройки -----------------
-API_TOKEN = "8330207021:AAHeHn635VSgmW9sKgQyHsoBAm1FNbKHHII"  # вставь токен своего бота
+API_TOKEN = os.getenv("BOT_TOKEN")  # теперь бот берёт токен из переменной окружения
+
 WEB_APP_URL = "https://telegram-task-tracker-production.up.railway.app"  # твой публичный URL с Railway
 
 # Включаем логирование
