@@ -1,19 +1,126 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <title>Task Tracker Pro</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f0f2f5;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+        .container {
+            width: 95%;
+            max-width: 500px;
+            margin-top: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px 0;
+            width: 100%;
+            box-sizing: border-box;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li {
+            background: #f9f9f9;
+            margin: 5px 0;
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .task-time {
+            font-size: 0.8em;
+            color: #666;
+        }
+    </style>
 </head>
 <body>
-  <div id="app">
-    <h1>📋 Мои задачи</h1>
-    <div id="task-list"></div>
-    <input type="text" id="title" placeholder="Название задачи">
-    <input type="text" id="description" placeholder="Описание">
-    <input type="number" id="due" placeholder="Срок в минутах">
-    <button id="add-task">Добавить задачу</button>
-  </div>
-  <script src="app.js"></script>
+    <div class="container">
+        <h1>📋 Мои задачи</h1>
+        <input type="text" id="task-input" placeholder="Название задачи">
+        <input type="time" id="task-time">
+        <button id="add-task">Добавить задачу</button>
+
+        <ul id="task-list"></ul>
+    </div>
+
+    <script>
+        const addTaskBtn = document.getElementById("add-task");
+        const newTaskInput = document.getElementById("task-input");
+        const taskTime = document.getElementById("task-time");
+        const taskList = document.getElementById("task-list");
+
+        // Функция добавления задачи в список
+        function addTask(taskText, time) {
+            const li = document.createElement("li");
+            li.textContent = taskText;
+            if(time) {
+                const span = document.createElement("span");
+                span.className = "task-time";
+                span.textContent = `⏰ ${time}`;
+                li.appendChild(span);
+            }
+            taskList.appendChild(li);
+        }
+
+        // Отправка задачи на сервер для Telegram бота
+        function sendTaskToBot(taskText, taskTime) {
+            fetch("/api/task", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chat_id: "<TELEGRAM_CHAT_ID>",  // Вставь сюда свой chat_id
+                    task_text: taskText,
+                    task_time: taskTime
+                })
+            })
+            .then(res => res.json())
+            .then(data => console.log("Отправлено в бот:", data))
+            .catch(err => console.error(err));
+        }
+
+        addTaskBtn.addEventListener("click", () => {
+            if(newTaskInput.value.trim() === '') return;
+
+            const taskText = newTaskInput.value.trim();
+            const time = taskTime.value;
+
+            addTask(taskText, time);          // Добавляем в Mini App
+            sendTaskToBot(taskText, time);    // Отправляем в Telegram
+
+            newTaskInput.value = '';
+            taskTime.value = '';
+        });
+    </script>
 </body>
 </html>
