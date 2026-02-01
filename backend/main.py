@@ -1,14 +1,14 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from database import Base, engine, SessionLocal
-from models import Task
+from backend.database import Base, engine, SessionLocal
+from backend.models import Task
 
 app = FastAPI()
 
-# Создаем таблицы, если они не существуют
+# Создаем таблицы в базе данных, если их ещё нет
 Base.metadata.create_all(bind=engine)
 
-# Устанавливаем путь к статическим файлам (frontend)
+# Подключаем статические файлы (frontend)
 app.mount("/", StaticFiles(directory="../web", html=True), name="web")
 
 @app.get("/tasks/{user_id}")
