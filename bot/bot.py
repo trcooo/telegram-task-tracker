@@ -14,7 +14,7 @@ async def start(message: types.Message):
             [
                 types.KeyboardButton(
                     text="📋 Мои задачи",
-                    web_app=WebAppInfo(url="https://telegram-task-tracker.up.railway.app/index.html")
+                    web_app=WebAppInfo(url="https://telegram-task-tracker-production.up.railway.app")
                 )
             ]
         ],
