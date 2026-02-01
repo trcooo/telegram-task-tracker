@@ -3,7 +3,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
 # Импортируем Base из database
-from .database import Base
+from app.database import Base
 import json
 
 

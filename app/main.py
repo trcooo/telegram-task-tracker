@@ -1,9 +1,6 @@
 import os
 import sys
-
-# Добавляем текущую директорию в PYTHONPATH
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 from fastapi import FastAPI, HTTPException, Request, Depends, Query, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,18 +13,16 @@ from typing import List, Optional, Dict, Any
 import logging
 import json
 import pytz
-
-# Импорт локальных модулей
 try:
-    from .database import Base, engine, SessionLocal, get_db
-    from .models import Task, User, Category, TaskHistory
-    from .schemas import (
-        TaskCreate, TaskUpdate, TaskResponse,
-        CategoryCreate, CategoryResponse,
-        UserCreate, UserResponse,
-        AnalyticsResponse, TaskStats
-    )
-
+    from database import Base, engine, SessionLocal, get_db
+    from models import Task, User
+    from schemas import TaskCreate, TaskUpdate, TaskResponse
+except ImportError:
+    # Для локальной разработки
+    from app.database import Base, engine, SessionLocal, get_db
+    from app.models import Task, User
+    from app.schemas import TaskCreate, TaskUpdate, TaskResponse
+    
     logger = logging.getLogger(__name__)
     logger.info("✅ Все модули импортированы успешно")
 except ImportError as e:
