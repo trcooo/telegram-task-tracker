@@ -724,13 +724,6 @@ function cardHTML(t) {
         renderTasks();
       });
     });
-    // tick-like header actions (optional)
-    const addTop = document.getElementById('addBtnTop');
-    if (addTop) addTop.addEventListener('click', () => openTaskModal(null));
-
-    const syncTop = document.getElementById('syncBtn');
-    if (syncTop) syncTop.addEventListener('click', () => syncAll());
-
 
     // bottom nav screens
     document.querySelectorAll('.bottomNav .navBtn[data-screen]').forEach(btn => {

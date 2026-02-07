@@ -461,7 +461,8 @@ body{
 /* bottom sheet day panel */
 .dayPanel{
   position: sticky;
-  bottom: calc(62px + var(--safe-bottom));
+  bottom: calc(92px + var(--safe-bottom));
+  z-index: 40;
   margin-top: 12px;
   border-radius: 22px;
   background: rgba(255,255,255,.03);
@@ -757,3 +758,261 @@ img{ max-width: 100%; height: auto; }
 .brandIcon{ width: 28px; height: 28px; border-radius: 10px; object-fit: cover; }
 
 .menuBuild{font-size:11px;opacity:.55;margin-top:4px;}
+
+/* ============================
+   Calendar — modern grid
+   ============================ */
+.calHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+  margin: 6px 0 10px;
+}
+.calNav{
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--controlBg);
+  color: var(--text);
+  font-weight: 900;
+  font-size: 20px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+.calNav:active{ transform: scale(.98); }
+.calTitleWrap{
+  flex: 1;
+  min-width: 0;
+  text-align:center;
+}
+.calTitle{
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: .2px;
+  line-height: 1.15;
+}
+.calSub{
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.calCard{
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.03);
+  border-radius: 26px;
+  padding: 12px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.30);
+}
+
+.calWeek{
+  display:grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 2px 8px;
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 12px;
+  text-transform: none;
+}
+.calWeek div{ text-align:center; padding: 6px 0; }
+.calWeek .wknd{ color: rgba(255,185,92,.95); }
+
+.calGrid{
+  display:grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  padding: 2px;
+}
+
+.calDay{
+  height: 50px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.02);
+  color: var(--text);
+  cursor:pointer;
+  padding: 9px 10px;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  align-items:flex-start;
+  position: relative;
+  overflow:hidden;
+}
+.calDay:hover{ background: rgba(255,255,255,.035); }
+.calDay:active{ transform: scale(.99); }
+.calDay.muted{ opacity: .33; }
+.calDay.today{
+  border-color: rgba(86,190,255,.45);
+  box-shadow: 0 0 0 3px rgba(86,190,255,.10) inset;
+}
+.calDay.selected{
+  border-color: rgba(255,107,53,.45);
+  background: rgba(255,107,53,.14);
+  box-shadow: 0 0 0 3px rgba(255,107,53,.10) inset;
+}
+
+.calNum{
+  font-weight: 900;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: .1px;
+}
+.calDots{
+  width:100%;
+  display:flex;
+  justify-content:flex-end;
+  gap: 4px;
+}
+.dot{
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.22);
+}
+.dot.accent{ background: rgba(255,107,53,.95); }
+.dot.good{ background: rgba(84,255,166,.85); }
+.dot.bad{ background: rgba(255,77,110,.9); }
+
+/* calendar day panel */
+#screenCalendar{ padding-bottom: 220px; }
+.dayPanel{
+  border-radius: 26px;
+  background: rgba(20,22,28,.86);
+  backdrop-filter: blur(14px);
+}
+.dayPanelHead .dayTitle{
+  font-weight: 900;
+  font-size: 16px;
+}
+.dayPanelHead .daySub{
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* ============================
+   Menu — modern settings list
+   ============================ */
+.menuCard{
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.03);
+  border-radius: 26px;
+  padding: 16px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.30);
+}
+.menuTitle{ font-size: 22px; font-weight: 900; margin: 2px 0 2px; }
+.menuBuild{ color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+.menuUser{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.02);
+  margin-bottom: 14px;
+}
+.menuAvatar{
+  width: 46px;
+  height: 46px;
+  border-radius: 18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight: 900;
+  background: rgba(255,107,53,.18);
+  border: 1px solid rgba(255,107,53,.32);
+  box-shadow: 0 12px 30px rgba(255,107,53,.18);
+}
+.menuUserName{ font-weight: 900; }
+.menuUserHandle{ color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+.menuList{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.menuItem{
+  width: 100%;
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.02);
+  color: var(--text);
+  cursor:pointer;
+  text-align:left;
+}
+.menuItem:active{ transform: scale(.99); }
+.menuItem span{
+  width: 40px;
+  height: 40px;
+  border-radius: 16px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.18);
+  font-size: 18px;
+}
+.menuItem div{ min-width:0; }
+.menuItem .miT{ font-weight: 900; }
+.menuItem .miS{ color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+.menuSep{
+  height: 1px;
+  background: rgba(255,255,255,.08);
+  margin: 10px 2px;
+}
+
+.menuRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.02);
+  margin-bottom: 10px;
+}
+.menuRowTitle{ font-weight: 900; }
+.menuRowSub{ color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+.input.compact, .select.compact{
+  padding: 10px 12px;
+  border-radius: 16px;
+  min-width: 140px;
+}
+
+/* ============================
+   Light theme refinements
+   ============================ */
+html[data-theme="light"] .calCard,
+html[data-theme="light"] .menuCard{
+  background: rgba(255,255,255,.72);
+  box-shadow: 0 18px 50px rgba(0,0,0,.08);
+}
+html[data-theme="light"] .calDay{
+  background: rgba(255,255,255,.9);
+  border-color: rgba(0,0,0,.08);
+}
+html[data-theme="light"] .calDay:hover{ background: rgba(255,255,255,1); }
+html[data-theme="light"] .menuItem,
+html[data-theme="light"] .menuRow,
+html[data-theme="light"] .menuUser{
+  background: rgba(255,255,255,.85);
+  border-color: rgba(0,0,0,.08);
+}
