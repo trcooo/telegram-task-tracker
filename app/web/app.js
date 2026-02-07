@@ -1,139 +1,237 @@
 (() => {
-  const tg = window.Telegram?.WebApp;
+  const tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
   const API = window.location.origin;
-
-  // --- viewport fix
-  function applyTelegramViewportFix() {
-    const setVh = () => {
-      const h = (tg?.viewportStableHeight || tg?.viewportHeight) ? (tg.viewportStableHeight || tg.viewportHeight) : window.innerHeight;
-      document.documentElement.style.setProperty('--tg-vh', `${h}px`);
-    };
-    setVh();
-    tg?.onEvent?.('viewportChanged', setVh);
-    window.addEventListener('resize', setVh);
-  }
 
   const el = {
     subtitle: document.getElementById('subtitle'),
-    statsPill: document.getElementById('statsPill'),
-    avatar: document.getElementById('avatar'),
     cards: document.getElementById('cards'),
+    empty: document.getElementById('empty'),
+    listTitle: document.getElementById('listTitle'),
+    listCounter: document.getElementById('listCounter'),
+    kpiActive: document.getElementById('kpiActive'),
+    kpiToday: document.getElementById('kpiToday'),
+    kpiOverdue: document.getElementById('kpiOverdue'),
+    searchInput: document.getElementById('searchInput'),
+    clearSearch: document.getElementById('clearSearch'),
+    syncBtn: document.getElementById('syncBtn'),
+    exportBtn: document.getElementById('exportBtn'),
+    addBtn: document.getElementById('addBtn'),
+    fab: document.getElementById('fab'),
+    menuBtn: document.getElementById('menuBtn'),
     toast: document.getElementById('toast'),
-    search: document.getElementById('searchInput'),
-    filters: document.getElementById('filters'),
-    sectionTitle: document.getElementById('sectionTitleText'),
-    sectionCounter: document.getElementById('sectionCounter'),
-    quickAdd: document.getElementById('quickAddBtn'),
-    navItems: document.querySelectorAll('.navItem'),
 
     backdrop: document.getElementById('backdrop'),
     modal: document.getElementById('modal'),
     closeModal: document.getElementById('closeModal'),
     modalTitle: document.getElementById('modalTitle'),
-    modalHint: document.getElementById('modalHint'),
+    saveBtn: document.getElementById('saveBtn'),
+    deleteBtn: document.getElementById('deleteBtn'),
+
     fTitle: document.getElementById('fTitle'),
     fDesc: document.getElementById('fDesc'),
     fDate: document.getElementById('fDate'),
     fTime: document.getElementById('fTime'),
     fPriority: document.getElementById('fPriority'),
     fReminder: document.getElementById('fReminder'),
-    saveBtn: document.getElementById('saveBtn'),
   };
 
   let userId = 1;
   let tasks = [];
   let filter = 'active';
-  let searchQuery = '';
   let editingId = null;
+  let search = '';
 
-
-  const kpiActive = document.getElementById('kpiActive');
-  const kpiToday = document.getElementById('kpiToday');
-  const kpiOverdue = document.getElementById('kpiOverdue');
-  const syncBtn = document.getElementById('syncBtn');
-  const exportBtn = document.getElementById('exportBtn');
-
-  function updateKPIs() {
-    const now = new Date();
-    const startToday = new Date(now); startToday.setHours(0,0,0,0);
-    const endToday = new Date(now); endToday.setHours(23,59,59,999);
-    const active = tasks.filter(t => !t.completed).length;
-    const today = tasks.filter(t => !t.completed && t.due_at && (new Date(t.due_at) >= startToday && new Date(t.due_at) <= endToday)).length;
-    const overdue = tasks.filter(t => !t.completed && t.due_at && (new Date(t.due_at) < now)).length;
-    if (kpiActive) kpiActive.textContent = String(active);
-    if (kpiToday) kpiToday.textContent = String(today);
-    if (kpiOverdue) kpiOverdue.textContent = String(overdue);
-  }
-
-
-  function toast(msg, type='info') {
+  // ---------- Utils ----------
+  function toast(msg, tone='') {
+    if (!el.toast) return;
     el.toast.textContent = msg;
-    el.toast.className = `toast ${type} show`;
-    setTimeout(() => el.toast.classList.remove('show'), 2200);
+    el.toast.className = `toast show ${tone}`.trim();
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => {
+      el.toast.className = 'toast';
+    }, 1600);
   }
 
-  function escapeHtml(str) {
-    return (str || '').replace(/[&<>"']/g, (m) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  function setVh() {
+    const h = (tg?.viewportStableHeight || tg?.viewportHeight) ? (tg.viewportStableHeight || tg.viewportHeight) : window.innerHeight;
+    document.documentElement.style.setProperty('--tg-vh', `${h}px`);
+  }
+
+  function fmtDue(due_at) {
+    if (!due_at) return 'Без срока';
+    const d = new Date(due_at);
+    const date = d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric' });
+    const time = d.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' });
+    return `${date} ${time}`;
+  }
+
+  function isOverdue(t) {
+    return !!(t.due_at && !t.completed && (new Date(t.due_at) < new Date()));
+  }
+
+  function isToday(t) {
+    if (!t.due_at || t.completed) return false;
+    const d = new Date(t.due_at);
+    const now = new Date();
+    return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
+  }
+
+  function isUpcoming(t) {
+    if (!t.due_at || t.completed) return false;
+    const d = new Date(t.due_at);
+    const now = new Date();
+    const in48 = new Date(now.getTime() + 48*60*60*1000);
+    return d > now && d <= in48;
+  }
+
+  function isoFromInputs(dateStr, timeStr) {
+    if (!dateStr) return null;
+    const base = timeStr ? `${dateStr}T${timeStr}` : `${dateStr}T23:59`;
+    const dt = new Date(base);
+    return dt.toISOString();
+  }
+
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, (m) => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
     }[m]));
   }
 
-  function dueMeta(t) {
-    if (!t.due_at) return { label: 'Без срока', overdue: false, soon: false, today: false };
-    const d = new Date(t.due_at);
-    const now = new Date();
-    const overdue = !t.completed && d < now;
-
-    const startToday = new Date(now); startToday.setHours(0,0,0,0);
-    const endToday = new Date(now); endToday.setHours(23,59,59,999);
-    const today = d >= startToday && d <= endToday;
-
-    const soon = !overdue && !t.completed && (d.getTime() - now.getTime()) <= 48*60*60*1000;
-
-    const date = d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit' });
-    const time = d.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' });
-    return { label: `${date} • ${time}`, overdue, soon, today };
-  }
-
+  // ---------- API ----------
   async function apiGetTasks() {
     const r = await fetch(`${API}/api/tasks/${userId}`);
     if (!r.ok) throw new Error('get tasks failed');
     return await r.json();
   }
+
   async function apiCreate(payload) {
     const r = await fetch(`${API}/api/tasks`, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
     if (!r.ok) throw new Error('create failed');
     return await r.json();
   }
+
   async function apiUpdate(id, payload) {
     const r = await fetch(`${API}/api/tasks/${id}`, {
-      method:'PUT',
-      headers:{'Content-Type':'application/json'},
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
     if (!r.ok) throw new Error('update failed');
     return await r.json();
   }
+
   async function apiDelete(id) {
-    const r = await fetch(`${API}/api/tasks/${id}`, {method:'DELETE'});
+    const r = await fetch(`${API}/api/tasks/${id}`, { method: 'DELETE' });
     if (!r.ok) throw new Error('delete failed');
     return await r.json();
   }
+
   async function apiToggle(id, done) {
     const ep = done ? 'done' : 'undone';
-    const r = await fetch(`${API}/api/tasks/${id}/${ep}`, {method:'POST'});
+    const r = await fetch(`${API}/api/tasks/${id}/${ep}`, { method: 'POST' });
     if (!r.ok) throw new Error('toggle failed');
     return await r.json();
   }
 
-  function openModal(mode='create', task=null) {
-    editingId = mode === 'edit' ? task.id : null;
-    el.modalTitle.textContent = mode === 'edit' ? 'Редактировать' : 'Новая задача';
-    el.modalHint.textContent = mode === 'edit' ? 'Изменения сохранятся без дублей. Напоминание пересчитается.' : 'Укажи дату/время — бот напомнит за 15 минут.';
+  async function apiSnooze15(id) {
+    const r = await fetch(`${API}/api/tasks/${id}/snooze15`, { method: 'POST' });
+    if (!r.ok) throw new Error('snooze failed');
+    return await r.json();
+  }
+
+  // ---------- State / Render ----------
+  function applyFilter(list) {
+    let out = list;
+    if (filter === 'active') out = out.filter(t => !t.completed);
+    if (filter === 'done') out = out.filter(t => t.completed);
+    if (filter === 'overdue') out = out.filter(t => isOverdue(t));
+    if (filter === 'today') out = out.filter(t => isToday(t));
+    if (filter === 'upcoming') out = out.filter(t => isUpcoming(t));
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      out = out.filter(t => (t.title||'').toLowerCase().includes(q) || (t.description||'').toLowerCase().includes(q));
+    }
+    return out;
+  }
+
+  function updateKPIs() {
+    const active = tasks.filter(t => !t.completed).length;
+    const today = tasks.filter(t => isToday(t)).length;
+    const overdue = tasks.filter(t => isOverdue(t)).length;
+    if (el.kpiActive) el.kpiActive.textContent = String(active);
+    if (el.kpiToday) el.kpiToday.textContent = String(today);
+    if (el.kpiOverdue) el.kpiOverdue.textContent = String(overdue);
+  }
+
+  function setListTitle() {
+    const map = {
+      active: 'Активные',
+      today: 'Сегодня',
+      overdue: 'Просрочено',
+      upcoming: 'Скоро',
+      done: 'Готово'
+    };
+    el.listTitle.textContent = map[filter] || 'Задачи';
+  }
+
+  function cardHTML(t) {
+    const overdue = isOverdue(t);
+    const dueTag = t.due_at ? (overdue ? `<span class="tag bad">Просрочено • ${escapeHtml(fmtDue(t.due_at))}</span>` : `<span class="tag accent">${escapeHtml(fmtDue(t.due_at))}</span>`) : `<span class="tag">Без срока</span>`;
+    const pr = (t.priority || 'medium');
+    const prTag = pr === 'high' ? `<span class="tag bad">Высокий</span>` : (pr === 'low' ? `<span class="tag good">Низкий</span>` : `<span class="tag">Средний</span>`);
+    const remTag = (t.reminder_enabled === false) ? `<span class="tag">Напом. выкл</span>` : `<span class="tag good">Напом. вкл</span>`;
+    const doneTag = t.completed ? `<span class="tag good">Готово</span>` : '';
+    return `
+      <div class="card" data-id="${t.id}">
+        <div class="cardTop">
+          <div>
+            <div class="cardTitle">${escapeHtml(t.title)}</div>
+            ${t.description ? `<div class="cardDesc">${escapeHtml(t.description)}</div>` : ''}
+          </div>
+        </div>
+        <div class="tags">
+          ${dueTag}
+          ${prTag}
+          ${remTag}
+          ${doneTag}
+        </div>
+        <div class="cardActions">
+          <button class="smallBtn ${t.completed ? 'ghost' : 'good'}" data-action="toggle">${t.completed ? 'Вернуть' : 'Готово'}</button>
+          <button class="smallBtn ghost" data-action="edit">Редакт.</button>
+          <button class="smallBtn bad" data-action="delete">Удалить</button>
+        </div>
+        ${(!t.completed && t.due_at) ? `<div class="cardActions" style="margin-top:8px">
+          <button class="smallBtn ghost" data-action="snooze">Отложить +15 мин</button>
+        </div>` : ''}
+      </div>
+    `;
+  }
+
+  function render() {
+    const view = applyFilter(tasks);
+    setListTitle();
+    el.listCounter.textContent = String(view.length);
+    updateKPIs();
+
+    if (!view.length) {
+      el.cards.innerHTML = '';
+      el.empty.classList.add('show');
+      return;
+    }
+    el.empty.classList.remove('show');
+    el.cards.innerHTML = view.map(cardHTML).join('');
+  }
+
+  // ---------- Modal ----------
+  function openModal(mode, task=null) {
+    editingId = task ? task.id : null;
+    el.modalTitle.textContent = task ? 'Редактирование' : 'Новая задача';
+    el.deleteBtn.style.display = task ? 'inline-flex' : 'none';
+
     el.fTitle.value = task?.title || '';
     el.fDesc.value = task?.description || '';
     el.fPriority.value = task?.priority || 'medium';
@@ -150,257 +248,204 @@
 
     el.backdrop.classList.add('show');
     el.modal.classList.add('show');
+    setTimeout(() => el.fTitle.focus(), 50);
   }
+
   function closeModal() {
     el.backdrop.classList.remove('show');
     el.modal.classList.remove('show');
   }
 
-  function isoFromInputs(dateStr, timeStr) {
-    if (!dateStr) return null;
-    let dt;
-    if (timeStr) dt = new Date(`${dateStr}T${timeStr}`);
-    else {
-      dt = new Date(dateStr);
-      dt.setHours(23, 59, 0, 0);
-    }
-    return dt.toISOString();
-  }
-
-  function filteredTasks() {
-    const q = searchQuery.trim().toLowerCase();
-    let list = [...tasks];
-
-    if (q) {
-      list = list.filter(t =>
-        (t.title||'').toLowerCase().includes(q) ||
-        (t.description||'').toLowerCase().includes(q)
-      );
-    }
-
-    if (filter === 'active') list = list.filter(t => !t.completed);
-    if (filter === 'done') list = list.filter(t => t.completed);
-    if (filter === 'overdue') list = list.filter(t => dueMeta(t).overdue);
-    if (filter === 'today') list = list.filter(t => dueMeta(t).today && !t.completed);
-    if (filter === 'upcoming') list = list.filter(t => dueMeta(t).soon && !t.completed);
-
-    // priority first, then due_at
-    const pr = {high:0, medium:1, low:2};
-    list.sort((a,b) => (pr[a.priority]??1)-(pr[b.priority]??1) || ((a.due_at?Date.parse(a.due_at):9e15)-(b.due_at?Date.parse(b.due_at):9e15)));
-    return list;
-  }
-
-  function render() {
-    const activeCount = tasks.filter(t => !t.completed).length;
-    el.statsPill.textContent = `${activeCount} активных`;
-    updateKPIs();
-
-    const list = filteredTasks();
-    el.sectionTitle.textContent = ({
-      active:'Активные', today:'Сегодня', overdue:'Просрочено', upcoming:'Скоро', done:'Готово'
-    }[filter] || 'Задачи');
-    el.sectionCounter.textContent = String(list.length);
-
-    if (list.length === 0) {
-      el.cards.innerHTML = `<div class="card"><div class="title">Пусто</div><div class="desc">Добавь задачу кнопкой “＋”.</div></div>`;
-      return;
-    }
-
-    el.cards.innerHTML = list.map(t => {
-      const m = dueMeta(t);
-      const tags = [];
-      if (m.overdue) tags.push(`<span class="tag bad">Просрочено</span>`);
-      else if (m.today) tags.push(`<span class="tag brand">Сегодня</span>`);
-      else if (m.soon) tags.push(`<span class="tag brand">Скоро</span>`);
-      tags.push(`<span class="tag">${m.label}</span>`);
-      if (t.priority === 'high') tags.push(`<span class="tag brand">Высокий</span>`);
-      if (t.priority === 'low') tags.push(`<span class="tag">Низкий</span>`);
-      if (t.completed) tags.push(`<span class="tag ok">Готово</span>`);
-
-      return `
-        <div class="card" data-id="${t.id}">
-          <div class="row">
-            <div class="check ${t.completed ? 'on' : ''}" data-act="toggle">${t.completed ? '✓' : ''}</div>
-            <div style="flex:1">
-              <div class="title">${escapeHtml(t.title)}</div>
-              ${t.description ? `<div class="desc">${escapeHtml(t.description)}</div>` : ``}
-              <div class="meta">${tags.join('')}</div>
-              <div class="actions">
-                <button class="iconBtn" data-act="edit">Редактировать</button>
-                <button class="iconBtn danger" data-act="del">Удалить</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  async function refresh() {
-    try {
-      tasks = await apiGetTasks();
-      localStorage.setItem('tasks_cache', JSON.stringify(tasks));
-    } catch (e) {
-      const cached = localStorage.getItem('tasks_cache');
-      tasks = cached ? JSON.parse(cached) : [];
-      toast('Нет связи с сервером, показан кэш', 'warning');
-    }
-    render();
-    updateKPIs();
-  }
-
-  function initTelegram() {
-    applyTelegramViewportFix();
-    if (!tg) {
-      el.subtitle.textContent = 'Открыто в браузере';
-      return;
-    }
-
-    tg.expand();
-    tg.setHeaderColor('#0B0F14');
-    tg.setBackgroundColor('#0B0F14');
-
-    const user = tg.initDataUnsafe?.user;
-    if (user?.id) userId = user.id;
-
-    const hour = new Date().getHours();
-    let g = 'Привет';
-    if (hour >= 5 && hour < 12) g = 'Доброе утро';
-    else if (hour >= 12 && hour < 18) g = 'Добрый день';
-    else if (hour >= 18 && hour < 23) g = 'Добрый вечер';
-
-    el.subtitle.textContent = `${g}, ${user?.first_name || 'друг'}!`;
-
-    if (user?.photo_url) {
-      el.avatar.innerHTML = `<img src="${user.photo_url}" style="width:100%;height:100%;object-fit:cover" />`;
-    } else {
-      el.avatar.textContent = '👤';
-    }
-  }
-
-  // --- events
-  el.search.addEventListener('input', (e) => {
-    searchQuery = e.target.value;
-    render();
-  });
-
-  el.filters.addEventListener('click', (e) => {
-    const chip = e.target.closest('.chip');
-    if (!chip) return;
-    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-    chip.classList.add('active');
-    filter = chip.dataset.filter || 'active';
-    render();
-  });
-
-  el.quickAdd.addEventListener('click', () => openModal('create'));
-
-  if (syncBtn) syncBtn.addEventListener('click', async () => { toast('Синхронизация…', 'info'); await refresh(); });
-  if (exportBtn) exportBtn.addEventListener('click', () => {
-    const data = JSON.stringify(tasks, null, 2);
-    try {
-      navigator.clipboard.writeText(data);
-      toast('Экспорт: JSON скопирован в буфер', 'success');
-    } catch (e) {
-      toast('Не удалось скопировать. Открой консоль.', 'warning');
-      console.log(data);
-    }
-  });
-
-  el.closeModal.addEventListener('click', closeModal);
-  el.backdrop.addEventListener('click', closeModal);
-
-  el.saveBtn.addEventListener('click', async () => {
+  async function saveModal() {
     const title = el.fTitle.value.trim();
-    if (!title) return toast('Введите название', 'warning');
+    const description = el.fDesc.value.trim();
+    if (!title) { toast('Введите название', 'warn'); return; }
 
+    const due_at = isoFromInputs(el.fDate.value, el.fTime.value);
     const payload = {
-      user_id: userId,
       title,
-      description: el.fDesc.value.trim(),
+      description,
       priority: el.fPriority.value,
-      due_at: isoFromInputs(el.fDate.value, el.fTime.value),
+      due_at,
       reminder_enabled: (el.fReminder.value !== 'off')
     };
 
     try {
-      if (editingId) {
-        await apiUpdate(editingId, {
-          title: payload.title,
-          description: payload.description,
-          priority: payload.priority,
-          due_at: payload.due_at,
-          reminder_enabled: payload.reminder_enabled
-        });
-        toast('Задача обновлена (без дублей)', 'success');
+      if (!editingId) {
+        await apiCreate({ user_id: userId, ...payload });
+        toast('Задача добавлена', 'good');
       } else {
-        await apiCreate(payload);
-        toast('Задача добавлена', 'success');
+        await apiUpdate(editingId, payload);
+        toast('Сохранено', 'good');
       }
       closeModal();
       await refresh();
     } catch (e) {
-      toast('Ошибка сохранения', 'danger');
+      toast('Ошибка сохранения', 'bad');
+      console.error(e);
     }
-  });
+  }
 
-  el.cards.addEventListener('click', async (e) => {
-    const card = e.target.closest('.card');
-    if (!card) return;
-    const id = Number(card.dataset.id);
-    const act = e.target.closest('[data-act]')?.dataset?.act;
-    if (!act) return;
-
-    const task = tasks.find(t => t.id === id);
-    if (!task) return;
-
+  async function deleteModal() {
+    if (!editingId) return;
+    if (!confirm('Удалить задачу?')) return;
     try {
-      if (act === 'edit') openModal('edit', task);
-      if (act === 'del') {
-        if (!confirm('Удалить задачу?')) return;
-        await apiDelete(id);
-        toast('Удалено', 'info');
-        await refresh();
-      }
-      if (act === 'toggle') {
-        await apiToggle(id, !task.completed);
-        await refresh();
-        if (navigator.vibrate) navigator.vibrate(20);
-      }
+      await apiDelete(editingId);
+      toast('Удалено', 'good');
+      closeModal();
+      await refresh();
     } catch (e) {
-      toast('Ошибка операции', 'danger');
+      toast('Ошибка удаления', 'bad');
+      console.error(e);
     }
-  });
+  }
 
-  // bottom nav quick actions
-  document.querySelectorAll('.navItem').forEach(n => {
-    n.addEventListener('click', () => {
-      document.querySelectorAll('.navItem').forEach(x => x.classList.remove('active'));
-      n.classList.add('active');
-      const tab = n.dataset.tab;
-      if (tab === 'add') return openModal('create');
-      if (tab === 'done') {
-        // switch to done filter
-        document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.filter === 'done'));
-        filter = 'done';
+  // ---------- Refresh ----------
+  async function refresh(silent=false) {
+    try {
+      if (!silent) toast('Синхронизация…');
+      tasks = await apiGetTasks();
+      localStorage.setItem('tasks_cache', JSON.stringify(tasks));
+      if (el.subtitle) el.subtitle.textContent = 'Онлайн • синхронизировано';
+    } catch (e) {
+      const cached = localStorage.getItem('tasks_cache');
+      tasks = cached ? JSON.parse(cached) : [];
+      if (el.subtitle) el.subtitle.textContent = 'Оффлайн • показан кэш';
+      toast('Нет связи с сервером', 'warn');
+      console.error(e);
+    }
+    render();
+  }
+
+  // ---------- Events ----------
+  function bind() {
+    // filters
+    document.querySelectorAll('.seg').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.seg').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        filter = btn.dataset.filter;
         render();
-        return;
-      }
-      if (tab === 'tasks') {
-        document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.filter === 'active'));
-        filter = 'active';
-        render();
-        return;
-      }
-      if (tab === 'menu') {
-        toast('Меню: скоро добавим экспорт/очистку/настройки', 'info');
+      });
+    });
+
+    // bottom nav shortcuts
+    document.querySelectorAll('.navBtn[data-nav]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const nav = btn.dataset.nav;
+        if (nav === 'menu') {
+          toast('Меню: скоро добавим настройки 🙂');
+          return;
+        }
+        // map nav to filter
+        const map = { active:'active', done:'done', overdue:'overdue' };
+        if (map[nav]) {
+          filter = map[nav];
+          document.querySelectorAll('.seg').forEach(b => b.classList.toggle('active', b.dataset.filter === filter));
+          document.querySelectorAll('.navBtn[data-nav]').forEach(b => b.classList.toggle('active', b.dataset.nav === nav));
+          render();
+        }
+      });
+    });
+
+    // search
+    el.searchInput.addEventListener('input', () => {
+      search = el.searchInput.value;
+      render();
+    });
+    el.clearSearch.addEventListener('click', () => {
+      el.searchInput.value = '';
+      search = '';
+      render();
+    });
+
+    // buttons
+    el.syncBtn.addEventListener('click', () => refresh());
+    el.exportBtn.addEventListener('click', async () => {
+      try {
+        const data = JSON.stringify(tasks, null, 2);
+        await navigator.clipboard.writeText(data);
+        toast('Экспорт: JSON в буфер', 'good');
+      } catch {
+        toast('Не удалось скопировать', 'warn');
       }
     });
-  });
 
-  // init
+    el.addBtn.addEventListener('click', () => openModal('create'));
+    el.fab.addEventListener('click', () => openModal('create'));
+    el.backdrop.addEventListener('click', closeModal);
+    el.closeModal.addEventListener('click', closeModal);
+
+    el.saveBtn.addEventListener('click', saveModal);
+    el.deleteBtn.addEventListener('click', deleteModal);
+
+    // card actions (delegation)
+    el.cards.addEventListener('click', async (ev) => {
+      const btn = ev.target.closest('button[data-action]');
+      if (!btn) return;
+      const card = ev.target.closest('.card');
+      if (!card) return;
+      const id = Number(card.dataset.id);
+      const t = tasks.find(x => x.id === id);
+      const action = btn.dataset.action;
+
+      try {
+        if (action === 'edit') {
+          openModal('edit', t);
+          return;
+        }
+        if (action === 'delete') {
+          if (!confirm('Удалить задачу?')) return;
+          await apiDelete(id);
+          toast('Удалено', 'good');
+          await refresh(true);
+          return;
+        }
+        if (action === 'toggle') {
+          await apiToggle(id, !t.completed);
+          toast(!t.completed ? 'Отмечено готово' : 'Возвращено', 'good');
+          await refresh(true);
+          return;
+        }
+        if (action === 'snooze') {
+          await apiSnooze15(id);
+          toast('Отложено на 15 минут', 'good');
+          await refresh(true);
+          return;
+        }
+      } catch (e) {
+        toast('Ошибка действия', 'bad');
+        console.error(e);
+      }
+    });
+  }
+
+  // ---------- Telegram init ----------
+  function initTelegram() {
+    setVh();
+    window.addEventListener('resize', setVh);
+    tg?.onEvent?.('viewportChanged', setVh);
+
+    if (tg) {
+      tg.expand();
+      const user = tg.initDataUnsafe?.user;
+      if (user?.id) userId = user.id;
+
+      const hour = new Date().getHours();
+      let g = 'Привет';
+      if (hour >= 5 && hour < 12) g = 'Доброе утро';
+      else if (hour >= 12 && hour < 18) g = 'Добрый день';
+      else if (hour >= 18 && hour < 23) g = 'Добрый вечер';
+
+      if (el.subtitle) el.subtitle.textContent = `${g}, ${user?.first_name || 'друг'}!`;
+    } else {
+      if (el.subtitle) el.subtitle.textContent = 'Режим браузера';
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', async () => {
     initTelegram();
-    await refresh();
+    bind();
+    await refresh(true);
   });
 })();

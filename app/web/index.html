@@ -8,106 +8,109 @@
   <link rel="manifest" href="/static/manifest.json" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" aria-live="polite"></div>
 
-  <div class="app">
+  <div class="app" id="app">
     <header class="topbar">
       <div class="brand">
         <div class="logo">TF</div>
-        <div>
-          <h1>TaskFlow</h1>
-          <div class="sub" id="subtitle">Синхронизируем…</div>
+        <div class="brandText">
+          <div class="brandTitle">TaskFlow</div>
+          <div class="brandSub" id="subtitle">Подключаемся…</div>
         </div>
       </div>
 
-      <div class="actions">
-        <button class="iconbtn" id="quickAddBtn" aria-label="Добавить">＋</button>
-        <div class="avatar" id="avatar" aria-label="Профиль">👤</div>
+      <div class="topActions">
+        <button class="iconBtn" id="syncBtn" title="Синхронизировать" aria-label="Синхронизировать">
+          <span class="i">⟳</span>
+        </button>
+        <button class="iconBtn" id="addBtn" title="Новая задача" aria-label="Новая задача">
+          <span class="i">＋</span>
+        </button>
       </div>
     </header>
 
-    <div class="content" id="content">
+    <main class="content" id="content">
       <section class="hero">
-        <div class="row">
-          <div>
-            <div class="heroTitle">Фокус на сегодня</div>
-            <div class="heroDesc">Добавь дедлайн — бот напомнит за 15 минут.</div>
-          </div>
-          <button class="pill" id="statsPill" type="button">
-            <span class="dot"></span>
-            <small>0 активных</small>
-          </button>
+        <div class="heroLeft">
+          <div class="heroTitle">Фокус на сегодня</div>
+          <div class="heroDesc">Добавь дедлайн — бот напомнит за 15 минут. Просроченные подсвечиваются.</div>
         </div>
+        <button class="pill" id="exportBtn" type="button">Экспорт</button>
 
         <div class="kpis">
           <div class="kpi">
-            <div class="v" id="kpiActive">0</div>
-            <div class="l">Активные</div>
+            <div class="kpiVal" id="kpiActive">0</div>
+            <div class="kpiLbl">Активные</div>
           </div>
           <div class="kpi">
-            <div class="v" id="kpiToday">0</div>
-            <div class="l">Сегодня</div>
+            <div class="kpiVal" id="kpiToday">0</div>
+            <div class="kpiLbl">Сегодня</div>
           </div>
-          <div class="kpi">
-            <div class="v" id="kpiOverdue">0</div>
-            <div class="l">Просрочено</div>
+          <div class="kpi danger">
+            <div class="kpiVal" id="kpiOverdue">0</div>
+            <div class="kpiLbl">Просрочено</div>
           </div>
         </div>
 
-        <div class="searchbar">
-          <input class="input" id="searchInput" placeholder="Поиск по названию и описанию…" />
-          <button class="pill" id="syncBtn" type="button"><span>⟳</span><small>Sync</small></button>
+        <div class="searchRow">
+          <input class="input" id="searchInput" placeholder="Поиск по задачам…" />
+          <button class="chipBtn" id="clearSearch" title="Очистить" aria-label="Очистить">✕</button>
         </div>
       </section>
 
-      <div class="tabs">
-        <div class="tab active chip" data-filter="active">Активные</div>
-        <div class="tab chip" data-filter="today">Сегодня</div>
-        <div class="tab chip" data-filter="overdue">Просрочено</div>
-        <div class="tab chip" data-filter="upcoming">Скоро</div>
-        <div class="tab chip" data-filter="done">Готово</div>
-      </div>
+      <section class="filters">
+        <button class="seg active" data-filter="active">Активные</button>
+        <button class="seg" data-filter="today">Сегодня</button>
+        <button class="seg" data-filter="overdue">Просрочено</button>
+        <button class="seg" data-filter="upcoming">Скоро</button>
+        <button class="seg" data-filter="done">Готово</button>
+      </section>
 
-      <div class="sectionTitle">
-        <div class="left">
-          <div class="title" id="sectionTitleText">Активные</div>
-          <div class="count"><span id="sectionCounter">0</span></div>
-        </div>
-        <button class="ghost" id="exportBtn" type="button">Экспорт</button>
-      </div>
+      <section class="listHeader">
+        <div class="listTitle" id="listTitle">Активные</div>
+        <div class="counter" id="listCounter">0</div>
+      </section>
 
-      <div class="board" id="cards"></div>
-    </div>
+      <section class="cards" id="cards"></section>
 
-    <nav class="bottomnav">
-      <button class="navItem active" data-tab="tasks">Задачи</button>
-      <button class="navItem" data-tab="done">Готово</button>
-      <button class="navItem add" data-tab="add">＋</button>
-      <button class="navItem" data-tab="menu">Меню</button>
+      <section class="empty" id="empty">
+        <div class="emptyIcon">📝</div>
+        <div class="emptyTitle">Пока пусто</div>
+        <div class="emptyDesc">Нажми <b>＋</b> и добавь первую задачу</div>
+      </section>
+    </main>
+
+    <nav class="bottomNav">
+      <button class="navBtn active" data-nav="active">Задачи</button>
+      <button class="navBtn" data-nav="done">Готово</button>
+      <button class="navBtn add" id="fab" aria-label="Добавить">＋</button>
+      <button class="navBtn" data-nav="overdue">Просрочено</button>
+      <button class="navBtn" data-nav="menu" id="menuBtn">Меню</button>
     </nav>
   </div>
 
-  <!-- Modal -->
+  <!-- modal -->
   <div class="backdrop" id="backdrop"></div>
-  <div class="modal" id="modal" role="dialog" aria-modal="true">
+  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="modalHead">
       <div>
         <div class="modalTitle" id="modalTitle">Новая задача</div>
-        <div class="modalHint" id="modalHint">Укажи дату/время — бот напомнит за 15 минут.</div>
+        <div class="modalHint">Если указан дедлайн — бот напомнит за 15 минут (можно выключить).</div>
       </div>
-      <button class="iconbtn" id="closeModal" aria-label="Закрыть">✕</button>
+      <button class="iconBtn" id="closeModal" aria-label="Закрыть">✕</button>
     </div>
 
     <div class="form">
       <label class="lbl">Название</label>
-      <input class="input" id="fTitle" placeholder="Например: оплатить аренду" />
+      <input class="input" id="fTitle" maxlength="200" placeholder="Например: отправить отчёт" />
 
       <label class="lbl">Описание</label>
-      <textarea class="input area" id="fDesc" placeholder="Детали (необязательно)"></textarea>
+      <textarea class="input area" id="fDesc" maxlength="1000" placeholder="Детали (необязательно)"></textarea>
 
       <div class="grid2">
         <div>
@@ -138,7 +141,10 @@
         </div>
       </div>
 
-      <button class="btn" id="saveBtn">Сохранить</button>
+      <div class="modalActions">
+        <button class="btn ghost" id="deleteBtn" type="button">Удалить</button>
+        <button class="btn" id="saveBtn" type="button">Сохранить</button>
+      </div>
     </div>
   </div>
 
