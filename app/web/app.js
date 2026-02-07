@@ -1,514 +1,406 @@
-const API_BASE = window.location.origin; // https://taskflowtrack.up.railway.app
-let user_id = null;
+(() => {
+  const tg = window.Telegram?.WebApp;
+  const API = window.location.origin;
 
-// Initialize Telegram WebApp
-function initTelegramWebApp() {
-    if (window.Telegram && Telegram.WebApp) {
-        const tg = Telegram.WebApp;
+  // --- viewport fix
+  function applyTelegramViewportFix() {
+    const setVh = () => {
+      const h = (tg?.viewportStableHeight || tg?.viewportHeight) ? (tg.viewportStableHeight || tg.viewportHeight) : window.innerHeight;
+      document.documentElement.style.setProperty('--tg-vh', `${h}px`);
+    };
+    setVh();
+    tg?.onEvent?.('viewportChanged', setVh);
+    window.addEventListener('resize', setVh);
+  }
 
-        // Expand to full screen
-        tg.expand();
+  const el = {
+    subtitle: document.getElementById('subtitle'),
+    statsPill: document.getElementById('statsPill'),
+    avatar: document.getElementById('avatar'),
+    cards: document.getElementById('cards'),
+    toast: document.getElementById('toast'),
+    search: document.getElementById('searchInput'),
+    filters: document.getElementById('filters'),
+    sectionTitle: document.getElementById('sectionTitleText'),
+    sectionCounter: document.getElementById('sectionCounter'),
+    quickAdd: document.getElementById('quickAddBtn'),
+    navItems: document.querySelectorAll('.navItem'),
 
-        // Set theme parameters
-        tg.setHeaderColor('#4361ee');
-        tg.setBackgroundColor('#f8f9fa');
+    backdrop: document.getElementById('backdrop'),
+    modal: document.getElementById('modal'),
+    closeModal: document.getElementById('closeModal'),
+    modalTitle: document.getElementById('modalTitle'),
+    modalHint: document.getElementById('modalHint'),
+    fTitle: document.getElementById('fTitle'),
+    fDesc: document.getElementById('fDesc'),
+    fDate: document.getElementById('fDate'),
+    fTime: document.getElementById('fTime'),
+    fPriority: document.getElementById('fPriority'),
+    fReminder: document.getElementById('fReminder'),
+    saveBtn: document.getElementById('saveBtn'),
+  };
 
-        // Get user data
-        const user = tg.initDataUnsafe?.user;
-        if (user) {
-            user_id = user.id;
-            updateUserGreeting(user.first_name, user.last_name);
+  let userId = 1;
+  let tasks = [];
+  let filter = 'active';
+  let searchQuery = '';
+  let editingId = null;
 
-            // Send user info to backend (optional)
-            sendUserInfo(user);
-        }
 
-        // Enable closing confirmation
-        tg.enableClosingConfirmation();
+  const kpiActive = document.getElementById('kpiActive');
+  const kpiToday = document.getElementById('kpiToday');
+  const kpiOverdue = document.getElementById('kpiOverdue');
+  const syncBtn = document.getElementById('syncBtn');
+  const exportBtn = document.getElementById('exportBtn');
 
-        // Setup back button
-        tg.BackButton.onClick(() => {
-            tg.close();
-        });
+  function updateKPIs() {
+    const now = new Date();
+    const startToday = new Date(now); startToday.setHours(0,0,0,0);
+    const endToday = new Date(now); endToday.setHours(23,59,59,999);
+    const active = tasks.filter(t => !t.completed).length;
+    const today = tasks.filter(t => !t.completed && t.due_at && (new Date(t.due_at) >= startToday && new Date(t.due_at) <= endToday)).length;
+    const overdue = tasks.filter(t => !t.completed && t.due_at && (new Date(t.due_at) < now)).length;
+    if (kpiActive) kpiActive.textContent = String(active);
+    if (kpiToday) kpiToday.textContent = String(today);
+    if (kpiOverdue) kpiOverdue.textContent = String(overdue);
+  }
 
-        return tg;
-    }
-    return null;
-}
 
-// Update greeting with user name
-function updateUserGreeting(firstName, lastName) {
-    const hour = new Date().getHours();
-    let greeting = "Доброй ночи";
-    if (hour >= 5 && hour < 12) greeting = "Доброе утро";
-    else if (hour >= 12 && hour < 18) greeting = "Добрый день";
-    else if (hour >= 18 && hour < 23) greeting = "Добрый вечер";
+  function toast(msg, type='info') {
+    el.toast.textContent = msg;
+    el.toast.className = `toast ${type} show`;
+    setTimeout(() => el.toast.classList.remove('show'), 2200);
+  }
 
-    const name = firstName || '';
-    const fullName = lastName ? `${firstName} ${lastName}` : firstName;
+  function escapeHtml(str) {
+    return (str || '').replace(/[&<>"']/g, (m) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+    }[m]));
+  }
 
-    document.getElementById('greeting-text').textContent = `${greeting}, ${name}!`;
+  function dueMeta(t) {
+    if (!t.due_at) return { label: 'Без срока', overdue: false, soon: false, today: false };
+    const d = new Date(t.due_at);
+    const now = new Date();
+    const overdue = !t.completed && d < now;
 
-    // Update user avatar if available
-    const userAvatar = Telegram.WebApp.initDataUnsafe?.user?.photo_url;
-    if (userAvatar) {
-        document.querySelector('.user-avatar').innerHTML =
-            `<img src="${userAvatar}" style="width: 40px; height: 40px; border-radius: 50%; border: 2px solid white;">`;
-    }
-}
+    const startToday = new Date(now); startToday.setHours(0,0,0,0);
+    const endToday = new Date(now); endToday.setHours(23,59,59,999);
+    const today = d >= startToday && d <= endToday;
 
-// Send user info to backend (for future features)
-async function sendUserInfo(user) {
-    try {
-        await fetch(`${API_URL}/api/user`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                id: user.id,
-                first_name: user.first_name,
-                last_name: user.last_name,
-                username: user.username,
-                language_code: user.language_code
-            })
-        });
-    } catch (error) {
-        console.log('User info not sent:', error);
-    }
-}
+    const soon = !overdue && !t.completed && (d.getTime() - now.getTime()) <= 48*60*60*1000;
 
-// Fetch tasks from backend
-async function fetchTasks() {
-    if (!user_id) {
-        user_id = 1; // Fallback for testing
-    }
+    const date = d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit' });
+    const time = d.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' });
+    return { label: `${date} • ${time}`, overdue, soon, today };
+  }
 
-    try {
-        const response = await fetch(`${API_URL}/tasks/${user_id}`);
-        if (!response.ok) throw new Error('Failed to fetch tasks');
-
-        const tasks = await response.json();
-        return Array.isArray(tasks) ? tasks : [];
-    } catch (error) {
-        console.error('Error fetching tasks:', error);
-        return [];
-    }
-}
-
-// Render tasks
-async function renderTasks() {
-    const tasks = await fetchTasks();
-    const container = document.getElementById('tasks-list');
-    const emptyState = document.getElementById('empty-state');
-
-    if (!tasks || tasks.length === 0) {
-        container.innerHTML = '';
-        emptyState.style.display = 'block';
-        container.appendChild(emptyState);
-        updateStats(0, 0);
-        return;
-    }
-
-    emptyState.style.display = 'none';
-
-    // Sort tasks: active first, then by due date
-    const sortedTasks = [...tasks].sort((a, b) => {
-        if (a.completed !== b.completed) return a.completed ? 1 : -1;
-        return new Date(a.due_date) - new Date(b.due_date);
+  async function apiGetTasks() {
+    const r = await fetch(`${API}/api/tasks/${userId}`);
+    if (!r.ok) throw new Error('get tasks failed');
+    return await r.json();
+  }
+  async function apiCreate(payload) {
+    const r = await fetch(`${API}/api/tasks`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
     });
-
-    container.innerHTML = '';
-
-    sortedTasks.forEach(task => {
-        const taskElement = createTaskElement(task);
-        container.appendChild(taskElement);
+    if (!r.ok) throw new Error('create failed');
+    return await r.json();
+  }
+  async function apiUpdate(id, payload) {
+    const r = await fetch(`${API}/api/tasks/${id}`, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
     });
+    if (!r.ok) throw new Error('update failed');
+    return await r.json();
+  }
+  async function apiDelete(id) {
+    const r = await fetch(`${API}/api/tasks/${id}`, {method:'DELETE'});
+    if (!r.ok) throw new Error('delete failed');
+    return await r.json();
+  }
+  async function apiToggle(id, done) {
+    const ep = done ? 'done' : 'undone';
+    const r = await fetch(`${API}/api/tasks/${id}/${ep}`, {method:'POST'});
+    if (!r.ok) throw new Error('toggle failed');
+    return await r.json();
+  }
 
-    const activeTasks = tasks.filter(t => !t.completed).length;
-    updateStats(tasks.length, activeTasks);
-}
+  function openModal(mode='create', task=null) {
+    editingId = mode === 'edit' ? task.id : null;
+    el.modalTitle.textContent = mode === 'edit' ? 'Редактировать' : 'Новая задача';
+    el.modalHint.textContent = mode === 'edit' ? 'Изменения сохранятся без дублей. Напоминание пересчитается.' : 'Укажи дату/время — бот напомнит за 15 минут.';
+    el.fTitle.value = task?.title || '';
+    el.fDesc.value = task?.description || '';
+    el.fPriority.value = task?.priority || 'medium';
+    el.fReminder.value = (task?.reminder_enabled === false) ? 'off' : 'on';
 
-// Create task element
-function createTaskElement(task) {
-    const div = document.createElement('div');
-    div.className = `task-item ${task.completed ? 'completed' : ''}`;
-    div.innerHTML = `
-        <div class="task-header">
-            <div class="task-title">${escapeHtml(task.title)}</div>
-            <div class="task-actions">
-                <button class="task-action-btn btn-complete" onclick="toggleTask(${task.id}, ${!task.completed})">
-                    <i class="bi ${task.completed ? 'bi-arrow-counterclockwise' : 'bi-check-lg'}"></i>
-                </button>
-                <button class="task-action-btn btn-delete" onclick="deleteTask(${task.id})">
-                    <i class="bi bi-trash"></i>
-                </button>
-            </div>
-        </div>
-        ${task.description ? `<div style="font-size: 14px; color: var(--gray); margin: 8px 0;">${escapeHtml(task.description)}</div>` : ''}
-        <div class="task-datetime">
-            ${task.due_date ? `
-                <div class="datetime-text">
-                    <i class="bi bi-calendar"></i>
-                    <span>${formatDate(task.due_date)}</span>
-                </div>
-                <div class="datetime-text">
-                    <i class="bi bi-clock"></i>
-                    <span>${formatTime(task.due_date)}</span>
-                </div>
-            ` : ''}
-            <div class="datetime-text" style="margin-left: auto; color: ${getPriorityColor(task.priority)}; font-weight: 600;">
-                ${getPriorityText(task.priority)}
-            </div>
-        </div>
-    `;
-    return div;
-}
-
-// Add new task
-async function addTask() {
-    const title = document.getElementById('task-title').value.trim();
-    const description = document.getElementById('task-description').value.trim();
-    const date = document.getElementById('task-date').value;
-    const time = document.getElementById('task-time').value;
-
-    if (!title) {
-        showNotification('Введите название задачи', 'warning');
-        return;
-    }
-
-    if (!user_id) user_id = 1;
-
-    try {
-        const due_in_minutes = calculateDueMinutes(date, time);
-
-        const response = await fetch(`${API_URL}/tasks/`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_id: user_id,
-                title: title,
-                description: description,
-                due_in_minutes: due_in_minutes
-            })
-        });
-
-        if (response.ok) {
-            // Clear form
-            document.getElementById('task-title').value = '';
-            document.getElementById('task-description').value = '';
-
-            showNotification('Задача добавлена!', 'success');
-            await renderTasks();
-
-            // Close Mini App if in Telegram
-            if (window.Telegram?.WebApp) {
-                setTimeout(() => {
-                    Telegram.WebApp.close();
-                }, 1500);
-            }
-        } else {
-            throw new Error('Failed to add task');
-        }
-    } catch (error) {
-        console.error('Error adding task:', error);
-        showNotification('Ошибка при добавлении задачи', 'error');
-    }
-}
-
-// Toggle task completion
-async function toggleTask(taskId, completed) {
-    try {
-        const endpoint = completed ? 'done' : 'undone';
-        const response = await fetch(`${API_URL}/tasks/${taskId}/${endpoint}`, {
-            method: 'POST'
-        });
-
-        if (response.ok) {
-            await renderTasks();
-            showNotification(completed ? 'Задача выполнена!' : 'Задача восстановлена', 'success');
-        }
-    } catch (error) {
-        console.error('Error toggling task:', error);
-    }
-}
-
-// Delete task
-async function deleteTask(taskId) {
-    if (!confirm('Удалить эту задачу?')) return;
-
-    try {
-        const response = await fetch(`${API_URL}/tasks/${taskId}`, {
-            method: 'DELETE'
-        });
-
-        if (response.ok) {
-            await renderTasks();
-            showNotification('Задача удалена', 'info');
-        }
-    } catch (error) {
-        console.error('Error deleting task:', error);
-    }
-}
-
-// Utility functions
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-function formatDate(dateString) {
-    const date = new Date(dateString);
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    if (date.toDateString() === today.toDateString()) {
-        return 'Сегодня';
-    } else if (date.toDateString() === tomorrow.toDateString()) {
-        return 'Завтра';
+    if (task?.due_at) {
+      const d = new Date(task.due_at);
+      el.fDate.value = d.toISOString().slice(0,10);
+      el.fTime.value = d.toTimeString().slice(0,5);
     } else {
-        const options = { day: 'numeric', month: 'short' };
-        return date.toLocaleDateString('ru-RU', options);
+      el.fDate.value = '';
+      el.fTime.value = '';
     }
-}
 
-function formatTime(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
+    el.backdrop.classList.add('show');
+    el.modal.classList.add('show');
+  }
+  function closeModal() {
+    el.backdrop.classList.remove('show');
+    el.modal.classList.remove('show');
+  }
 
-function calculateDueMinutes(date, time) {
-    if (!date || !time) return null;
+  function isoFromInputs(dateStr, timeStr) {
+    if (!dateStr) return null;
+    let dt;
+    if (timeStr) dt = new Date(`${dateStr}T${timeStr}`);
+    else {
+      dt = new Date(dateStr);
+      dt.setHours(23, 59, 0, 0);
+    }
+    return dt.toISOString();
+  }
 
-    const dueDate = new Date(`${date}T${time}`);
-    const now = new Date();
-    const diffMs = dueDate - now;
+  function filteredTasks() {
+    const q = searchQuery.trim().toLowerCase();
+    let list = [...tasks];
 
-    return Math.max(0, Math.round(diffMs / (1000 * 60)));
-}
+    if (q) {
+      list = list.filter(t =>
+        (t.title||'').toLowerCase().includes(q) ||
+        (t.description||'').toLowerCase().includes(q)
+      );
+    }
 
-function getPriorityColor(priority) {
-    const colors = {
-        high: '#ef4444',
-        medium: '#f59e0b',
-        low: '#10b981',
-        none: '#6b7280'
+    if (filter === 'active') list = list.filter(t => !t.completed);
+    if (filter === 'done') list = list.filter(t => t.completed);
+    if (filter === 'overdue') list = list.filter(t => dueMeta(t).overdue);
+    if (filter === 'today') list = list.filter(t => dueMeta(t).today && !t.completed);
+    if (filter === 'upcoming') list = list.filter(t => dueMeta(t).soon && !t.completed);
+
+    // priority first, then due_at
+    const pr = {high:0, medium:1, low:2};
+    list.sort((a,b) => (pr[a.priority]??1)-(pr[b.priority]??1) || ((a.due_at?Date.parse(a.due_at):9e15)-(b.due_at?Date.parse(b.due_at):9e15)));
+    return list;
+  }
+
+  function render() {
+    const activeCount = tasks.filter(t => !t.completed).length;
+    el.statsPill.textContent = `${activeCount} активных`;
+    updateKPIs();
+
+    const list = filteredTasks();
+    el.sectionTitle.textContent = ({
+      active:'Активные', today:'Сегодня', overdue:'Просрочено', upcoming:'Скоро', done:'Готово'
+    }[filter] || 'Задачи');
+    el.sectionCounter.textContent = String(list.length);
+
+    if (list.length === 0) {
+      el.cards.innerHTML = `<div class="card"><div class="title">Пусто</div><div class="desc">Добавь задачу кнопкой “＋”.</div></div>`;
+      return;
+    }
+
+    el.cards.innerHTML = list.map(t => {
+      const m = dueMeta(t);
+      const tags = [];
+      if (m.overdue) tags.push(`<span class="tag bad">Просрочено</span>`);
+      else if (m.today) tags.push(`<span class="tag brand">Сегодня</span>`);
+      else if (m.soon) tags.push(`<span class="tag brand">Скоро</span>`);
+      tags.push(`<span class="tag">${m.label}</span>`);
+      if (t.priority === 'high') tags.push(`<span class="tag brand">Высокий</span>`);
+      if (t.priority === 'low') tags.push(`<span class="tag">Низкий</span>`);
+      if (t.completed) tags.push(`<span class="tag ok">Готово</span>`);
+
+      return `
+        <div class="card" data-id="${t.id}">
+          <div class="row">
+            <div class="check ${t.completed ? 'on' : ''}" data-act="toggle">${t.completed ? '✓' : ''}</div>
+            <div style="flex:1">
+              <div class="title">${escapeHtml(t.title)}</div>
+              ${t.description ? `<div class="desc">${escapeHtml(t.description)}</div>` : ``}
+              <div class="meta">${tags.join('')}</div>
+              <div class="actions">
+                <button class="iconBtn" data-act="edit">Редактировать</button>
+                <button class="iconBtn danger" data-act="del">Удалить</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function refresh() {
+    try {
+      tasks = await apiGetTasks();
+      localStorage.setItem('tasks_cache', JSON.stringify(tasks));
+    } catch (e) {
+      const cached = localStorage.getItem('tasks_cache');
+      tasks = cached ? JSON.parse(cached) : [];
+      toast('Нет связи с сервером, показан кэш', 'warning');
+    }
+    render();
+    updateKPIs();
+  }
+
+  function initTelegram() {
+    applyTelegramViewportFix();
+    if (!tg) {
+      el.subtitle.textContent = 'Открыто в браузере';
+      return;
+    }
+
+    tg.expand();
+    tg.setHeaderColor('#0B0F14');
+    tg.setBackgroundColor('#0B0F14');
+
+    const user = tg.initDataUnsafe?.user;
+    if (user?.id) userId = user.id;
+
+    const hour = new Date().getHours();
+    let g = 'Привет';
+    if (hour >= 5 && hour < 12) g = 'Доброе утро';
+    else if (hour >= 12 && hour < 18) g = 'Добрый день';
+    else if (hour >= 18 && hour < 23) g = 'Добрый вечер';
+
+    el.subtitle.textContent = `${g}, ${user?.first_name || 'друг'}!`;
+
+    if (user?.photo_url) {
+      el.avatar.innerHTML = `<img src="${user.photo_url}" style="width:100%;height:100%;object-fit:cover" />`;
+    } else {
+      el.avatar.textContent = '👤';
+    }
+  }
+
+  // --- events
+  el.search.addEventListener('input', (e) => {
+    searchQuery = e.target.value;
+    render();
+  });
+
+  el.filters.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    filter = chip.dataset.filter || 'active';
+    render();
+  });
+
+  el.quickAdd.addEventListener('click', () => openModal('create'));
+
+  if (syncBtn) syncBtn.addEventListener('click', async () => { toast('Синхронизация…', 'info'); await refresh(); });
+  if (exportBtn) exportBtn.addEventListener('click', () => {
+    const data = JSON.stringify(tasks, null, 2);
+    try {
+      navigator.clipboard.writeText(data);
+      toast('Экспорт: JSON скопирован в буфер', 'success');
+    } catch (e) {
+      toast('Не удалось скопировать. Открой консоль.', 'warning');
+      console.log(data);
+    }
+  });
+
+  el.closeModal.addEventListener('click', closeModal);
+  el.backdrop.addEventListener('click', closeModal);
+
+  el.saveBtn.addEventListener('click', async () => {
+    const title = el.fTitle.value.trim();
+    if (!title) return toast('Введите название', 'warning');
+
+    const payload = {
+      user_id: userId,
+      title,
+      description: el.fDesc.value.trim(),
+      priority: el.fPriority.value,
+      due_at: isoFromInputs(el.fDate.value, el.fTime.value),
+      reminder_enabled: (el.fReminder.value !== 'off')
     };
-    return colors[priority] || colors.none;
-}
 
-function getPriorityText(priority) {
-    const texts = {
-        high: 'Высокий',
-        medium: 'Средний',
-        low: 'Низкий',
-        none: 'Без приоритета'
-    };
-    return texts[priority] || texts.none;
-}
-
-function updateStats(total, active) {
-    document.getElementById('total-tasks').textContent = total;
-    document.getElementById('active-tasks').textContent = active;
-    document.getElementById('completed-tasks').textContent = total - active;
-    document.getElementById('task-count').textContent = `${active} активных из ${total}`;
-}
-
-// Show notification
-function showNotification(message, type = 'info') {
-    // Same notification function as in index.html
-    // ...
-}
-
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize Telegram WebApp
-    const tg = initTelegramWebApp();
-
-    // Initialize form
-    const now = new Date();
-    const today = now.toISOString().split('T')[0];
-    const time = now.toTimeString().slice(0,5);
-
-    document.getElementById('task-date').value = today;
-    document.getElementById('task-date').min = today;
-    document.getElementById('task-time').value = time;
-
-    // Setup event listeners
-    document.getElementById('add-task').addEventListener('click', addTask);
-
-    // Allow Enter key to add task
-    document.getElementById('task-title').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            addTask();
-        }
-    });
-
-    // Load tasks
-    renderTasks();
-
-    // Setup bottom navigation
-    setupNavigation();
-});
-
-function setupNavigation() {
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.addEventListener('click', function(e) {
-            e.preventDefault();
-
-            // Remove active class from all
-            document.querySelectorAll('.nav-item').forEach(nav => {
-                nav.classList.remove('active');
-            });
-
-            // Add active to clicked
-            this.classList.add('active');
-
-            // Handle navigation (simplified)
-            const section = this.querySelector('span').textContent.toLowerCase();
-            showNotification(`Раздел "${section}" в разработке`, 'info');
+    try {
+      if (editingId) {
+        await apiUpdate(editingId, {
+          title: payload.title,
+          description: payload.description,
+          priority: payload.priority,
+          due_at: payload.due_at,
+          reminder_enabled: payload.reminder_enabled
         });
+        toast('Задача обновлена (без дублей)', 'success');
+      } else {
+        await apiCreate(payload);
+        toast('Задача добавлена', 'success');
+      }
+      closeModal();
+      await refresh();
+    } catch (e) {
+      toast('Ошибка сохранения', 'danger');
+    }
+  });
+
+  el.cards.addEventListener('click', async (e) => {
+    const card = e.target.closest('.card');
+    if (!card) return;
+    const id = Number(card.dataset.id);
+    const act = e.target.closest('[data-act]')?.dataset?.act;
+    if (!act) return;
+
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+
+    try {
+      if (act === 'edit') openModal('edit', task);
+      if (act === 'del') {
+        if (!confirm('Удалить задачу?')) return;
+        await apiDelete(id);
+        toast('Удалено', 'info');
+        await refresh();
+      }
+      if (act === 'toggle') {
+        await apiToggle(id, !task.completed);
+        await refresh();
+        if (navigator.vibrate) navigator.vibrate(20);
+      }
+    } catch (e) {
+      toast('Ошибка операции', 'danger');
+    }
+  });
+
+  // bottom nav quick actions
+  document.querySelectorAll('.navItem').forEach(n => {
+    n.addEventListener('click', () => {
+      document.querySelectorAll('.navItem').forEach(x => x.classList.remove('active'));
+      n.classList.add('active');
+      const tab = n.dataset.tab;
+      if (tab === 'add') return openModal('create');
+      if (tab === 'done') {
+        // switch to done filter
+        document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.filter === 'done'));
+        filter = 'done';
+        render();
+        return;
+      }
+      if (tab === 'tasks') {
+        document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.filter === 'active'));
+        filter = 'active';
+        render();
+        return;
+      }
+      if (tab === 'menu') {
+        toast('Меню: скоро добавим экспорт/очистку/настройки', 'info');
+      }
     });
-}
-// app/web/app.js
-const API_URL = window.location.origin;
+  });
 
-// Функции для работы с API
-class TaskAPI {
-    static async getTasks(userId) {
-        try {
-            const response = await fetch(`${API_URL}/api/tasks/${userId}`);
-            if (!response.ok) throw new Error('Failed to fetch tasks');
-            return await response.json();
-        } catch (error) {
-            console.error('Error fetching tasks:', error);
-            return [];
-        }
-    }
-
-    static async createTask(taskData) {
-        try {
-            const response = await fetch(`${API_URL}/api/tasks`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(taskData)
-            });
-            return await response.json();
-        } catch (error) {
-            console.error('Error creating task:', error);
-            throw error;
-        }
-    }
-
-    static async updateTask(taskId, taskData) {
-        try {
-            const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(taskData)
-            });
-            return await response.json();
-        } catch (error) {
-            console.error('Error updating task:', error);
-            throw error;
-        }
-    }
-
-    static async deleteTask(taskId) {
-        try {
-            const response = await fetch(`${API_URL}/api/tasks/${taskId}`, {
-                method: 'DELETE'
-            });
-            return await response.json();
-        } catch (error) {
-            console.error('Error deleting task:', error);
-            throw error;
-        }
-    }
-
-    static async toggleComplete(taskId, completed) {
-        try {
-            const endpoint = completed ? 'done' : 'undone';
-            const response = await fetch(`${API_URL}/api/tasks/${taskId}/${endpoint}`, {
-                method: 'POST'
-            });
-            return await response.json();
-        } catch (error) {
-            console.error('Error toggling task:', error);
-            throw error;
-        }
-    }
-}
-
-// Интеграция с основным скриптом
-function initAPIIntegration() {
-    // Заменяем функции сохранения на API вызовы
-    const originalSaveTasks = window.saveTasks;
-
-    window.saveTasks = async function() {
-        const tg = window.Telegram?.WebApp;
-        const userId = tg?.initDataUnsafe?.user?.id || 1;
-
-        try {
-            // Сохраняем в localStorage для оффлайн работы
-            localStorage.setItem('tasks', JSON.stringify(window.tasks));
-
-            // Синхронизируем с сервером
-            if (window.tasks.length > 0) {
-                // Здесь можно добавить логику синхронизации с сервером
-                // Например, отправлять каждую задачу через API
-                console.log('Tasks saved locally, ready for sync');
-            }
-
-            updateStats();
-            renderTasks();
-
-        } catch (error) {
-            console.error('Error saving tasks:', error);
-        }
-    };
-
-    // Функция синхронизации с сервером
-    window.syncWithServer = async function() {
-        const tg = window.Telegram?.WebApp;
-        const userId = tg?.initDataUnsafe?.user?.id;
-
-        if (!userId) {
-            console.log('No user ID for sync');
-            return;
-        }
-
-        try {
-            // Получаем задачи с сервера
-            const serverTasks = await TaskAPI.getTasks(userId);
-
-            // Получаем локальные задачи
-            const localTasks = JSON.parse(localStorage.getItem('tasks') || '[]');
-
-            // Здесь можно добавить логику синхронизации
-            // Например, объединение, разрешение конфликтов
-
-            console.log('Sync completed:', { serverTasks, localTasks });
-
-            return serverTasks;
-        } catch (error) {
-            console.error('Sync error:', error);
-            return [];
-        }
-    };
-}
-
-// Инициализация при загрузке
-document.addEventListener('DOMContentLoaded', function() {
-    // Добавляем интеграцию с API
-    initAPIIntegration();
-
-    // Пытаемся синхронизировать при загрузке
-    setTimeout(() => {
-        window.syncWithServer().then(serverTasks => {
-            if (serverTasks.length > 0) {
-                console.log('Synced with server:', serverTasks.length, 'tasks');
-            }
-        });
-    }, 2000);
-});
+  // init
+  document.addEventListener('DOMContentLoaded', async () => {
+    initTelegram();
+    await refresh();
+  });
+})();

@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List
 
 from fastapi import FastAPI, HTTPException, Request, Depends
@@ -8,20 +8,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-
 from sqlalchemy.orm import Session
 
-# Локальные импорты из папки app/
 from .database import Base, engine, SessionLocal
 from .models import Task
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("taskflow")
 
-app = FastAPI(title="TaskFlow API", version="2.0.0")
+app = FastAPI(title="TaskFlow API", version="3.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,8 +29,6 @@ app.add_middleware(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
 
-
-# ---------------- DB ----------------
 def get_db():
     db = SessionLocal()
     try:
@@ -43,29 +36,20 @@ def get_db():
     finally:
         db.close()
 
-
 @app.on_event("startup")
-async def on_startup():
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("✅ DB tables ready")
-    except Exception as e:
-        logger.error(f"❌ DB init error: {e}")
+async def startup():
+    Base.metadata.create_all(bind=engine)
+    logger.info("✅ DB ready")
 
-
-# ---------------- Health ----------------
 @app.get("/health")
 async def health():
     return {"status": "ok", "ts": datetime.utcnow().isoformat()}
 
-
 @app.get("/api")
 async def api_status():
-    return {"status": "ok", "message": "API is working"}
+    return {"status": "ok", "version": app.version}
 
-
-# ---------------- Helpers ----------------
-def parse_iso_datetime(value: Optional[str]):
+def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
     if value is None:
         return None
     s = str(value).strip()
@@ -78,12 +62,9 @@ def parse_iso_datetime(value: Optional[str]):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid datetime format (ISO expected)")
 
-
 def iso(dt: Optional[datetime]) -> Optional[str]:
     return dt.isoformat() if dt else None
 
-
-# ---------------- Schemas ----------------
 class TaskOut(BaseModel):
     id: int
     user_id: int
@@ -92,26 +73,26 @@ class TaskOut(BaseModel):
     priority: str
     due_at: Optional[str]
     completed: bool
+    reminder_enabled: bool
     reminder_sent: bool
     created_at: Optional[str]
     updated_at: Optional[str]
 
-
 class TaskCreate(BaseModel):
     user_id: int
     title: str = Field(..., min_length=1, max_length=200)
-    description: str = Field("", max_length=500)
+    description: str = Field("", max_length=1000)
     priority: str = Field("medium")
     due_at: Optional[str] = None
-
+    reminder_enabled: bool = True
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=500)
+    description: Optional[str] = Field(None, max_length=1000)
     priority: Optional[str] = None
     due_at: Optional[str] = None
     completed: Optional[bool] = None
-
+    reminder_enabled: Optional[bool] = None
 
 def to_out(t: Task) -> TaskOut:
     return TaskOut(
@@ -119,16 +100,15 @@ def to_out(t: Task) -> TaskOut:
         user_id=t.user_id,
         title=t.title,
         description=t.description or "",
-        priority=(t.priority or "medium"),
+        priority=t.priority or "medium",
         due_at=iso(t.due_at),
         completed=bool(t.completed),
+        reminder_enabled=bool(getattr(t, "reminder_enabled", True)),
         reminder_sent=bool(getattr(t, "reminder_sent", False)),
         created_at=iso(getattr(t, "created_at", None)),
         updated_at=iso(getattr(t, "updated_at", None)),
     )
 
-
-# ---------------- API: Tasks ----------------
 @app.get("/api/tasks/{user_id}", response_model=List[TaskOut])
 async def get_tasks(user_id: int, db: Session = Depends(get_db)):
     tasks = (
@@ -138,7 +118,6 @@ async def get_tasks(user_id: int, db: Session = Depends(get_db)):
         .all()
     )
     return [to_out(t) for t in tasks]
-
 
 @app.post("/api/tasks", response_model=TaskOut)
 async def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
@@ -153,6 +132,7 @@ async def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
         priority=pr,
         due_at=parse_iso_datetime(payload.due_at),
         completed=False,
+        reminder_enabled=bool(payload.reminder_enabled),
         reminder_sent=False,
     )
     db.add(t)
@@ -160,37 +140,38 @@ async def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
     db.refresh(t)
     return to_out(t)
 
-
 @app.put("/api/tasks/{task_id}", response_model=TaskOut)
 async def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
     t = db.query(Task).filter(Task.id == task_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    changed_due = False
+    reopened = False
+
     if payload.title is not None:
         t.title = payload.title.strip()
-
     if payload.description is not None:
         t.description = (payload.description or "").strip()
-
     if payload.priority is not None:
         pr = (payload.priority or "medium").lower().strip()
         t.priority = pr if pr in ["high", "medium", "low"] else "medium"
-
     if payload.due_at is not None:
         t.due_at = parse_iso_datetime(payload.due_at) if payload.due_at else None
-        # если изменили срок — напоминание надо слать заново
-        t.reminder_sent = False
-
+        changed_due = True
     if payload.completed is not None:
+        prev = bool(t.completed)
         t.completed = bool(payload.completed)
-        if not t.completed:
-            t.reminder_sent = False
+        reopened = prev and not t.completed
+    if payload.reminder_enabled is not None:
+        t.reminder_enabled = bool(payload.reminder_enabled)
+
+    if changed_due or reopened:
+        t.reminder_sent = False
 
     db.commit()
     db.refresh(t)
     return to_out(t)
-
 
 @app.delete("/api/tasks/{task_id}")
 async def delete_task(task_id: int, db: Session = Depends(get_db)):
@@ -201,7 +182,6 @@ async def delete_task(task_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"success": True}
 
-
 @app.post("/api/tasks/{task_id}/done")
 async def mark_done(task_id: int, db: Session = Depends(get_db)):
     t = db.query(Task).filter(Task.id == task_id).first()
@@ -210,7 +190,6 @@ async def mark_done(task_id: int, db: Session = Depends(get_db)):
     t.completed = True
     db.commit()
     return {"success": True}
-
 
 @app.post("/api/tasks/{task_id}/undone")
 async def mark_undone(task_id: int, db: Session = Depends(get_db)):
@@ -222,8 +201,21 @@ async def mark_undone(task_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"success": True}
 
+# optional: snooze +15 min from UI
+@app.post("/api/tasks/{task_id}/snooze15", response_model=TaskOut)
+async def snooze_15(task_id: int, db: Session = Depends(get_db)):
+    t = db.query(Task).filter(Task.id == task_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not t.due_at:
+        raise HTTPException(status_code=400, detail="Task has no due date")
+    t.due_at = t.due_at + timedelta(minutes=15)
+    t.reminder_sent = False
+    db.commit()
+    db.refresh(t)
+    return to_out(t)
 
-# ---------------- WEB ----------------
+# ---------- Web ----------
 @app.get("/")
 async def serve_index():
     index_path = os.path.join(WEB_DIR, "index.html")
@@ -231,16 +223,10 @@ async def serve_index():
         raise HTTPException(status_code=404, detail="index.html not found")
     return FileResponse(index_path)
 
-
-# ВАЖНО: раздаём web-файлы НЕ на "/", чтобы не ломать /api/*
-# если понадобятся /app.js, /style.css, /manifest.json — будут доступны как /static/...
 if os.path.exists(WEB_DIR):
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
-else:
-    logger.warning(f"⚠️ Web directory not found: {WEB_DIR}")
-
 
 @app.exception_handler(Exception)
 async def any_error(request: Request, exc: Exception):
-    logger.error(f"❌ Unhandled error: {exc}")
+    logger.exception("Unhandled error")
     return JSONResponse(status_code=500, content={"success": False, "error": "Internal server error"})
