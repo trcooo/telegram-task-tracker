@@ -320,6 +320,24 @@ async def serve_index():
 if os.path.exists(WEB_DIR):
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
+# --- Static asset convenience routes (Telegram WebView sometimes fails /static/* caching) ---
+@app.get("/style.css")
+async def style_css():
+    return FileResponse(os.path.join(WEB_DIR, "style.css"), media_type="text/css")
+
+@app.get("/app.js")
+async def app_js():
+    return FileResponse(os.path.join(WEB_DIR, "app.js"), media_type="application/javascript")
+
+@app.get("/logo.png")
+async def logo_png():
+    return FileResponse(os.path.join(WEB_DIR, "logo.png"), media_type="image/png")
+
+@app.get("/manifest.json")
+async def manifest_json():
+    return FileResponse(os.path.join(WEB_DIR, "manifest.json"), media_type="application/json")
+
+
 @app.exception_handler(Exception)
 async def any_error(request: Request, exc: Exception):
     logger.exception("Unhandled error")
