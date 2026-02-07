@@ -1,9 +1,9 @@
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime, date as ddate
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Response, Depends
 
 import hmac
 import hashlib
@@ -21,8 +21,8 @@ def verify_telegram_init_data(init_data: str, bot_token: str) -> dict:
         raise ValueError("no hash")
     # Build data_check_string
     data_check_string = "\n".join(f"{k}={data[k]}" for k in sorted(data.keys()))
-    secret = hashlib.sha256(bot_token.encode("utf-8")).digest()
-    calc_hash = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+    secret_key = hmac.new(key=b"WebAppData", msg=bot_token.encode("utf-8"), digestmod=hashlib.sha256).digest()
+    calc_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
     if calc_hash != recv_hash:
         raise ValueError("bad hash")
     return data
@@ -259,6 +259,7 @@ def to_out(t: Task) -> TaskOut:
 
 @app.get("/api/tasks", response_model=List[TaskOut])
 async def get_tasks(request: Request, db: Session = Depends(get_db)):
+    uid = get_current_user_id(request)
     tasks = (
         db.query(Task)
         .filter(Task.user_id == uid)
@@ -268,31 +269,98 @@ async def get_tasks(request: Request, db: Session = Depends(get_db)):
     return [to_out(t) for t in tasks]
 
 @app.post("/api/tasks", response_model=TaskOut)
-async def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
+async def create_task(request: Request, response: Response, payload: TaskCreate, db: Session = Depends(get_db)):
+    uid = get_current_user_id(request)
     pr = (payload.priority or "medium").lower().strip()
     if pr not in ["high", "medium", "low"]:
         pr = "medium"
 
-    t = Task(
-        user_id=payload.user_id,
-        title=payload.title.strip(),
-        description=(payload.description or "").strip(),
-        priority=pr,
-        due_at=parse_iso_datetime(payload.due_at),
-        completed=False,
-        reminder_enabled=bool(payload.reminder_enabled),
-        reminder_sent=False,
-    )
-    db.add(t)
+    start_utc = parse_iso_datetime(payload.due_at) if payload.due_at else None
+
+    rule = payload.recurrence
+    until_str = payload.recurrence_until
+    tz_off = int(payload.tz_offset_minutes or 0)
+
+    # Single task (default)
+    if not rule or not until_str:
+        t = Task(
+            user_id=uid,
+            title=payload.title.strip(),
+            description=(payload.description or "").strip(),
+            priority=pr,
+            due_at=start_utc,
+            completed=False,
+            reminder_enabled=bool(payload.reminder_enabled),
+            reminder_sent=False,
+        )
+        db.add(t)
+        db.commit()
+        db.refresh(t)
+        response.headers["X-Created-Count"] = "1"
+        return to_out(t)
+
+    if not start_utc:
+        raise HTTPException(status_code=400, detail="recurrence_requires_due_at")
+
+    # Recurring series: materialize tasks up to until date (in user's local date)
+    try:
+        until_date = datetime.strptime(until_str, "%Y-%m-%d").date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="bad_recurrence_until_format")
+
+    series_id = uuid.uuid4().hex
+    local_start = _to_local(start_utc, tz_off)
+
+    created = []
+    for occ_local in _iter_recurrences(local_start, rule, until_date):
+        occ_utc = _to_utc(occ_local, tz_off)
+        t = Task(
+            user_id=uid,
+            series_id=series_id,
+            recurrence_rule=json.dumps(rule, ensure_ascii=False),
+            recurrence_until=datetime.combine(until_date, dtime(23, 59, 59)),
+            title=payload.title.strip(),
+            description=(payload.description or "").strip(),
+            priority=pr,
+            due_at=occ_utc,
+            completed=False,
+            reminder_enabled=bool(payload.reminder_enabled),
+            reminder_sent=False,
+        )
+        db.add(t)
+        created.append(t)
+
+    if not created:
+        raise HTTPException(status_code=400, detail="no_occurrences_created")
+
     db.commit()
-    db.refresh(t)
-    return to_out(t)
+    # return first occurrence (closest to start)
+    created.sort(key=lambda x: (x.due_at or datetime.max))
+    db.refresh(created[0])
+    response.headers["X-Created-Count"] = str(len(created))
+    return to_out(created[0])
 
 @app.put("/api/tasks/{task_id}", response_model=TaskOut)
-async def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
+async def update_task(request: Request, task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
     t = db.query(Task).filter(Task.id == task_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    uid = get_current_user_id(request)
+    if t.user_id != uid:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    uid = get_current_user_id(request)
+    if t.user_id != uid:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    uid = get_current_user_id(request)
+    if t.user_id != uid:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    uid = get_current_user_id(request)
+    if t.user_id != uid:
+        raise HTTPException(status_code=403, detail="forbidden")
 
     changed_due = False
     reopened = False
@@ -327,7 +395,7 @@ class MigrateUser(BaseModel):
     to_user_id: int
 
 @app.post("/api/migrate_user")
-async def migrate_user(payload: MigrateUser, request: Request, db: Session = Depends(get_db)):
+async def migrate_user(request: Request, payload: MigrateUser, db: Session = Depends(get_db)):
     """Перенос задач со старого user_id на новый (например, если раньше работали в браузере с user_id=1)."""
     uid = get_current_user_id(request)
     if payload.to_user_id != uid:
@@ -350,8 +418,8 @@ async def delete_task(request: Request, task_id: int, db: Session = Depends(get_
     db.commit()
     return {"success": True}
 
-@app.post("/api/tasks/{task_id}/done")
-async def mark_done(task_id: int, db: Session = Depends(get_db)):
+@app.post("/api/tasks/{task_id}/done", response_model=TaskOut)
+async def mark_done(request: Request, task_id: int, db: Session = Depends(get_db)):
     t = db.query(Task).filter(Task.id == task_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -359,8 +427,8 @@ async def mark_done(task_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"success": True}
 
-@app.post("/api/tasks/{task_id}/undone")
-async def mark_undone(task_id: int, db: Session = Depends(get_db)):
+@app.post("/api/tasks/{task_id}/undone", response_model=TaskOut)
+async def mark_undone(request: Request, task_id: int, db: Session = Depends(get_db)):
     t = db.query(Task).filter(Task.id == task_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -371,7 +439,7 @@ async def mark_undone(task_id: int, db: Session = Depends(get_db)):
 
 # optional: snooze +15 min from UI
 @app.post("/api/tasks/{task_id}/snooze15", response_model=TaskOut)
-async def snooze_15(task_id: int, db: Session = Depends(get_db)):
+async def snooze_15(request: Request, task_id: int, db: Session = Depends(get_db)):
     t = db.query(Task).filter(Task.id == task_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")

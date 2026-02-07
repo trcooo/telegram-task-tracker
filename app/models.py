@@ -8,6 +8,10 @@ class Task(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, index=True, nullable=False)
 
+    series_id = Column(String(64), index=True, nullable=True)
+    recurrence_rule = Column(Text, nullable=True)  # JSON rule
+    recurrence_until = Column(DateTime, nullable=True)
+
     title = Column(String(200), nullable=False)
     description = Column(String(1000), default="", nullable=False)
 

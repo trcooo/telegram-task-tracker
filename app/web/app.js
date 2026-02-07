@@ -246,8 +246,14 @@
       headers: apiHeaders(),
       body: JSON.stringify(payload)
     });
-    if (!r.ok) throw new Error('create failed');
-    return await r.json();
+    if (!r.ok) {
+      let detail='';
+      try{ const j=await r.json(); detail=j.detail||JSON.stringify(j);}catch(e){ try{detail=await r.text();}catch(_){}}
+      throw new Error(detail || `HTTP ${r.status}`);
+    }
+    const createdCount = Number(r.headers.get('X-Created-Count')||'0');
+    const data = await r.json();
+    return { data, createdCount };
   }
   async function apiUpdate(id, payload) {
     const r = await fetch(`${API}/api/tasks/${id}`, {
@@ -265,7 +271,7 @@
   }
   async function apiToggle(id, done) {
     const ep = done ? 'done' : 'undone';
-    const r = await fetch(`${API}/api/tasks/${id}/${ep}`, { method: 'POST' });
+    const r = await fetch(`${API}/api/tasks/${id}/${ep}`, { method: 'POST', headers: apiHeaders() });
     if (!r.ok) throw new Error('toggle failed');
     return await r.json();
   }
@@ -280,7 +286,7 @@
   }
 
   async function apiSnooze15(id) {
-    const r = await fetch(`${API}/api/tasks/${id}/snooze15`, { method: 'POST' });
+    const r = await fetch(`${API}/api/tasks/${id}/snooze15`, { method: 'POST', headers: apiHeaders() });
     if (!r.ok) throw new Error('snooze failed');
     return await r.json();
   }
@@ -572,8 +578,9 @@
 
     try {
       if (!editingId) {
-        await apiCreate({ user_id: userId, ...payload });
-        toast('Задача добавлена', 'good');
+        const res = await apiCreate({ user_id: userId, ...payload });
+        if (res.createdCount && res.createdCount > 1) toast(`Создано ${res.createdCount} задач`, 'good');
+        else toast('Задача добавлена', 'good');
       } else {
         await apiUpdate(editingId, payload);
         toast('Сохранено', 'good');
