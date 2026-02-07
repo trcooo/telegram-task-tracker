@@ -19,6 +19,26 @@ logger = logging.getLogger("taskflow")
 app = FastAPI(title="TaskFlow API", version="3.1.0")
 
 
+# --- Disable caching for Telegram WebView quirks ---
+BUILD_ID = "1770481524"
+
+@app.middleware("http")
+async def no_cache_middleware(request: Request, call_next):
+    resp = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith(".html") or path.endswith(".js") or path.endswith(".css") or path.endswith(".png") or path.endswith("manifest.json"):
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+    resp.headers["X-Build-Id"] = BUILD_ID
+    return resp
+
+@app.get("/version")
+async def version():
+    return {"build": BUILD_ID}
+
+
+
 from datetime import datetime, timedelta
 
 def _parse_utc_noz(dt_str: str):
