@@ -13,7 +13,45 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/style.css?v=1770491572" />
+  
+
+  <script>
+  (function() {
+    const BUILD = "1770492909";
+    try {
+      const url = new URL(location.href);
+      if (url.searchParams.get("v") !== BUILD) {
+        url.searchParams.set("v", BUILD);
+        location.replace(url.toString());
+        return;
+      }
+      const v = url.searchParams.get("v") || BUILD;
+      const css = document.createElement("link");
+      css.rel = "stylesheet";
+      css.href = "/style.css?v=" + encodeURIComponent(v);
+      document.head.appendChild(css);
+
+      const js = document.createElement("script");
+      js.src = "/app.js?v=" + encodeURIComponent(v);
+      js.defer = true;
+      document.head.appendChild(js);
+
+      window.__BUILD = BUILD;
+    } catch (e) {
+      // fallback (no cache-bust)
+      const css = document.createElement("link");
+      css.rel = "stylesheet";
+      css.href = "/style.css";
+      document.head.appendChild(css);
+
+      const js = document.createElement("script");
+      js.src = "/app.js";
+      js.defer = true;
+      document.head.appendChild(js);
+    }
+  })();
+  </script>
+
 </head>
 <body>
   <div class="toast" id="toast" aria-live="polite"></div>
@@ -38,30 +76,33 @@
       <!-- TASKS SCREEN -->
       <section class="screen show" id="screenTasks">
         
-        <section class="ttHeader">
+        <header class="ttHeader">
+          <div class="ttTopRow">
+            <div class="ttTitleWrap">
+              <div class="ttTitle">Задачи</div>
+              <div class="ttSub" id="ttSubtitle">Входящие</div>
+            </div>
+            <div class="ttActions">
+              <button class="ttIconBtn" id="syncBtn" type="button" aria-label="Синхронизировать">⟲</button>
+              <button class="ttIconBtn primary" id="addBtnTop" type="button" aria-label="Добавить задачу">＋</button>
+            </div>
+          </div>
+
           <div class="ttSearch">
-            <span class="ttSIcon">⌕</span>
-            <input class="ttSInput" id="searchInput" placeholder="Поиск" />
-            <button class="ttSClear" id="clearSearch" title="Очистить" aria-label="Очистить">✕</button>
+            <span class="ttSearchIcon">⌕</span>
+            <input class="ttSInput" id="searchInput" placeholder="Поиск по задачам…" />
+            <button class="ttClear" id="clearSearch" type="button" aria-label="Очистить">×</button>
           </div>
 
-          <div class="ttSmartBar" id="filtersTasks">
-            <button class="ttChip active" data-filter="inbox">Входящие</button>
-            <button class="ttChip" data-filter="today">Сегодня</button>
-            <button class="ttChip" data-filter="upcoming">Предстоящие</button>
-            <button class="ttChip" data-filter="overdue">Просрочено</button>
-            <button class="ttChip" data-filter="done">Завершено</button>
+          <div class="ttChips" id="filtersTasks">
+            <button class="ttChip active" data-filter="inbox" type="button">Входящие</button>
+            <button class="ttChip" data-filter="today" type="button">Сегодня</button>
+            <button class="ttChip" data-filter="upcoming" type="button">Предстоящие</button>
+            <button class="ttChip" data-filter="overdue" type="button">Просрочено</button>
+            <button class="ttChip" data-filter="done" type="button">Завершено</button>
           </div>
-
-          <div class="ttStats">
-            <div class="ttStat"><div class="ttN" id="kpiActive">0</div><div class="ttL">Активные</div></div>
-            <div class="ttStat"><div class="ttN" id="kpiToday">0</div><div class="ttL">Сегодня</div></div>
-            <div class="ttStat danger"><div class="ttN" id="kpiOverdue">0</div><div class="ttL">Просрочено</div></div>
-            <button class="ttGhost" id="exportBtn" type="button">Экспорт</button>
-          </div>
-        </section>
-
-        <section class="listHeader">
+        </header>
+<section class="listHeader">
           <div class="listTitle" id="listTitle">Активные</div>
           <div class="counter" id="listCounter">0</div>
         </section>
@@ -119,6 +160,7 @@
       <section class="screen" id="screenMenu">
         <section class="menuCard">
           <div class="menuTitle">Меню</div>
+          <div class="menuBuild" id="buildBadge"></div>
 
           <div class="menuUser">
             <div class="menuAvatar" id="menuAvatar">TF</div>
@@ -250,22 +292,9 @@
     </div>
   </div>
 
-  <script src="/app.js?v=1770491572" defer></script>
+  
 
-<script>
-(function() {
-  const BUILD = "1770491572";
-  // Force-bust cached HTML in Telegram WebView by ensuring query param matches build
-  try {
-    const url = new URL(location.href);
-    if (url.searchParams.get("v") !== BUILD) {
-      url.searchParams.set("v", BUILD);
-      location.replace(url.toString());
-      return;
-    }
-  } catch(e) {}
-})();
-</script>
+
 
 </body>
 </html>

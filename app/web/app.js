@@ -368,8 +368,8 @@
   // ---------- Tasks view ----------
   function applyFilter(list) {
     let out = list;
-    if (filter === 'active') out = out.filter(t => !t.completed);
     if (filter === 'inbox') out = out.filter(t => !t.completed && !t.due_at);
+    if (filter === 'active') out = out.filter(t => !t.completed);
     if (filter === 'done') out = out.filter(t => t.completed);
     if (filter === 'overdue') out = out.filter(t => isOverdue(t));
     if (filter === 'today') out = out.filter(t => isToday(t));
@@ -393,24 +393,31 @@
   function setListTitle() {
     const map = { inbox:'Входящие', active:'Активные', today:'Сегодня', overdue:'Просрочено', upcoming:'Предстоящие', done:'Завершено' };
     el.listTitle.textContent = map[filter] || 'Задачи';
+    const sub = document.getElementById('ttSubtitle');
+    if (sub) sub.textContent = map[filter] || 'Задачи';
   }
 
   
 function cardHTML(t) {
     const overdue = isOverdue(t);
-    const pr = (t.priority || 'medium');
-    const prClass = pr === 'high' ? 'high' : (pr === 'low' ? 'low' : 'med');
-    const dueLabel = t.due_at
+    const dueTag = t.due_at
       ? (overdue
-          ? `<span class="duePill bad">Просрочено • ${escapeHtml(fmtDue(t.due_at))}</span>`
-          : `<span class="duePill accent">${escapeHtml(fmtDue(t.due_at))}</span>`)
-      : `<span class="duePill">Без срока</span>`;
+          ? `<span class="tBadge bad">Просрочено • ${escapeHtml(fmtDue(t.due_at))}</span>`
+          : `<span class="tBadge accent">${escapeHtml(fmtDue(t.due_at))}</span>`)
+      : `<span class="tBadge">Без срока</span>`;
 
+    const pr = (t.priority || 'medium');
+    const prTag = pr === 'high' ? `<span class="tBadge bad">Высокий</span>` : (pr === 'low' ? `<span class="tBadge good">Низкий</span>` : `<span class="tBadge">Средний</span>`);
+    const remTag = (t.reminder_enabled === false) ? `<span class="tBadge">Напом. выкл</span>` : `<span class="tBadge good">Напом. вкл</span>`;
+
+    const rowCls = `taskRow swipe ${t.completed ? 'done' : ''} ${overdue ? 'overdue' : ''}`;
+
+    // swipe actions (kept)
     const snoozeBtn = (!t.completed && t.due_at) ? `<button class="sAct ghost" data-action="snooze" title="Отложить">⏰</button>` : '';
     const toggleIcon = t.completed ? '↩' : '✓';
 
     return `
-      <div class="card swipe" data-id="${t.id}">
+      <div class="${rowCls}" data-id="${t.id}">
         <div class="swipeActions" aria-hidden="true">
           <button class="sAct good" data-action="toggle" title="${t.completed ? 'Вернуть' : 'Готово'}">${toggleIcon}</button>
           <button class="sAct ghost" data-action="edit" title="Редактировать">✎</button>
@@ -418,28 +425,24 @@ function cardHTML(t) {
           <button class="sAct bad" data-action="delete" title="Удалить">🗑</button>
         </div>
 
-        <div class="cardBody">
-          <button class="taskCheck ${t.completed ? 'done' : ''}" data-action="toggle" aria-label="${t.completed ? 'Вернуть' : 'Отметить выполненной'}">✓</button>
+        <button class="taskCheck" data-action="toggle" aria-label="${t.completed ? 'Вернуть' : 'Готово'}">${t.completed ? '✓' : ''}</button>
 
-          <div class="taskMain">
-            <div class="taskTitle ${t.completed ? 'done' : ''}">${escapeHtml(t.title)}</div>
-            ${t.description ? `<div class="taskDesc">${escapeHtml(t.description)}</div>` : ''}
-            <div class="taskMeta">
-              ${dueLabel}
-              <span class="prDot ${prClass}" title="Приоритет"></span>
-              ${(t.reminder_enabled === false) ? `<span class="duePill">Напом. выкл</span>` : `<span class="duePill">Напом.</span>`}
-            </div>
-          </div>
-
-          <div class="taskActionsMini">
-            <button class="miniBtn" data-action="edit" aria-label="Редактировать">⋯</button>
+        <div class="taskMain">
+          <div class="taskTitle">${escapeHtml(t.title || '')}</div>
+          ${t.description ? `<div class="taskDesc">${escapeHtml(t.description)}</div>` : ''}
+          <div class="taskMeta">
+            ${dueTag}
+            ${prTag}
+            ${remTag}
           </div>
         </div>
+
+        <button class="taskMore" data-action="edit" aria-label="Редактировать">⋯</button>
       </div>
     `;
   }
 
-function renderTasks() {
+  function renderTasks() {
     const view = applyFilter(tasks);
     setListTitle();
     el.listCounter.textContent = String(view.length);
@@ -713,14 +716,21 @@ function renderTasks() {
 
   function bind() {
     // task filters
-    document.querySelectorAll('#filtersTasks button[data-filter]').forEach(btn => {
+    document.querySelectorAll('#filtersTasks [data-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('#filtersTasks button[data-filter]').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#filtersTasks [data-filter]').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         filter = btn.dataset.filter;
         renderTasks();
       });
     });
+    // tick-like header actions (optional)
+    const addTop = document.getElementById('addBtnTop');
+    if (addTop) addTop.addEventListener('click', () => openTaskModal(null));
+
+    const syncTop = document.getElementById('syncBtn');
+    if (syncTop) syncTop.addEventListener('click', () => syncAll());
+
 
     // bottom nav screens
     document.querySelectorAll('.bottomNav .navBtn[data-screen]').forEach(btn => {
@@ -729,7 +739,7 @@ function renderTasks() {
         if (s === 'overdue') {
           showScreen('tasks','overdue');
           filter = 'overdue';
-          document.querySelectorAll('#filtersTasks button[data-filter]').forEach(b => b.classList.toggle('active', b.dataset.filter==='overdue'));
+          document.querySelectorAll('#filtersTasks .seg').forEach(b => b.classList.toggle('active', b.dataset.filter==='overdue'));
           renderTasks();
           return;
         }
@@ -1117,8 +1127,11 @@ function renderTasks() {
     bindThemeUI();
     try{
       const me = await apiMe();
-      const fullName = [me.first_name, me.last_name].filter(Boolean).join(' ') || 'Пользователь';
+      const fullName = (me.username ? ('@' + me.username) : ([me.first_name, me.last_name].filter(Boolean).join(' '))) || 'Пользователь';
       if (el.menuUserName) el.menuUserName.textContent = fullName;
+      const bb = document.getElementById('buildBadge');
+      if (bb) bb.textContent = window.__BUILD ? ('Build ' + window.__BUILD) : '';
+
       if (el.menuUserHandle) el.menuUserHandle.textContent = me.username ? '@' + me.username : (me.mode === 'telegram' ? 'Telegram' : 'Браузер');
       if (el.menuAvatar) {
         const initials = (me.first_name||'').slice(0,1) + (me.last_name||'').slice(0,1);

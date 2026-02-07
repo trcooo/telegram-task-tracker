@@ -78,7 +78,7 @@ WEB_DIR = os.path.join(BASE_DIR, 'web')
 
 
 # --- Disable caching for Telegram WebView quirks ---
-BUILD_ID = "1770481524"
+BUILD_ID = "1770492909"
 
 @app.middleware("http")
 async def no_cache_middleware(request: Request, call_next):

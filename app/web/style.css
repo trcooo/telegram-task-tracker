@@ -32,6 +32,10 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+
+/* --- Screen routing (fix: show only active screen) --- */
+.screen{display:none;}
+.screen.show{display:block;}
 /* theme: light */
 html[data-theme="light"]{
   --bg:#f6f7fb;
@@ -578,244 +582,178 @@ body{
 .input:focus{border-color: rgba(255,107,53,.45); box-shadow: 0 0 0 4px rgba(255,107,53,.12);}
 
 
-/* TickTick-inspired UI (original look preserved, but tuned for modern minimal UI) */
-.topbar{
+/* --- Tick-like Tasks Header --- */
+.ttHeader{
   position: sticky;
   top: 0;
-  z-index: 10;
-  background: linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,0));
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
+  z-index: 20;
+  padding: 10px 6px 12px;
+  margin: 0 -14px 10px;
+  background: linear-gradient(180deg, rgba(10,12,16,.92), rgba(10,12,16,.72) 60%, rgba(10,12,16,0));
+  backdrop-filter: blur(14px);
 }
-html[data-theme="light"] .topbar{
-  background: linear-gradient(180deg, rgba(255,255,255,.75), rgba(255,255,255,0));
+:root[data-theme="light"] .ttHeader{
+  background: linear-gradient(180deg, rgba(250,250,252,.92), rgba(250,250,252,.75) 60%, rgba(250,250,252,0));
 }
-
-.brandTitle{letter-spacing:-.02em}
-.brandSub{font-size:12px}
-
-.ttHeader{padding: 10px 12px 8px; display:flex; flex-direction:column; gap:10px;}
-.ttSearch{
-  display:flex; align-items:center; gap:10px;
-  background: var(--controlBg);
-  border: 1px solid var(--border);
+.ttTopRow{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding: 0 8px; }
+.ttTitle{ font-size: 22px; font-weight: 800; letter-spacing: .2px; }
+.ttSub{ font-size: 12px; opacity: .72; margin-top: 2px; }
+.ttActions{ display:flex; gap:10px; }
+.ttIconBtn{
+  width: 42px; height: 42px;
   border-radius: 14px;
-  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04);
+  color: inherit;
 }
-.ttSIcon{opacity:.7; font-weight:700}
+:root[data-theme="light"] .ttIconBtn{
+  border-color: rgba(0,0,0,.10);
+  background: rgba(0,0,0,.03);
+}
+.ttIconBtn.primary{
+  border-color: rgba(255,107,53,.35);
+  background: rgba(255,107,53,.18);
+}
+.ttSearch{
+  display:flex; align-items:center; gap:8px;
+  margin: 10px 8px 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04);
+}
+:root[data-theme="light"] .ttSearch{
+  border-color: rgba(0,0,0,.10);
+  background: rgba(0,0,0,.03);
+}
+.ttSearchIcon{ opacity:.65; font-size: 14px; }
 .ttSInput{
   flex:1;
-  border:none; outline:none; background:transparent;
-  color: var(--text);
-  font-size:14px;
-}
-.ttSClear{
   border:none;
-  background:transparent;
-  color: var(--muted);
-  font-size:14px;
-  padding:4px 8px;
-  border-radius:10px;
-}
-.ttSClear:hover{background: var(--controlHover);}
-
-.ttSmartBar{
-  display:flex;
-  gap:8px;
-  overflow:auto;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: 2px;
-}
-.ttSmartBar::-webkit-scrollbar{display:none;}
-.ttChip{
-  flex: 0 0 auto;
-  border: 1px solid var(--border);
+  outline:none;
   background: transparent;
-  color: var(--muted);
-  padding: 8px 12px;
+  color: inherit;
+  font-size: 14px;
+}
+.ttClear{
+  width: 26px; height: 26px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(255,255,255,.08);
+  color: inherit;
+  opacity: .8;
+}
+:root[data-theme="light"] .ttClear{ background: rgba(0,0,0,.06); }
+.ttChips{
+  display:flex; gap:8px;
+  overflow-x:auto;
+  padding: 0 8px 4px;
+  scrollbar-width: none;
+}
+.ttChips::-webkit-scrollbar{ display:none; }
+.ttChip{
+  flex:0 0 auto;
+  padding: 9px 12px;
   border-radius: 999px;
-  font-weight: 700;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.03);
+  color: inherit;
   font-size: 12px;
+  opacity:.86;
+}
+:root[data-theme="light"] .ttChip{
+  border-color: rgba(0,0,0,.10);
+  background: rgba(0,0,0,.03);
 }
 .ttChip.active{
-  background: linear-gradient(135deg, rgba(255,107,53,.22), rgba(255,107,53,.10));
-  border-color: rgba(255,107,53,.35);
-  color: var(--text);
+  opacity: 1;
+  border-color: rgba(255,107,53,.38);
+  background: rgba(255,107,53,.18);
 }
 
-.ttStats{
+/* --- Task list as modern rows --- */
+#cards{ display:flex; flex-direction:column; gap:10px; }
+.taskRow{
   display:flex;
-  gap:10px;
-  align-items:center;
+  gap:12px;
+  padding: 12px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.03);
+  position: relative;
+  overflow: hidden;
 }
-.ttStat{
-  flex:0 0 auto;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--panelBg);
+:root[data-theme="light"] .taskRow{
+  border-color: rgba(0,0,0,.10);
+  background: rgba(0,0,0,.02);
 }
-.ttStat.danger{border-color: rgba(255,77,77,.38)}
-.ttN{font-weight:900; font-size:14px; line-height:1}
-.ttL{font-size:10px; color: var(--muted); margin-top:2px}
-.ttGhost{
-  margin-left:auto;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-  padding: 8px 12px;
-  border-radius: 12px;
-  font-weight: 800;
-  font-size: 12px;
-}
-.ttGhost:hover{background: var(--controlHover);}
-
-.ttListHeader{margin-top: 4px}
-.listHeader{
-  display:flex; align-items:center; justify-content:space-between;
-  padding: 10px 12px 6px;
-}
-.listTitle{font-weight: 900; font-size: 18px; letter-spacing:-.02em}
-.counter{
-  min-width: 28px;
-  height: 26px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--panelBg);
-  display:flex; align-items:center; justify-content:center;
-  font-weight: 800;
-  color: var(--muted);
-}
-
-/* task list items */
-.cards{
-  display:flex;
-  flex-direction:column;
-  gap: 0;
-  padding: 0 8px 18px;
-}
-
-.card{
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  padding: 0;
-  border-radius: 0;
-  animation: none;
-}
-.card + .card{border-top: 1px solid var(--border);}
-
-.cardBody{
-  display:flex;
-  align-items:center;
-  gap: 12px;
-  padding: 12px 10px;
-  background: transparent;
-  transform: translateX(0);
-}
-
+.taskRow.overdue{ border-color: rgba(255,86,86,.35); background: rgba(255,86,86,.08); }
 .taskCheck{
-  width: 22px;
-  height: 22px;
+  width: 22px; height: 22px;
   border-radius: 999px;
-  border: 2px solid rgba(255,255,255,.22);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background: transparent;
-  color: transparent;
+  border: 2px solid rgba(255,255,255,.25);
+  display:flex; align-items:center; justify-content:center;
+  margin-top: 2px;
   flex: 0 0 auto;
 }
-html[data-theme="light"] .taskCheck{border-color: rgba(2,6,23,.20);}
-.taskCheck.done{
-  background: linear-gradient(135deg, rgba(255,107,53,.9), rgba(255,154,107,.9));
-  border-color: transparent;
-  color: #0b0f14;
+:root[data-theme="light"] .taskCheck{ border-color: rgba(0,0,0,.25); }
+.taskRow.done .taskCheck{
+  border-color: rgba(84, 220, 140, .55);
+  background: rgba(84,220,140,.18);
 }
-.taskMain{flex: 1; min-width:0;}
+.taskMain{ flex:1; min-width: 0; }
 .taskTitle{
-  font-weight: 800;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
   white-space: nowrap;
-  overflow:hidden;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
-.taskTitle.done{text-decoration: line-through; opacity:.65}
+.taskRow.done .taskTitle{ opacity:.55; text-decoration: line-through; }
 .taskDesc{
-  margin-top: 2px;
+  margin-top: 4px;
   font-size: 12px;
-  color: var(--muted);
+  opacity: .72;
   white-space: nowrap;
-  overflow:hidden;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 .taskMeta{
-  margin-top: 6px;
+  margin-top: 8px;
   display:flex;
-  gap: 8px;
   flex-wrap: wrap;
-  align-items:center;
+  gap:6px;
 }
-.duePill{
+.tBadge{
   font-size: 11px;
   padding: 4px 8px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--muted);
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.03);
+  opacity: .9;
 }
-.duePill.accent{border-color: rgba(255,107,53,.35); color: var(--text);}
-.duePill.bad{border-color: rgba(255,77,77,.45); color: #ff6b6b;}
-.prDot{
-  width: 8px; height: 8px; border-radius: 999px;
-  background: rgba(255,255,255,.20);
-}
-html[data-theme="light"] .prDot{background: rgba(2,6,23,.16)}
-.prDot.high{background: rgba(255,77,77,.9)}
-.prDot.low{background: rgba(100,220,160,.9)}
-.prDot.med{background: rgba(255,193,7,.9)}
-.taskActionsMini{
-  display:flex; gap:8px; align-items:center;
-}
-.miniBtn{
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted);
-  padding: 6px 10px;
-  border-radius: 12px;
-  font-weight: 800;
-  font-size: 12px;
-}
-.miniBtn:hover{background: var(--controlHover); color: var(--text);}
+:root[data-theme="light"] .tBadge{ border-color: rgba(0,0,0,.10); background: rgba(0,0,0,.03); }
+.tBadge.accent{ border-color: rgba(255,107,53,.35); background: rgba(255,107,53,.16); }
+.tBadge.bad{ border-color: rgba(255,86,86,.40); background: rgba(255,86,86,.14); }
+.tBadge.good{ border-color: rgba(84,220,140,.35); background: rgba(84,220,140,.16); }
 
-/* swipe actions palette tuned */
-.swipeActions{
-  width: 190px;
-  gap: 6px;
-  padding: 10px 8px;
+.taskMore{
+  width: 36px; height: 36px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04);
+  color: inherit;
+  flex: 0 0 auto;
 }
-.sAct{
-  border-radius: 12px;
-}
+:root[data-theme="light"] .taskMore{ border-color: rgba(0,0,0,.10); background: rgba(0,0,0,.03); }
 
-/* bottom nav more like modern apps */
-.bottomNav{
-  border-top: 1px solid var(--border);
-}
-.navBtn{
-  border: 1px solid var(--border);
-  background: var(--navBtnBg);
-}
-html[data-theme="light"] .navBtn{background: rgba(255,255,255,.92);}
-.navBtn.active{
-  background: linear-gradient(135deg, rgba(255,107,53,.22), rgba(255,107,53,.10));
-  border-color: rgba(255,107,53,.35);
-}
+/* Reduce old hero/kpi visual noise if still exists */
+.hero,.kpis,.searchRow{ display:none !important; }
 
-/* calendar tweaks */
-.calCard{box-shadow: var(--shadowCard)}
-.calDay{
-  border: 1px solid var(--border);
-  background: var(--panelBg);
-}
-.calDay:hover{background: var(--controlHover);}
-.calDay.today{border-color: rgba(255,107,53,.35)}
+
+/* --- Logo sizing guard --- */
+img{ max-width: 100%; height: auto; }
+.brandIcon{ width: 28px; height: 28px; border-radius: 10px; object-fit: cover; }
+
+.menuBuild{font-size:11px;opacity:.55;margin-top:4px;}
