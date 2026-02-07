@@ -42,6 +42,7 @@
     calGrid: document.getElementById('calGrid'),
     calPrev: document.getElementById('calPrev'),
     calNext: document.getElementById('calNext'),
+    calToday: document.getElementById('calToday'),
     dayTitle: document.getElementById('dayTitle'),
     dayHint: document.getElementById('dayHint'),
     dayCards: document.getElementById('dayCards'),
@@ -77,9 +78,6 @@
     fTime: document.getElementById('fTime'),
     fPriority: document.getElementById('fPriority'),
     fReminder: document.getElementById('fReminder'),
-    fRepeat: document.getElementById('fRepeat'),
-    fRepeatUntil: document.getElementById('fRepeatUntil'),
-    weekdays: document.getElementById('weekdays'),
   };
 
   let userId = 1;
@@ -97,7 +95,6 @@
   // calendar state
   let calMonth = new Date(); calMonth.setDate(1);
   let selectedDay = new Date();
-  let repeatWeekdays = new Set([0]);
 
   // settings (persist)
   const settings = {
@@ -518,10 +515,6 @@
   // ---------- Modal ----------
   function openModal(task=null, presetDate=null) {
     editingId = task ? task.id : null;
-    if (el.fRepeat) el.fRepeat.value = 'none';
-    if (el.fRepeatUntil) el.fRepeatUntil.value = '';
-    repeatWeekdays = new Set([0]);
-    if (el.weekdays) { el.weekdays.style.display='none'; el.weekdays.querySelectorAll('.wd').forEach(b=>b.classList.remove('active')); }
 
     el.modalTitle.textContent = task ? 'Редактирование' : 'Новая задача';
     el.deleteBtn.style.display = task ? 'inline-flex' : 'none';
@@ -559,24 +552,9 @@
     const title = el.fTitle.value.trim();
     const description = el.fDesc.value.trim();
     if (!title) { toast('Введите название', 'warn'); return; }
-    if (el.fRepeat && el.fRepeat.value !== 'none' && !el.fRepeatUntil.value) {
-      toast('Введите дату окончания повтора', 'warn');
-      return;
-    }
-
 
     const due_at = isoUtcNoZFromInputs(el.fDate.value, el.fTime.value);
-        const tzOff = tzOffsetMinutes();
-    let recurrence = null;
-    let recurrence_until = null;
-    if (el.fRepeat && el.fRepeat.value !== 'none') {
-      recurrence_until = el.fRepeatUntil.value || null;
-      const freq = el.fRepeat.value === 'custom' ? 'weekly' : el.fRepeat.value;
-      recurrence = { freq, interval: 1 };
-      if (el.fRepeat.value === 'custom') {
-        recurrence.byweekday = Array.from(repeatWeekdays).sort((a,b)=>a-b);
-      }
-    }
+    const tzOff = tzOffsetMinutes();
 
     const payload = {
       title,
@@ -584,23 +562,20 @@
       priority: el.fPriority.value,
       due_at,
       reminder_enabled: (el.fReminder.value !== 'off'),
-      tz_offset_minutes: tzOff,
-      recurrence,
-      recurrence_until
+      tz_offset_minutes: tzOff
     };
 
     try {
       if (!editingId) {
         const res = await apiCreate(payload);
-        if (res.createdCount && res.createdCount > 1) toast(`Создано ${res.createdCount} задач`, 'good');
-        else toast('Задача добавлена', 'good');
+        toast('Задача добавлена', 'good');
       } else {
         await apiUpdate(editingId, payload);
         toast('Сохранено', 'good');
       }
       closeModal();
       enableCalendarDrag();
-    await refresh(true);
+      await refresh(true);
     } catch (e) {
       toast('Ошибка: ' + (e?.message || e), 'bad');
       console.error(e);
@@ -679,26 +654,6 @@
   }
 
   // ---------- Events ----------
-      // repeat UI
-    function bindRepeatUI(){
-      if (!el.fRepeat) return;
-      const updateVisibility = () => {
-        const v = el.fRepeat.value;
-        if (el.weekdays) el.weekdays.style.display = (v === 'custom') ? 'flex' : 'none';
-      };
-      el.fRepeat.addEventListener('change', updateVisibility);
-      updateVisibility();
-      if (el.weekdays) {
-        el.weekdays.querySelectorAll('.wd').forEach(btn => {
-          btn.addEventListener('click', () => {
-            const wd = Number(btn.dataset.wd);
-            if (repeatWeekdays.has(wd)) repeatWeekdays.delete(wd);
-            else repeatWeekdays.add(wd);
-            btn.classList.toggle('active', repeatWeekdays.has(wd));
-          });
-        });
-      }
-    }
 
   function bind() {
     // task filters
@@ -736,6 +691,14 @@
     el.fab.addEventListener('click', () => openModal());
 
     // calendar nav
+    if (el.calToday) el.calToday.addEventListener('click', () => {
+      const now = new Date();
+      selectedDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      calMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      renderCalendar();
+      renderSelectedDay();
+    });
+
     el.calPrev.addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth()-1, 1); renderCalendar(); });
     el.calNext.addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth()+1, 1); renderCalendar(); });
     el.dayAddBtn.addEventListener('click', () => openModal(null, new Date(selectedDay)));
@@ -995,7 +958,6 @@
       }
     }catch(e){ /* ignore */ }
     bind();
-    bindRepeatUI();
     showScreen('tasks');
     await refresh(true);
   }

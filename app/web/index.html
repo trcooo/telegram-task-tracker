@@ -178,11 +178,11 @@
     </main>
 
     <nav class="bottomNav">
-      <button class="navBtn active" data-screen="tasks">Задачи</button>
-      <button class="navBtn" data-screen="calendar">Календарь</button>
+      <button class="navBtn active" data-screen="tasks"><span class="navI">🗒️</span><span class="navT">Задачи</span></button>
+      <button class="navBtn" data-screen="calendar"><span class="navI">📅</span><span class="navT">Календарь</span></button>
       <button class="navBtn add" id="fab" aria-label="Добавить">＋</button>
-      <button class="navBtn" data-screen="overdue">Просрочено</button>
-      <button class="navBtn" data-screen="menu">Меню</button>
+      <button class="navBtn" data-screen="overdue"><span class="navI">⏰</span><span class="navT">Просрочено</span></button>
+      <button class="navBtn" data-screen="menu"><span class="navI">👤</span><span class="navT">Меню</span></button>
     </nav>
   </div>
 
@@ -214,54 +214,7 @@
           <input class="input" id="fTime" type="time" />
         </div>
       </div>
-
-      <div class="grid2">
-        <div>
-          <label class="lbl">Приоритет</label>
-          <select class="input" id="fPriority">
-            <option value="high">Высокий</option>
-            <option value="medium" selected>Средний</option>
-            <option value="low">Низкий</option>
-          </select>
-        </div>
-        <div>
-          <label class="lbl">Напоминание</label>
-          <select class="input" id="fReminder">
-            <option value="on" selected>Вкл</option>
-            <option value="off">Выкл</option>
-          </select>
-        </div>
-      </div>
-
-      
-      <div class="grid2">
-        <div>
-          <label class="lbl">Повторять</label>
-          <select class="input" id="fRepeat">
-            <option value="none" selected>Не повторять</option>
-            <option value="daily">Каждый день</option>
-            <option value="weekly">Каждую неделю</option>
-            <option value="monthly">Каждый месяц</option>
-            <option value="custom">По дням недели</option>
-          </select>
-        </div>
-        <div>
-          <label class="lbl">Повторять до</label>
-          <input class="input" id="fRepeatUntil" type="date" />
-        </div>
-      </div>
-
-      <div class="weekdays" id="weekdays" style="display:none;">
-        <button type="button" class="wd" data-wd="0">Пн</button>
-        <button type="button" class="wd" data-wd="1">Вт</button>
-        <button type="button" class="wd" data-wd="2">Ср</button>
-        <button type="button" class="wd" data-wd="3">Чт</button>
-        <button type="button" class="wd" data-wd="4">Пт</button>
-        <button type="button" class="wd" data-wd="5">Сб</button>
-        <button type="button" class="wd" data-wd="6">Вс</button>
-      </div>
-
-      <div class="modalActions">
+<div class="modalActions">
         <button class="btn ghost" id="deleteBtn" type="button">Удалить</button>
         <button class="btn" id="saveBtn" type="button">Сохранить</button>
       </div>
@@ -272,7 +225,7 @@
 
 <script>
 (function() {
-  const BUILD = "1770486401";
+  const BUILD = "1770487156";
   // Force-bust cached HTML in Telegram WebView by ensuring query param matches build
   try {
     const url = new URL(location.href);

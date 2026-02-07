@@ -297,75 +297,34 @@ async def get_tasks(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/api/tasks", response_model=TaskOut)
 async def create_task(request: Request, response: Response, payload: TaskCreate, db: Session = Depends(get_db)):
+    """Create a single task (recurrence/повторы отключены)."""
     uid = get_current_user_id(request)
+
+    title = (payload.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title_required")
+
     pr = (payload.priority or "medium").lower().strip()
     if pr not in ["high", "medium", "low"]:
         pr = "medium"
 
-    start_utc = parse_iso_datetime(payload.due_at) if payload.due_at else None
+    due_utc = parse_iso_datetime(payload.due_at) if payload.due_at else None
 
-    rule = payload.recurrence
-    until_str = payload.recurrence_until
-    tz_off = int(payload.tz_offset_minutes or 0)
-
-    # Single task (default)
-    if not rule or not until_str:
-        t = Task(
-            user_id=uid,
-            title=payload.title.strip(),
-            description=(payload.description or "").strip(),
-            priority=pr,
-            due_at=start_utc,
-            completed=False,
-            reminder_enabled=bool(payload.reminder_enabled),
-            reminder_sent=False,
-        )
-        db.add(t)
-        db.commit()
-        db.refresh(t)
-        response.headers["X-Created-Count"] = "1"
-        return to_out(t)
-
-    if not start_utc:
-        raise HTTPException(status_code=400, detail="recurrence_requires_due_at")
-
-    # Recurring series: materialize tasks up to until date (in user's local date)
-    try:
-        until_date = datetime.strptime(until_str, "%Y-%m-%d").date()
-    except Exception:
-        raise HTTPException(status_code=400, detail="bad_recurrence_until_format")
-
-    series_id = uuid.uuid4().hex
-    local_start = _to_local(start_utc, tz_off)
-
-    created = []
-    for occ_local in _iter_recurrences(local_start, rule, until_date):
-        occ_utc = _to_utc(occ_local, tz_off)
-        t = Task(
-            user_id=uid,
-            series_id=series_id,
-            recurrence_rule=json.dumps(rule, ensure_ascii=False),
-            recurrence_until=datetime.combine(until_date, dtime(23, 59, 59)),
-            title=payload.title.strip(),
-            description=(payload.description or "").strip(),
-            priority=pr,
-            due_at=occ_utc,
-            completed=False,
-            reminder_enabled=bool(payload.reminder_enabled),
-            reminder_sent=False,
-        )
-        db.add(t)
-        created.append(t)
-
-    if not created:
-        raise HTTPException(status_code=400, detail="no_occurrences_created")
-
+    t = Task(
+        user_id=uid,
+        title=title,
+        description=(payload.description or "").strip(),
+        priority=pr,
+        due_at=due_utc,
+        completed=False,
+        reminder_enabled=bool(payload.reminder_enabled),
+        reminder_sent=False,
+    )
+    db.add(t)
     db.commit()
-    # return first occurrence (closest to start)
-    created.sort(key=lambda x: (x.due_at or datetime.max))
-    db.refresh(created[0])
-    response.headers["X-Created-Count"] = str(len(created))
-    return to_out(created[0])
+    db.refresh(t)
+    response.headers["X-Created-Count"] = "1"
+    return to_out(t)
 
 @app.put("/api/tasks/{task_id}", response_model=TaskOut)
 async def update_task(request: Request, task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):

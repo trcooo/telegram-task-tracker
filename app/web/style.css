@@ -634,26 +634,6 @@ input[type="time"].input::-webkit-calendar-picker-indicator{
   display:block;
 }
 
-/* repeat weekdays */
-.weekdays{
-  display:flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-}
-.wd{
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,.04);
-  color: var(--text);
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-weight: 900;
-  cursor:pointer;
-}
-.wd.active{
-  border-color: rgba(255,107,53,.35);
-  background: linear-gradient(135deg, rgba(255,107,53,.20), rgba(50,194,255,.10));
-}
 /* drag/drop calendar */
 .calDay.dropTarget{
   outline: 2px dashed rgba(255,107,53,.55);
@@ -692,3 +672,84 @@ input[type="time"].input::-webkit-calendar-picker-indicator{
 .menuUserText{ display:flex; flex-direction:column; min-width:0; }
 .menuUserName{ font-weight: 950; letter-spacing: .2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .menuUserHandle{ font-size: 12px; opacity: .75; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+
+/* ---------- UI polish v26 ---------- */
+:root{
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+html, body{
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+.app{
+  min-height: 100dvh;
+  padding-bottom: calc(78px + var(--safe-bottom));
+  padding-top: var(--safe-top);
+}
+
+.bottomNav{
+  padding-bottom: calc(10px + var(--safe-bottom));
+  backdrop-filter: blur(14px);
+}
+
+.navBtn{
+  display:flex;
+  flex-direction:column;
+  gap: 3px;
+  line-height: 1;
+}
+.navI{ font-size: 18px; }
+.navT{ font-size: 11px; opacity: .92; font-weight: 800; }
+
+.navBtn.add{
+  transform: translateY(-14px);
+  box-shadow: 0 18px 40px rgba(0,0,0,.35);
+}
+.navBtn:active{ transform: scale(.98); }
+
+/* cards animation */
+@keyframes popIn{
+  from{ transform: translateY(8px); opacity: 0; }
+  to{ transform: translateY(0); opacity: 1; }
+}
+.card{ animation: popIn .18s ease-out both; }
+
+/* calendar badges */
+.calDay{ position: relative; }
+.calBadge{
+  position:absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 11px;
+  font-weight: 900;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.08);
+}
+.calBadge.bad{ background: rgba(255,77,110,.16); border-color: rgba(255,77,110,.25); }
+.calBadge.good{ background: rgba(84,255,166,.10); border-color: rgba(84,255,166,.18); }
+.calBadge.accent{ background: rgba(255,107,53,.14); border-color: rgba(255,107,53,.25); }
+
+/* nicer buttons */
+.pill, .chipBtn, .seg, .ghostBtn{ transition: transform .08s ease, filter .2s ease, background .2s ease; }
+.pill:active, .chipBtn:active, .seg:active, .ghostBtn:active{ transform: scale(.98); }
+
+.ghostBtn{
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-weight: 900;
+  cursor:pointer;
+}
