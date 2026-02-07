@@ -433,3 +433,164 @@ body{
   .brandSub{max-width: 200px}
   .kpiVal{font-size: 18px}
 }
+
+
+/* screens */
+.screen{display:none}
+.screen.show{display:block}
+
+/* calendar */
+.calHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 8px 2px 10px;
+}
+.calNav{
+  width:44px;height:44px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.18);
+  color: var(--text);
+  cursor:pointer;
+  font-weight: 900;
+  font-size: 20px;
+}
+.calNav:active{transform:scale(.97)}
+.calTitleWrap{flex:1; text-align:center}
+.calTitle{font-weight: 900}
+.calSub{color: var(--muted); font-size: 12px; margin-top: 2px}
+
+.calCard{
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.18);
+  border-radius: var(--r24);
+  padding: 12px;
+  box-shadow: 0 10px 35px rgba(0,0,0,.25);
+}
+
+.calWeek{
+  display:grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 900;
+  padding: 2px 2px 10px;
+}
+.calWeek .wknd{color: rgba(255,204,102,.85)}
+
+.calGrid{
+  display:grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.calDay{
+  border: 1px solid rgba(255,255,255,.06);
+  background: rgba(255,255,255,.03);
+  border-radius: 16px;
+  height: 50px;
+  position: relative;
+  cursor:pointer;
+  transition: .15s;
+  overflow:hidden;
+}
+.calDay:hover{background: rgba(255,255,255,.06)}
+.calDay:active{transform: scale(.98)}
+.calDay.muted{opacity:.35}
+.calDay.today{border-color: rgba(50,194,255,.28)}
+.calDay.selected{
+  border-color: rgba(255,107,53,.35);
+  background: linear-gradient(135deg, rgba(255,107,53,.18), rgba(50,194,255,.10));
+}
+.calNum{
+  position:absolute;
+  left: 10px;
+  top: 8px;
+  font-weight: 900;
+  font-size: 13px;
+}
+.calDots{
+  position:absolute;
+  left: 10px;
+  bottom: 8px;
+  display:flex;
+  gap: 4px;
+}
+.dot{
+  width:6px;height:6px;border-radius:999px;
+  background: rgba(255,255,255,.25);
+}
+.dot.accent{background: rgba(255,107,53,.85)}
+.dot.bad{background: rgba(255,77,109,.90)}
+.dot.good{background: rgba(0,209,143,.90)}
+
+.dayPanel{margin-top: 12px}
+.dayPanelHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+  padding: 6px 2px 10px;
+}
+.dayTitle{font-weight: 900}
+.dayHint{color: var(--muted); font-size: 12px; margin-top: 2px}
+.pill.small{position: static; padding: 10px 12px; font-weight: 900}
+
+/* menu */
+.menuCard{
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.18);
+  border-radius: var(--r24);
+  padding: 14px;
+  box-shadow: var(--shadow);
+  margin-top: 6px;
+}
+.menuTitle{font-weight: 900; font-size: 16px; margin-bottom: 10px}
+.menuList{display:flex; flex-direction:column; gap: 10px}
+.menuItem{
+  display:flex;
+  gap: 12px;
+  align-items:flex-start;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+  border-radius: 18px;
+  padding: 12px;
+  cursor:pointer;
+  text-align:left;
+}
+.menuItem:active{transform: scale(.99)}
+.menuItem span{
+  width:40px;height:40px;border-radius: 16px;
+  display:grid;place-items:center;
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.06);
+  font-size: 18px;
+}
+.miT{font-weight: 900}
+.miS{color: var(--muted); font-size: 12px; margin-top: 2px; line-height: 1.35}
+.menuSep{
+  height: 1px;
+  background: rgba(255,255,255,.08);
+  margin: 6px 2px;
+}
+.menuRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.04);
+  border-radius: 18px;
+  padding: 12px;
+}
+.input.compact{padding: 10px 12px; border-radius: 16px; max-width: 140px}
+.menuNote{
+  border: 1px dashed rgba(255,255,255,.18);
+  background: rgba(0,0,0,.10);
+  border-radius: 18px;
+  padding: 12px;
+}

@@ -25,72 +25,141 @@
       </div>
 
       <div class="topActions">
-        <button class="iconBtn" id="syncBtn" title="Синхронизировать" aria-label="Синхронизировать">
-          <span class="i">⟳</span>
-        </button>
-        <button class="iconBtn" id="addBtn" title="Новая задача" aria-label="Новая задача">
-          <span class="i">＋</span>
-        </button>
+        <button class="iconBtn" id="syncBtn" title="Синхронизировать" aria-label="Синхронизировать"><span class="i">⟳</span></button>
+        <button class="iconBtn" id="addBtn" title="Новая задача" aria-label="Новая задача"><span class="i">＋</span></button>
       </div>
     </header>
 
     <main class="content" id="content">
-      <section class="hero">
-        <div class="heroLeft">
-          <div class="heroTitle">Фокус на сегодня</div>
-          <div class="heroDesc">Добавь дедлайн — бот напомнит за 15 минут. Просроченные подсвечиваются.</div>
-        </div>
-        <button class="pill" id="exportBtn" type="button">Экспорт</button>
+      <!-- TASKS SCREEN -->
+      <section class="screen show" id="screenTasks">
+        <section class="hero">
+          <div class="heroLeft">
+            <div class="heroTitle">Фокус на сегодня</div>
+            <div class="heroDesc">Добавь дедлайн — бот напомнит за 15 минут. Просроченные подсвечиваются.</div>
+          </div>
+          <button class="pill" id="exportBtn" type="button">Экспорт</button>
 
-        <div class="kpis">
-          <div class="kpi">
-            <div class="kpiVal" id="kpiActive">0</div>
-            <div class="kpiLbl">Активные</div>
+          <div class="kpis">
+            <div class="kpi"><div class="kpiVal" id="kpiActive">0</div><div class="kpiLbl">Активные</div></div>
+            <div class="kpi"><div class="kpiVal" id="kpiToday">0</div><div class="kpiLbl">Сегодня</div></div>
+            <div class="kpi danger"><div class="kpiVal" id="kpiOverdue">0</div><div class="kpiLbl">Просрочено</div></div>
           </div>
-          <div class="kpi">
-            <div class="kpiVal" id="kpiToday">0</div>
-            <div class="kpiLbl">Сегодня</div>
-          </div>
-          <div class="kpi danger">
-            <div class="kpiVal" id="kpiOverdue">0</div>
-            <div class="kpiLbl">Просрочено</div>
-          </div>
-        </div>
 
-        <div class="searchRow">
-          <input class="input" id="searchInput" placeholder="Поиск по задачам…" />
-          <button class="chipBtn" id="clearSearch" title="Очистить" aria-label="Очистить">✕</button>
-        </div>
+          <div class="searchRow">
+            <input class="input" id="searchInput" placeholder="Поиск по задачам…" />
+            <button class="chipBtn" id="clearSearch" title="Очистить" aria-label="Очистить">✕</button>
+          </div>
+        </section>
+
+        <section class="filters" id="filtersTasks">
+          <button class="seg active" data-filter="active">Активные</button>
+          <button class="seg" data-filter="today">Сегодня</button>
+          <button class="seg" data-filter="overdue">Просрочено</button>
+          <button class="seg" data-filter="upcoming">Скоро</button>
+          <button class="seg" data-filter="done">Готово</button>
+        </section>
+
+        <section class="listHeader">
+          <div class="listTitle" id="listTitle">Активные</div>
+          <div class="counter" id="listCounter">0</div>
+        </section>
+
+        <section class="cards" id="cards"></section>
+
+        <section class="empty" id="empty">
+          <div class="emptyIcon">📝</div>
+          <div class="emptyTitle">Пока пусто</div>
+          <div class="emptyDesc">Нажми <b>＋</b> и добавь первую задачу</div>
+        </section>
       </section>
 
-      <section class="filters">
-        <button class="seg active" data-filter="active">Активные</button>
-        <button class="seg" data-filter="today">Сегодня</button>
-        <button class="seg" data-filter="overdue">Просрочено</button>
-        <button class="seg" data-filter="upcoming">Скоро</button>
-        <button class="seg" data-filter="done">Готово</button>
+      <!-- CALENDAR SCREEN -->
+      <section class="screen" id="screenCalendar">
+        <section class="calHeader">
+          <button class="calNav" id="calPrev" aria-label="Предыдущий месяц">‹</button>
+          <div class="calTitleWrap">
+            <div class="calTitle" id="calTitle">Месяц 2026</div>
+            <div class="calSub" id="calSub">Нажми день — увидишь задачи</div>
+          </div>
+          <button class="calNav" id="calNext" aria-label="Следующий месяц">›</button>
+        </section>
+
+        <section class="calCard">
+          <div class="calWeek">
+            <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div class="wknd">Сб</div><div class="wknd">Вс</div>
+          </div>
+          <div class="calGrid" id="calGrid"></div>
+        </section>
+
+        <section class="dayPanel">
+          <div class="dayPanelHead">
+            <div>
+              <div class="dayTitle" id="dayTitle">День</div>
+              <div class="dayHint" id="dayHint">Задачи на выбранный день</div>
+            </div>
+            <button class="pill small" id="dayAddBtn" type="button">＋ Задача</button>
+          </div>
+
+          <div class="cards" id="dayCards"></div>
+          <section class="empty" id="dayEmpty">
+            <div class="emptyIcon">📅</div>
+            <div class="emptyTitle">Нет задач на этот день</div>
+            <div class="emptyDesc">Нажми <b>＋ Задача</b> чтобы добавить</div>
+          </section>
+        </section>
       </section>
 
-      <section class="listHeader">
-        <div class="listTitle" id="listTitle">Активные</div>
-        <div class="counter" id="listCounter">0</div>
-      </section>
+      <!-- MENU SCREEN -->
+      <section class="screen" id="screenMenu">
+        <section class="menuCard">
+          <div class="menuTitle">Меню</div>
+          <div class="menuList">
+            <button class="menuItem" id="mSync"><span>⟳</span><div><div class="miT">Синхронизировать</div><div class="miS">Обновить данные с сервера</div></div></button>
+            <button class="menuItem" id="mExport"><span>⤓</span><div><div class="miT">Экспорт JSON</div><div class="miS">Скопировать задачи в буфер</div></div></button>
+            <button class="menuItem" id="mClearDone"><span>🧹</span><div><div class="miT">Очистить выполненные</div><div class="miS">Удалить все задачи «Готово»</div></div></button>
 
-      <section class="cards" id="cards"></section>
+            <div class="menuSep"></div>
 
-      <section class="empty" id="empty">
-        <div class="emptyIcon">📝</div>
-        <div class="emptyTitle">Пока пусто</div>
-        <div class="emptyDesc">Нажми <b>＋</b> и добавь первую задачу</div>
+            <div class="menuRow">
+              <div>
+                <div class="miT">Напоминания по умолчанию</div>
+                <div class="miS">Для новых задач</div>
+              </div>
+              <select class="input compact" id="defaultReminder">
+                <option value="on" selected>Вкл</option>
+                <option value="off">Выкл</option>
+              </select>
+            </div>
+
+            <div class="menuRow">
+              <div>
+                <div class="miT">Подсветка просроченных</div>
+                <div class="miS">Красным и в фильтре</div>
+              </div>
+              <select class="input compact" id="overdueHighlight">
+                <option value="on" selected>Вкл</option>
+                <option value="off">Выкл</option>
+              </select>
+            </div>
+
+            <div class="menuSep"></div>
+
+            <div class="menuNote">
+              <div class="miT">TaskFlow</div>
+              <div class="miS">Календарь как в LeaderTask: точки на днях + список задач по выбранному дню.</div>
+            </div>
+          </div>
+        </section>
       </section>
     </main>
 
     <nav class="bottomNav">
-      <button class="navBtn active" data-nav="active">Задачи</button>
-      <button class="navBtn" data-nav="done">Готово</button>
+      <button class="navBtn active" data-screen="tasks">Задачи</button>
+      <button class="navBtn" data-screen="calendar">Календарь</button>
       <button class="navBtn add" id="fab" aria-label="Добавить">＋</button>
-      <button class="navBtn" data-nav="overdue">Просрочено</button>
-      <button class="navBtn" data-nav="menu" id="menuBtn">Меню</button>
+      <button class="navBtn" data-screen="overdue">Просрочено</button>
+      <button class="navBtn" data-screen="menu">Меню</button>
     </nav>
   </div>
 
