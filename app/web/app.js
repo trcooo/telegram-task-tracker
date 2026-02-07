@@ -247,6 +247,16 @@
     if (!r.ok) throw new Error('toggle failed');
     return await r.json();
   }
+  async function apiMigrateUser(from_user_id, to_user_id) {
+    const r = await fetch(`${API}/api/migrate_user`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from_user_id, to_user_id })
+    });
+    if (!r.ok) throw new Error('migrate failed');
+    return await r.json();
+  }
+
   async function apiSnooze15(id) {
     const r = await fetch(`${API}/api/tasks/${id}/snooze15`, { method: 'POST' });
     if (!r.ok) throw new Error('snooze failed');
@@ -562,10 +572,32 @@
     try {
       if (!silent) toast('Синхронизация…');
       tasks = await apiGetTasks();
-      localStorage.setItem('tasks_cache', JSON.stringify(tasks));
+      // Если пользователь раньше заходил в браузере, задачи могли сохраниться под user_id=1.
+      // В Telegram user_id другой — предложим перенести.
+      if (tasks.length === 0 && userId !== 1) {
+        const legacyCached = localStorage.getItem('tasks_cache_1');
+        if (legacyCached) {
+          const legacy = JSON.parse(legacyCached || '[]');
+          if (Array.isArray(legacy) && legacy.length > 0) {
+            const ok = confirm('Похоже, у вас есть старые задачи (из браузера). Перенести их в ваш Telegram аккаунт?');
+            if (ok) {
+              try {
+                const res = await apiMigrateUser(1, userId);
+                toast(`Перенесено: ${res.migrated}`, 'good');
+                tasks = await apiGetTasks();
+              } catch (e) {
+                toast('Не удалось перенести (проверь сервер)', 'warn');
+                console.error(e);
+              }
+            }
+          }
+        }
+      }
+
+      localStorage.setItem(`tasks_cache_${userId}`, JSON.stringify(tasks));
       if (el.subtitle) el.subtitle.textContent = 'Онлайн • синхронизировано';
     } catch (e) {
-      const cached = localStorage.getItem('tasks_cache');
+      const cached = localStorage.getItem(`tasks_cache_${userId}`);
       tasks = cached ? JSON.parse(cached) : [];
       if (el.subtitle) el.subtitle.textContent = 'Оффлайн • показан кэш';
       toast('Нет связи с сервером', 'warn');

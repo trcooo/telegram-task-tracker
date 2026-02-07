@@ -173,6 +173,23 @@ async def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(g
     db.refresh(t)
     return to_out(t)
 
+
+class MigrateUser(BaseModel):
+    from_user_id: int
+    to_user_id: int
+
+@app.post("/api/migrate_user")
+async def migrate_user(payload: MigrateUser, db: Session = Depends(get_db)):
+    """Перенос задач со старого user_id на новый (например, если раньше работали в браузере с user_id=1)."""
+    if payload.from_user_id == payload.to_user_id:
+        return {"success": True, "migrated": 0}
+    tasks_q = db.query(Task).filter(Task.user_id == payload.from_user_id)
+    count = tasks_q.count()
+    tasks_q.update({Task.user_id: payload.to_user_id})
+    db.commit()
+    return {"success": True, "migrated": count}
+
+
 @app.delete("/api/tasks/{task_id}")
 async def delete_task(task_id: int, db: Session = Depends(get_db)):
     t = db.query(Task).filter(Task.id == task_id).first()
