@@ -1,6 +1,18 @@
 (() => {
   const tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
   const API = window.location.origin;
+  const CLIENT_ID_KEY = 'taskflow_client_id';
+  function getClientId(){
+    let id = localStorage.getItem(CLIENT_ID_KEY);
+    if(!id){ id = 'c_' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem(CLIENT_ID_KEY,id);} 
+    return id;
+  }
+  function apiHeaders(extra){
+    const h = Object.assign({'Content-Type':'application/json'}, extra||{});
+    if (tg && tg.initData) h['X-Tg-Init-Data'] = tg.initData;
+    else h['X-Client-Id'] = getClientId();
+    return h;
+  }
 
   const el = {
     subtitle: document.getElementById('subtitle'),
@@ -68,6 +80,11 @@
   };
 
   let userId = 1;
+  function getEffectiveUserKey(){
+    if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) return String(tg.initDataUnsafe.user.id);
+    return getClientId();
+  }
+
   let tasks = [];
   let filter = 'active';
   let editingId = null;
@@ -218,42 +235,30 @@
 
   // ---------- API ----------
   async function apiGetTasks() {
-    const r = await fetch(`${API}/api/tasks/${userId}`);
+    const r = await fetch(`${API}/api/tasks`, { headers: apiHeaders() });
     if (!r.ok) throw new Error('get tasks failed');
     return await r.json();
   }
   async function apiCreate(payload) {
     const r = await fetch(`${API}/api/tasks`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: apiHeaders(),
       body: JSON.stringify(payload)
     });
-    if (!r.ok) {
-      let detail = '';
-      try { const j = await r.json(); detail = j.detail || JSON.stringify(j); } catch(e) {
-        try { detail = await r.text(); } catch(_) {}
-      }
-      throw new Error(detail || `HTTP ${r.status}`);
-    }
+    if (!r.ok) throw new Error('create failed');
     return await r.json();
   }
   async function apiUpdate(id, payload) {
     const r = await fetch(`${API}/api/tasks/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: apiHeaders(),
       body: JSON.stringify(payload)
     });
-    if (!r.ok) {
-      let detail = '';
-      try { const j = await r.json(); detail = j.detail || JSON.stringify(j); } catch(e) {
-        try { detail = await r.text(); } catch(_) {}
-      }
-      throw new Error(detail || `HTTP ${r.status}`);
-    }
+    if (!r.ok) throw new Error('update failed');
     return await r.json();
   }
   async function apiDelete(id) {
-    const r = await fetch(`${API}/api/tasks/${id}`, { method: 'DELETE' });
+    const r = await fetch(`${API}/api/tasks/${id}`, { method: 'DELETE', headers: apiHeaders() });
     if (!r.ok) throw new Error('delete failed');
     return await r.json();
   }
@@ -266,7 +271,7 @@
   async function apiMigrateUser(from_user_id, to_user_id) {
     const r = await fetch(`${API}/api/migrate_user`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: apiHeaders(),
       body: JSON.stringify({ from_user_id, to_user_id })
     });
     if (!r.ok) throw new Error('migrate failed');
@@ -636,10 +641,10 @@
         }
       }
 
-      localStorage.setItem(`tasks_cache_${userId}`, JSON.stringify(tasks));
+      localStorage.setItem(`tasks_cache_${getEffectiveUserKey()}`, JSON.stringify(tasks));
       if (el.subtitle) el.subtitle.textContent = 'Онлайн • синхронизировано';
     } catch (e) {
-      const cached = localStorage.getItem(`tasks_cache_${userId}`);
+      const cached = localStorage.getItem(`tasks_cache_${getEffectiveUserKey()}`);
       tasks = cached ? JSON.parse(cached) : [];
       if (el.subtitle) el.subtitle.textContent = 'Оффлайн • показан кэш';
       toast('Нет связи с сервером', 'warn');

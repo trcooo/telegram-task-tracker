@@ -4,6 +4,58 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, Depends
+
+import hmac
+import hashlib
+import urllib.parse
+import zlib
+
+def verify_telegram_init_data(init_data: str, bot_token: str) -> dict:
+    """Verify Telegram WebApp initData and return parsed dict (with 'user' json string). Raises ValueError."""
+    if not init_data:
+        raise ValueError("empty init_data")
+    parsed = urllib.parse.parse_qsl(init_data, keep_blank_values=True)
+    data = dict(parsed)
+    recv_hash = data.pop("hash", None)
+    if not recv_hash:
+        raise ValueError("no hash")
+    # Build data_check_string
+    data_check_string = "\n".join(f"{k}={data[k]}" for k in sorted(data.keys()))
+    secret = hashlib.sha256(bot_token.encode("utf-8")).digest()
+    calc_hash = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+    if calc_hash != recv_hash:
+        raise ValueError("bad hash")
+    return data
+
+def client_id_to_user_id(client_id: str) -> int:
+    # deterministic negative id for non-telegram sessions (dev/web)
+    if not client_id:
+        return -1
+    return -abs(zlib.crc32(client_id.encode("utf-8")))
+
+def get_current_user_id(request: Request) -> int:
+    init_data = request.headers.get("X-Tg-Init-Data") or request.headers.get("x-tg-init-data")
+    if init_data:
+        token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or ""
+        if not token:
+            raise HTTPException(status_code=500, detail="BOT_TOKEN not set for telegram auth")
+        try:
+            data = verify_telegram_init_data(init_data, token)
+            user_json = data.get("user")
+            if not user_json:
+                raise ValueError("no user")
+            user = json.loads(user_json)
+            uid = int(user.get("id"))
+            return uid
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=f"telegram_auth_failed: {e}")
+    # fallback: client id
+    client_id = request.headers.get("X-Client-Id") or request.headers.get("x-client-id")
+    if client_id:
+        return client_id_to_user_id(client_id)
+    # no auth
+    raise HTTPException(status_code=401, detail="no auth (X-Tg-Init-Data or X-Client-Id required)")
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,24 +94,7 @@ async def version():
 from datetime import datetime, timedelta
 
 def _parse_utc_noz(dt_str: str):
-    # Accept 'YYYY-MM-DDTHH:MM' or 'YYYY-MM-DDTHH:MM:SS'
-    if not dt_str:
-        return None
-    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
-        try:
-            return datetime.strptime(dt_str, fmt)
-        except ValueError:
-            continue
-    # last resort: trim milliseconds/Z if client sent ISO
-    cleaned = dt_str.replace('Z','')
-    if '.' in cleaned:
-        cleaned = cleaned.split('.')[0]
-    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
-        try:
-            return datetime.strptime(cleaned, fmt)
-        except ValueError:
-            continue
-    raise ValueError(f"Bad due_at format: {dt_str}")
+    return datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S")
 
 def _format_utc_noz(dt: datetime):
     return dt.strftime("%Y-%m-%dT%H:%M:%S")
@@ -187,7 +222,6 @@ class TaskOut(BaseModel):
     updated_at: Optional[str]
 
 class TaskCreate(BaseModel):
-    user_id: int
     title: str = Field(..., min_length=1, max_length=200)
     description: str = Field("", max_length=1000)
     priority: str = Field("medium")
@@ -223,8 +257,8 @@ def to_out(t: Task) -> TaskOut:
         updated_at=iso(getattr(t, "updated_at", None)),
     )
 
-@app.get("/api/tasks/{user_id}", response_model=List[TaskOut])
-async def get_tasks(user_id: int, db: Session = Depends(get_db)):
+@app.get("/api/tasks", response_model=List[TaskOut])
+async def get_tasks(request: Request, db: Session = Depends(get_db)):
     tasks = (
         db.query(Task)
         .filter(Task.user_id == user_id)
@@ -293,8 +327,11 @@ class MigrateUser(BaseModel):
     to_user_id: int
 
 @app.post("/api/migrate_user")
-async def migrate_user(payload: MigrateUser, db: Session = Depends(get_db)):
+async def migrate_user(payload: MigrateUser, request: Request, db: Session = Depends(get_db)):
     """Перенос задач со старого user_id на новый (например, если раньше работали в браузере с user_id=1)."""
+    uid = get_current_user_id(request)
+    if payload.to_user_id != uid:
+        raise HTTPException(status_code=403, detail='forbidden')
     if payload.from_user_id == payload.to_user_id:
         return {"success": True, "migrated": 0}
     tasks_q = db.query(Task).filter(Task.user_id == payload.from_user_id)
@@ -305,7 +342,7 @@ async def migrate_user(payload: MigrateUser, db: Session = Depends(get_db)):
 
 
 @app.delete("/api/tasks/{task_id}")
-async def delete_task(task_id: int, db: Session = Depends(get_db)):
+async def delete_task(task_id: int, request: Request, db: Session = Depends(get_db)):
     t = db.query(Task).filter(Task.id == task_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
