@@ -42,7 +42,24 @@ async def version():
 from datetime import datetime, timedelta
 
 def _parse_utc_noz(dt_str: str):
-    return datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S")
+    # Accept 'YYYY-MM-DDTHH:MM' or 'YYYY-MM-DDTHH:MM:SS'
+    if not dt_str:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+        try:
+            return datetime.strptime(dt_str, fmt)
+        except ValueError:
+            continue
+    # last resort: trim milliseconds/Z if client sent ISO
+    cleaned = dt_str.replace('Z','')
+    if '.' in cleaned:
+        cleaned = cleaned.split('.')[0]
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+        try:
+            return datetime.strptime(cleaned, fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"Bad due_at format: {dt_str}")
 
 def _format_utc_noz(dt: datetime):
     return dt.strftime("%Y-%m-%dT%H:%M:%S")

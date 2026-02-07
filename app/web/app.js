@@ -228,7 +228,13 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!r.ok) throw new Error('create failed');
+    if (!r.ok) {
+      let detail = '';
+      try { const j = await r.json(); detail = j.detail || JSON.stringify(j); } catch(e) {
+        try { detail = await r.text(); } catch(_) {}
+      }
+      throw new Error(detail || `HTTP ${r.status}`);
+    }
     return await r.json();
   }
   async function apiUpdate(id, payload) {
@@ -237,7 +243,13 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!r.ok) throw new Error('update failed');
+    if (!r.ok) {
+      let detail = '';
+      try { const j = await r.json(); detail = j.detail || JSON.stringify(j); } catch(e) {
+        try { detail = await r.text(); } catch(_) {}
+      }
+      throw new Error(detail || `HTTP ${r.status}`);
+    }
     return await r.json();
   }
   async function apiDelete(id) {
