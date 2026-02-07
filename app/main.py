@@ -19,8 +19,9 @@ logger = logging.getLogger("taskflow")
 app = FastAPI(title="TaskFlow API", version="3.1.0")
 
 
+from datetime import datetime, timedelta
+
 def _parse_utc_noz(dt_str: str):
-    # dt_str: 'YYYY-MM-DDTHH:MM:SS' stored as UTC naive
     return datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S")
 
 def _format_utc_noz(dt: datetime):
@@ -32,45 +33,38 @@ def _to_local(utc_dt: datetime, tz_off_min: int) -> datetime:
 def _to_utc(local_dt: datetime, tz_off_min: int) -> datetime:
     return local_dt - timedelta(minutes=tz_off_min)
 
-WEEKDAY_MAP = {"mon":0,"tue":1,"wed":2,"thu":3,"fri":4,"sat":5,"sun":6}
-
-def _iter_recurrences(local_start: datetime, rule: dict, local_until: datetime):
-    # inclusive until (by date)
+def _iter_recurrences(local_start: datetime, rule: dict, local_until_date: datetime):
+    # emit local datetimes for occurrences, inclusive until date
     freq = (rule or {}).get("freq")
     interval = int((rule or {}).get("interval") or 1)
     byweekday = rule.get("byweekday") if isinstance(rule, dict) else None
 
-    # normalize until to end-of-day
-    until_end = local_until.replace(hour=23, minute=59, second=59, microsecond=0)
+    until_end = local_until_date.replace(hour=23, minute=59, second=59, microsecond=0)
 
     if not freq:
         return
-
     if freq == "daily":
         cur = local_start
         while cur <= until_end:
             yield cur
             cur = cur + timedelta(days=interval)
+        return
 
-    elif freq == "weekly":
-        # if byweekday provided (0=Mon..6=Sun) generate those weekdays
-        # start from week of local_start
-        byweekday = sorted(set(int(x) for x in (byweekday or [local_start.weekday()])))
-        # We generate day by day from start to until, stepping 1 day, but only emit selected weekdays.
+    if freq == "weekly":
+        wds = sorted(set(int(x) for x in (byweekday or [local_start.weekday()])))
         cur = local_start
         while cur <= until_end:
-            if cur.weekday() in byweekday:
+            if cur.weekday() in wds:
                 yield cur
             cur = cur + timedelta(days=1)
+        return
 
-    elif freq == "monthly":
-        # same day-of-month (or last day if shorter month)
+    if freq == "monthly":
         from calendar import monthrange
         cur = local_start
         day = local_start.day
         while cur <= until_end:
             yield cur
-            # advance month
             y = cur.year
             m = cur.month + interval
             y += (m-1)//12
@@ -78,7 +72,6 @@ def _iter_recurrences(local_start: datetime, rule: dict, local_until: datetime):
             last_day = monthrange(y, m)[1]
             d = min(day, last_day)
             cur = cur.replace(year=y, month=m, day=d)
-    else:
         return
 
 
@@ -100,10 +93,24 @@ def get_db():
     finally:
         db.close()
 
+
 @app.on_event("startup")
 async def startup():
+    # Create tables
     Base.metadata.create_all(bind=engine)
-    logger.info("✅ DB ready")
+
+    # Lightweight schema migration for existing DBs (Postgres/SQLite).
+    # Adds recurrence columns if they don't exist.
+    try:
+        with engine.begin() as conn:
+            # Postgres supports IF NOT EXISTS; SQLite supports it in recent versions for ADD COLUMN.
+            conn.exec_driver_sql("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS series_id VARCHAR(64)")
+            conn.exec_driver_sql("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence_rule TEXT")
+            conn.exec_driver_sql("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence_until TIMESTAMP")
+    except Exception:
+        # If dialect doesn't support IF NOT EXISTS, ignore.
+        pass
+
 
 @app.get("/health")
 async def health():
@@ -149,9 +156,9 @@ class TaskCreate(BaseModel):
     priority: str = Field("medium")
     due_at: Optional[str] = None
     reminder_enabled: bool = True
-    tz_offset_minutes: Optional[int] = None  # minutes east of UTC
-    recurrence: Optional[Dict] = None  # {freq, byweekday, interval}
-    recurrence_until: Optional[str] = None  # YYYY-MM-DD (local)
+    tz_offset_minutes: Optional[int] = None
+    recurrence: Optional[Dict] = None
+    recurrence_until: Optional[str] = None
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=200)
@@ -160,6 +167,9 @@ class TaskUpdate(BaseModel):
     due_at: Optional[str] = None
     completed: Optional[bool] = None
     reminder_enabled: Optional[bool] = None
+    tz_offset_minutes: Optional[int] = None
+    recurrence: Optional[Dict] = None
+    recurrence_until: Optional[str] = None
 
 def to_out(t: Task) -> TaskOut:
     return TaskOut(
@@ -175,9 +185,6 @@ def to_out(t: Task) -> TaskOut:
         created_at=iso(getattr(t, "created_at", None)),
         updated_at=iso(getattr(t, "updated_at", None)),
     )
-    tz_offset_minutes: Optional[int] = None
-    recurrence: Optional[Dict] = None
-    recurrence_until: Optional[str] = None
 
 @app.get("/api/tasks/{user_id}", response_model=List[TaskOut])
 async def get_tasks(user_id: int, db: Session = Depends(get_db)):

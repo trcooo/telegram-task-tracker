@@ -481,6 +481,11 @@
   // ---------- Modal ----------
   function openModal(task=null, presetDate=null) {
     editingId = task ? task.id : null;
+    if (el.fRepeat) el.fRepeat.value = 'none';
+    if (el.fRepeatUntil) el.fRepeatUntil.value = '';
+    repeatWeekdays = new Set([0]);
+    if (el.weekdays) { el.weekdays.style.display='none'; el.weekdays.querySelectorAll('.wd').forEach(b=>b.classList.remove('active')); }
+
     el.modalTitle.textContent = task ? 'Редактирование' : 'Новая задача';
     el.deleteBtn.style.display = task ? 'inline-flex' : 'none';
 
@@ -525,7 +530,6 @@
 
     const due_at = isoUtcNoZFromInputs(el.fDate.value, el.fTime.value);
         const tzOff = tzOffsetMinutes();
-    // recurrence
     let recurrence = null;
     let recurrence_until = null;
     if (el.fRepeat && el.fRepeat.value !== 'none') {
@@ -637,8 +641,7 @@
   }
 
   // ---------- Events ----------
-  
-    // repeat UI
+      // repeat UI
     function bindRepeatUI(){
       if (!el.fRepeat) return;
       const updateVisibility = () => {
@@ -647,7 +650,6 @@
       };
       el.fRepeat.addEventListener('change', updateVisibility);
       updateVisibility();
-
       if (el.weekdays) {
         el.weekdays.querySelectorAll('.wd').forEach(btn => {
           btn.addEventListener('click', () => {
@@ -657,7 +659,6 @@
             btn.classList.toggle('active', repeatWeekdays.has(wd));
           });
         });
-        // default select Monday+Thursday? no, keep none
       }
     }
 
@@ -815,9 +816,6 @@
     function clearTargets(){
       document.querySelectorAll('.calDay.dropTarget').forEach(d => d.classList.remove('dropTarget'));
     }
-    function markTargets(){
-      document.querySelectorAll('#calGrid .calDay').forEach(d => d.classList.add('dropTarget'));
-    }
 
     function getDayCellFromPoint(x,y){
       const elAt = document.elementFromPoint(x,y);
@@ -841,10 +839,8 @@
     async function dropToDay(taskId, dayKeyStr){
       const t = tasks.find(x => x.id === taskId);
       if (!t) return;
-      // keep time (in selected TZ). If no time => keep 23:59
       let time = "23:59";
       if (t.due_at) time = timeStrFromUtcIso(t.due_at);
-      // build new due_at
       const due_at = isoUtcNoZFromInputs(dayKeyStr, time);
       try{
         await apiUpdate(taskId, { due_at, tz_offset_minutes: tzOffsetMinutes() });
@@ -860,9 +856,7 @@
       container.addEventListener('pointerdown', (ev) => {
         const card = ev.target.closest('.card');
         if (!card) return;
-        // don't start drag if tapping a button
         if (ev.target.closest('button')) return;
-
         const id = Number(card.dataset.id);
         if (!id) return;
 
@@ -870,7 +864,6 @@
           dragging = true;
           dragId = id;
           card.classList.add('dragging');
-          markTargets();
           showGhostFromCard(card, ev.clientX, ev.clientY);
           try{ card.setPointerCapture(ev.pointerId); }catch{}
         }, 220);
@@ -910,7 +903,6 @@
       });
     }
 
-    // attach to dayCards only (calendar screen)
     if (el.dayCards) attachTo(el.dayCards);
   }
 
