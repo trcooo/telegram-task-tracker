@@ -621,3 +621,15 @@ input[type="date"].input::-webkit-calendar-picker-indicator,
 input[type="time"].input::-webkit-calendar-picker-indicator{
   opacity: .65;
 }
+
+
+/* Brand logo image */
+.logo{
+  overflow: hidden;
+}
+.logoImg{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display:block;
+}
