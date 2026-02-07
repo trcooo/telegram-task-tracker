@@ -530,10 +530,10 @@
 
     el.fTitle.value = task?.title || '';
     el.fDesc.value = task?.description || '';
-    el.fPriority.value = task?.priority || 'medium';
+    if (el.fPriority) el.fPriority.value = task?.priority || 'medium';
 
     const rem = (task ? (task.reminder_enabled !== false) : (settings.defaultReminder === 'on'));
-    el.fReminder.value = rem ? 'on' : 'off';
+    if (el.fReminder) el.fReminder.value = rem ? 'on' : 'off';
 
     if (task?.due_at) {
       el.fDate.value = dateStrFromUtcIso(task.due_at);
@@ -568,9 +568,9 @@
     const payload = {
       title,
       description,
-      priority: el.fPriority.value,
+      priority: (el.fPriority ? el.fPriority.value : 'medium'),
       due_at,
-      reminder_enabled: (el.fReminder.value !== 'off'),
+      reminder_enabled: ((el.fReminder ? el.fReminder.value : 'on') !== 'off'),
       tz_offset_minutes: tzOff
     };
 
@@ -1075,7 +1075,21 @@
         const initials = (me.first_name||'').slice(0,1) + (me.last_name||'').slice(0,1);
         el.menuAvatar.textContent = (initials || 'TF').toUpperCase();
       }
-    }catch(e){ /* ignore */ }
+    }catch(e){
+      // telegram fallback user
+      try{
+        const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+        if (u){
+          const fullName = [u.first_name, u.last_name].filter(Boolean).join(' ') || (u.username ? '@'+u.username : 'Пользователь');
+          if (el.menuUserName) el.menuUserName.textContent = fullName;
+          if (el.menuUserHandle) el.menuUserHandle.textContent = u.username ? '@' + u.username : 'Telegram';
+          if (el.menuAvatar){
+            const initials = ((u.first_name||'').slice(0,1) + (u.last_name||'').slice(0,1)) || (u.username||'').slice(0,2) || 'TF';
+            el.menuAvatar.textContent = String(initials).toUpperCase();
+          }
+        }
+      }catch(_){ /* ignore */ }
+    }
     bind();
     showScreen('tasks');
     await refresh(true);

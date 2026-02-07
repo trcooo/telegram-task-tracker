@@ -465,6 +465,7 @@ body{
 .calSub{color: var(--muted); font-size: 12px; margin-top: 2px}
 
 .calCard{
+  margin-bottom: 10px;
   border: 1px solid var(--border);
   background: rgba(0,0,0,.18);
   border-radius: var(--r24);
@@ -528,7 +529,7 @@ body{
 .dot.bad{background: rgba(255,77,109,.90)}
 .dot.good{background: rgba(0,209,143,.90)}
 
-.dayPanel{margin-top: 12px}
+.dayPanel{}
 .dayPanelHead{
   display:flex;
   align-items:center;
@@ -850,3 +851,64 @@ html, body{
 .dayPanel .empty{ padding: 12px; }
 
 .card.swipe{ padding:0; background: transparent; }
+
+
+.select{
+  width: 100%;
+  padding: 12px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.18);
+  color: var(--text);
+  font-weight: 800;
+  outline: none;
+}
+.select:focus{ border-color: rgba(255,107,53,.45); box-shadow: 0 0 0 4px rgba(255,107,53,.12); }
+
+
+/* ---------- premium UI v28 ---------- */
+body{
+  background:
+    radial-gradient(1200px 700px at 20% -10%, rgba(255,107,53,.22), transparent 60%),
+    radial-gradient(900px 600px at 110% 10%, rgba(84,255,166,.14), transparent 55%),
+    radial-gradient(700px 500px at 50% 110%, rgba(124,92,255,.12), transparent 55%),
+    linear-gradient(180deg, #0b0d12 0%, #07080b 100%);
+}
+
+.topBar{
+  background: rgba(0,0,0,.26);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  backdrop-filter: blur(14px);
+}
+
+.card{
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.035);
+}
+
+.btn{
+  background: linear-gradient(135deg, rgba(255,107,53,1) 0%, rgba(255,143,90,1) 55%, rgba(255,107,53,1) 100%);
+  box-shadow: 0 18px 45px rgba(255,107,53,.18);
+}
+
+.btn.ghost{
+  background: rgba(255,255,255,.04);
+  box-shadow: none;
+}
+
+.modal{
+  background: rgba(12,14,18,.82);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(255,255,255,.08);
+  transform: translateY(10px) scale(.99);
+  opacity: 0;
+  transition: opacity .16s ease, transform .18s ease;
+}
+.modal.show{
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.backdrop.show{
+  backdrop-filter: blur(10px);
+}

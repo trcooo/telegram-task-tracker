@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="\1?v=1770480907" />
+  <link rel="stylesheet" href="/style.css?v=1770489063" />
 </head>
 <body>
   <div class="toast" id="toast" aria-live="polite"></div>
@@ -218,6 +218,20 @@
           <input class="input" id="fTime" type="time" />
         </div>
       </div>
+
+      <label class="lbl">Приоритет</label>
+      <select class="select" id="fPriority">
+        <option value="high">Высокий</option>
+        <option value="medium" selected>Средний</option>
+        <option value="low">Низкий</option>
+      </select>
+
+      <label class="lbl">Напоминание</label>
+      <select class="select" id="fReminder">
+        <option value="on" selected>Включено (за 15 минут)</option>
+        <option value="off">Выключено</option>
+      </select>
+
 <div class="modalActions">
         <button class="btn ghost" id="deleteBtn" type="button">Удалить</button>
         <button class="btn" id="saveBtn" type="button">Сохранить</button>
@@ -225,11 +239,11 @@
     </div>
   </div>
 
-  <script src="\1?v=1770480907" defer></script>
+  <script src="/app.js?v=1770489063" defer></script>
 
 <script>
 (function() {
-  const BUILD = "1770487883";
+  const BUILD = "1770489063";
   // Force-bust cached HTML in Telegram WebView by ensuring query param matches build
   try {
     const url = new URL(location.href);
@@ -239,17 +253,6 @@
       return;
     }
   } catch(e) {}
-
-  // Inject CSS/JS with cache-busting
-  const css = document.createElement('link');
-  css.rel = 'stylesheet';
-  css.href = '/style.css?v=' + BUILD + '&t=' + Date.now();
-  document.head.appendChild(css);
-
-  const js = document.createElement('script');
-  js.src = '/app.js?v=' + BUILD + '&t=' + Date.now();
-  js.defer = true;
-  document.body.appendChild(js);
 })();
 </script>
 
