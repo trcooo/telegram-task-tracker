@@ -1,5 +1,7 @@
 import os
 import logging
+import json
+import uuid
 from datetime import datetime, timedelta, time as dtime, date as ddate, date
 from typing import Dict, List, Optional
 
@@ -69,6 +71,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger("taskflow")
 
 app = FastAPI(title="TaskFlow API", version="3.1.0")
+
+BASE_DIR = os.path.dirname(__file__)
+WEB_DIR = os.path.join(BASE_DIR, 'web')
+
 
 
 # --- Disable caching for Telegram WebView quirks ---
@@ -371,18 +377,6 @@ async def update_task(request: Request, task_id: int, payload: TaskUpdate, db: S
     if t.user_id != uid:
         raise HTTPException(status_code=403, detail="forbidden")
 
-    uid = get_current_user_id(request)
-    if t.user_id != uid:
-        raise HTTPException(status_code=403, detail="forbidden")
-
-    uid = get_current_user_id(request)
-    if t.user_id != uid:
-        raise HTTPException(status_code=403, detail="forbidden")
-
-    uid = get_current_user_id(request)
-    if t.user_id != uid:
-        raise HTTPException(status_code=403, detail="forbidden")
-
     changed_due = False
     reopened = False
 
@@ -432,7 +426,8 @@ async def migrate_user(request: Request, payload: MigrateUser, db: Session = Dep
 
 @app.delete("/api/tasks/{task_id}")
 async def delete_task(request: Request, task_id: int, db: Session = Depends(get_db)):
-    t = db.query(Task).filter(Task.id == task_id).first()
+    uid = get_current_user_id(request)
+    t = db.query(Task).filter(Task.id == task_id, Task.user_id == uid).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
     db.delete(t)
@@ -441,27 +436,32 @@ async def delete_task(request: Request, task_id: int, db: Session = Depends(get_
 
 @app.post("/api/tasks/{task_id}/done", response_model=TaskOut)
 async def mark_done(request: Request, task_id: int, db: Session = Depends(get_db)):
-    t = db.query(Task).filter(Task.id == task_id).first()
+    uid = get_current_user_id(request)
+    t = db.query(Task).filter(Task.id == task_id, Task.user_id == uid).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
     t.completed = True
     db.commit()
-    return {"success": True}
+    db.refresh(t)
+    return to_out(t)
 
 @app.post("/api/tasks/{task_id}/undone", response_model=TaskOut)
 async def mark_undone(request: Request, task_id: int, db: Session = Depends(get_db)):
-    t = db.query(Task).filter(Task.id == task_id).first()
+    uid = get_current_user_id(request)
+    t = db.query(Task).filter(Task.id == task_id, Task.user_id == uid).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
     t.completed = False
     t.reminder_sent = False
     db.commit()
-    return {"success": True}
+    db.refresh(t)
+    return to_out(t)
 
 # optional: snooze +15 min from UI
 @app.post("/api/tasks/{task_id}/snooze15", response_model=TaskOut)
 async def snooze_15(request: Request, task_id: int, db: Session = Depends(get_db)):
-    t = db.query(Task).filter(Task.id == task_id).first()
+    uid = get_current_user_id(request)
+    t = db.query(Task).filter(Task.id == task_id, Task.user_id == uid).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
     if not t.due_at:
