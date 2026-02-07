@@ -1,5 +1,17 @@
 /* TaskFlow V3 - clean interactive UI */
 :root{
+  --cardBg: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
+  --panelBg: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  --controlBg: rgba(0,0,0,.18);
+  --controlHover: rgba(0,0,0,.26);
+  --sheetBg: rgba(12,14,18,.82);
+  --toastBg: rgba(20,28,40,.92);
+  --navGrad1: rgba(11,15,20,.72);
+  --navGrad2: rgba(11,15,20,.92);
+  --navBtnBg: rgba(0,0,0,.35);
+  --shadowCard: 0 10px 35px rgba(0,0,0,.25);
+  --shadowFab: 0 18px 40px rgba(0,0,0,.35);
+
   --bg:#0b0f14;
   --panel:#0f1620;
   --card:#121b27;
@@ -18,6 +30,35 @@
   --r24:24px;
   --tg-vh: 100vh;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* theme: light */
+html[data-theme="light"]{
+  --bg:#f6f7fb;
+  --panel:#ffffff;
+  --card:#ffffff;
+  --glass: rgba(2,6,23,.04);
+  --border: rgba(2,6,23,.10);
+  --text:#0b1220;
+  --muted:#5a6b86;
+  --shadow: 0 18px 60px rgba(2,6,23,.10);
+
+  --cardBg: linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,255,255,.90));
+  --panelBg: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.86));
+  --controlBg: rgba(255,255,255,.90);
+  --controlHover: rgba(255,255,255,.98);
+  --sheetBg: rgba(255,255,255,.92);
+  --toastBg: rgba(255,255,255,.96);
+  --navGrad1: rgba(246,247,251,.72);
+  --navGrad2: rgba(246,247,251,.96);
+  --navBtnBg: rgba(255,255,255,.80);
+  --shadowCard: 0 10px 30px rgba(2,6,23,.10);
+  --shadowFab: 0 18px 40px rgba(2,6,23,.14);
+}
+
+/* smooth theme transition */
+html, body, .card, .menuCard, .modal, .bottomNav, .iconBtn, .input, .navBtn, .pill{
+  transition: background .22s ease, color .22s ease, border-color .22s ease, box-shadow .22s ease;
 }
 
 *{box-sizing:border-box}
@@ -67,7 +108,7 @@ body{
   width:44px; height:44px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
+  background: var(--controlBg);
   color: var(--text);
   display:grid; place-items:center;
   cursor:pointer;
@@ -111,7 +152,7 @@ body{
   right: 14px; top: 14px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
+  background: var(--controlBg);
   color: var(--text);
   padding: 10px 12px;
   cursor:pointer;
@@ -129,7 +170,7 @@ body{
 }
 .kpi{
   border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
+  background: var(--controlBg);
   border-radius: var(--r18);
   padding: 10px 10px;
 }
@@ -145,7 +186,7 @@ body{
 .input{
   width:100%;
   border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
+  background: var(--controlBg);
   color: var(--text);
   border-radius: var(--r18);
   padding: 12px 12px;
@@ -158,7 +199,7 @@ body{
   width: 44px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
+  background: var(--controlBg);
   color: var(--text);
   cursor:pointer;
 }
@@ -171,7 +212,7 @@ body{
   padding: 8px;
   border-radius: var(--r24);
   border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
+  background: var(--controlBg);
   overflow-x:auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -219,10 +260,10 @@ body{
 }
 .card{
   border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
+  background: var(--cardBg);
   border-radius: var(--r24);
   padding: 12px;
-  box-shadow: 0 10px 35px rgba(0,0,0,.25);
+  box-shadow: var(--shadowCard);
   animation: pop .18s ease;
 }
 @keyframes pop{from{opacity:0; transform: translateY(6px)} to{opacity:1; transform: translateY(0)}}
@@ -290,7 +331,7 @@ body{
   bottom: 0;
   width: min(560px, 100%);
   padding: 10px 12px calc(12px + var(--safe-bottom));
-  background: linear-gradient(180deg, transparent, rgba(11,15,20,.72) 20%, rgba(11,15,20,.92));
+  background: linear-gradient(180deg, transparent, var(--navGrad1) 20%, var(--navGrad2));
   backdrop-filter: blur(12px);
 }
 .bottomNav:before{
@@ -307,7 +348,7 @@ body{
   flex:1;
   border-radius: 18px;
   border: 1px solid var(--border);
-  background: rgba(0,0,0,.35);
+  background: var(--navBtnBg);
   color: var(--muted);
   padding: 12px 10px;
   cursor:pointer;
@@ -324,400 +365,8 @@ body{
   color: #0b0f14;
   border: none;
   font-size: 18px;
-  box-shadow: 0 18px 40px rgba(255,107,53,.20);
-}
-
-.toast{
-  position: fixed;
-  left: 50%;
-  bottom: calc(92px + var(--safe-bottom));
-  transform: translateX(-50%) translateY(14px);
-  background: rgba(20,28,40,.92);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 10px 12px;
-  color: var(--text);
-  font-weight: 800;
-  opacity: 0;
-  pointer-events:none;
-  transition: opacity .18s ease, transform .18s ease;
-  max-width: 92%;
-  z-index: 9999;
-}
-.toast.show{opacity:1; transform: translateX(-50%) translateY(0)}
-.toast.good{border-color: rgba(0,209,143,.35)}
-.toast.bad{border-color: rgba(255,77,109,.35)}
-.toast.warn{border-color: rgba(255,204,102,.35)}
-
-.backdrop{
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.55);
-  opacity: 0;
-  pointer-events: none;
-  transition: .18s ease;
-  z-index: 9998;
-}
-.backdrop.show{opacity:1; pointer-events:auto}
-
-.modal{
-  position: fixed;
-  left: 50%;
-  bottom: calc(16px + var(--safe-bottom));
-  width: min(560px, calc(100% - 24px));
-  max-height: calc(100dvh - 140px - var(--safe-top) - var(--safe-bottom));
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-
-  background: rgba(12,14,18,.82);
-  backdrop-filter: blur(18px);
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 24px;
-  box-shadow: var(--shadow);
-
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-50%) translateY(14px) scale(.99);
-  transition: opacity .16s ease, transform .18s ease;
-  z-index: 9999;
-}
-.modal.show{
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateX(-50%) translateY(0) scale(1);
-}
-
-
-.modalHead{
-  display:flex;
-  justify-content:space-between;
-  gap: 12px;
-  padding: 14px 14px 6px;
-}
-.modalTitle{font-weight: 900; font-size: 16px}
-.modalHint{color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.35}
-.form{padding: 10px 14px 14px}
-.lbl{display:block; color: var(--muted); font-weight: 900; font-size: 12px; margin: 10px 0 6px}
-.grid2{
-  display:grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
-}
-.modalActions{
-  display:flex;
-  gap: 10px;
-  margin-top: 12px;
-}
-.btn{
-  flex:1;
-  border-radius: 18px;
-  border: 1px solid transparent;
-  background: linear-gradient(135deg, var(--accent), #ff9a6b);
-  color: #0b0f14;
-  padding: 12px 12px;
-  cursor:pointer;
-  font-weight: 900;
-}
-.btn:active{transform: scale(.99)}
-.btn.ghost{
-  background: transparent;
-  border-color: var(--border);
-  color: var(--muted);
-}
-
-.empty{
-  display:none;
-  text-align:center;
-  padding: 28px 12px;
-  color: var(--muted);
-}
-.empty.show{display:block}
-.emptyIcon{font-size: 28px}
-.emptyTitle{font-weight: 900; color: var(--text); margin-top: 6px}
-.emptyDesc{margin-top: 6px; font-size: 12px; line-height: 1.35}
-
-@media (max-width: 420px){
-  .brandSub{max-width: 200px}
-  .kpiVal{font-size: 18px}
-}
-
-
-/* screens */
-.content{position:relative;}
-.screen{position:absolute; inset:0; min-height:100%; opacity:0; transform: translateY(6px); pointer-events:none; transition: opacity .16s ease, transform .16s ease; display:block;}
-.screen.show{opacity:1; transform:none; pointer-events:auto;}
-
-/* calendar */
-.calHeader{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap: 10px;
-  margin-top: 6px;
-  padding: 8px 2px 10px;
-}
-.calNav{
-  width:44px;height:44px;
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
-  color: var(--text);
-  cursor:pointer;
-  font-weight: 900;
-  font-size: 20px;
-}
-.calNav:active{transform:scale(.97)}
-.calTitleWrap{flex:1; text-align:center}
-.calTitle{font-weight: 900}
-.calSub{color: var(--muted); font-size: 12px; margin-top: 2px}
-
-.calCard{
-  margin-bottom: 10px;
-  border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
-  border-radius: var(--r24);
-  padding: 12px;
-  box-shadow: 0 10px 35px rgba(0,0,0,.25);
-}
-
-.calWeek{
-  display:grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 900;
-  padding: 2px 2px 10px;
-}
-.calWeek .wknd{color: rgba(255,204,102,.85)}
-
-.calGrid{
-  display:grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
-}
-.calDay{
-  border: 1px solid rgba(255,255,255,.06);
-  background: rgba(255,255,255,.03);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 10px 22px rgba(0,0,0,.22);
-  border-radius: 16px;
-  height: 50px;
-  position: relative;
-  cursor:pointer;
-  transition: .15s;
-  overflow:hidden;
-}
-.calDay:hover{background: rgba(255,255,255,.06)}
-.calDay:active{transform: scale(.98)}
-.calDay.muted{opacity:.35}
-.calDay.today{border-color: rgba(50,194,255,.28)}
-.calDay.selected{
-  border-color: rgba(255,107,53,.35);
-  background: linear-gradient(135deg, rgba(255,107,53,.18), rgba(50,194,255,.10));
-}
-.calNum{
-  position:absolute;
-  left: 10px;
-  top: 8px;
-  font-weight: 900;
-  font-size: 13px;
-}
-.calDots{
-  position:absolute;
-  left: 10px;
-  bottom: 8px;
-  display:flex;
-  gap: 4px;
-}
-.dot{
-  width:6px;height:6px;border-radius:999px;
-  background: rgba(255,255,255,.25);
-}
-.dot.accent{background: rgba(255,107,53,.85)}
-.dot.bad{background: rgba(255,77,109,.90)}
-.dot.good{background: rgba(0,209,143,.90)}
-
-.dayPanel{}
-.dayPanelHead{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap: 10px;
-  padding: 6px 2px 10px;
-}
-.dayTitle{font-weight: 900}
-.dayHint{color: var(--muted); font-size: 12px; margin-top: 2px}
-.pill.small{position: static; padding: 10px 12px; font-weight: 900}
-
-/* menu */
-.menuCard{
-  border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
-  border-radius: var(--r24);
-  padding: 14px;
-  box-shadow: var(--shadow);
-  margin-top: 6px;
-}
-.menuTitle{font-weight: 900; font-size: 16px; margin-bottom: 10px}
-.menuList{display:flex; flex-direction:column; gap: 10px}
-.menuItem{
-  display:flex;
-  gap: 12px;
-  align-items:flex-start;
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,.04);
-  color: var(--text);
-  border-radius: 18px;
-  padding: 12px;
-  cursor:pointer;
-  text-align:left;
-}
-.menuItem:active{transform: scale(.99)}
-.menuItem span{
-  width:40px;height:40px;border-radius: 16px;
-  display:grid;place-items:center;
-  background: rgba(0,0,0,.18);
-  border: 1px solid rgba(255,255,255,.06);
-  font-size: 18px;
-}
-.miT{font-weight: 900}
-.miS{color: var(--muted); font-size: 12px; margin-top: 2px; line-height: 1.35}
-.menuSep{
-  height: 1px;
-  background: rgba(255,255,255,.08);
-  margin: 6px 2px;
-}
-.menuRow{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap: 10px;
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,.04);
-  border-radius: 18px;
-  padding: 12px;
-}
-.input.compact{padding: 10px 12px; border-radius: 16px; max-width: 140px}
-.menuNote{
-  border: 1px dashed rgba(255,255,255,.18);
-  background: rgba(0,0,0,.10);
-  border-radius: 18px;
-  padding: 12px;
-}
-
-/* grid2 stack */
-@media (max-width: 380px){
-  .grid2{ grid-template-columns: 1fr; }
-  .pill.small{ width: 100%; justify-content:center; }
-}
-
-
-/* iOS/Safari fix: date/time inputs can overflow and visually overlap */
-.grid2 > div{ min-width: 0; }
-.grid2 .input{ width: 100%; max-width: 100%; min-inline-size: 0; }
-input[type="date"].input, input[type="time"].input{
-  -webkit-appearance: none;
-  appearance: none;
-  display: block;
-  overflow: hidden;
-}
-
-
-/* Date/Time row hardening (Telegram iOS WebView overlap fix) */
-.dtRow{ gap: 14px; }
-.isIOS .dtRow{ grid-template-columns: 1fr; } /* no side-by-side on iOS */
-.isIOS .dtRow .input{ padding-right: 46px; } /* leave room for native picker */
-input[type="date"].input::-webkit-calendar-picker-indicator,
-input[type="time"].input::-webkit-calendar-picker-indicator{
-  opacity: .65;
-}
-
-
-/* Brand logo image */
-.logo{
-  overflow: hidden;
-}
-.logoImg{
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display:block;
-}
-
-/* drag/drop calendar */
-.calDay.dropTarget{
-  outline: 2px dashed rgba(255,107,53,.55);
-  outline-offset: -4px;
-}
-.card.dragging{
-  opacity: .7;
-  transform: scale(.98);
-}
-.dragGhost{
-  position: fixed;
-  left: 0; top: 0;
-  z-index: 9999;
-  pointer-events: none;
-  transform: translate(-9999px, -9999px);
-  width: min(92vw, 420px);
-  opacity: .92;
-}
-
-/* menu user auth block */
-.menuUser{
-  display:flex;
-  align-items:center;
-  gap: 12px;
-  padding: 12px 12px 6px;
-}
-.menuAvatar{
-  width:44px; height:44px;
-  border-radius: 14px;
-  display:flex; align-items:center; justify-content:center;
-  font-weight: 1000;
-  background: linear-gradient(135deg, rgba(255,107,53,.28), rgba(50,194,255,.16));
-  border: 1px solid rgba(255,255,255,.10);
-  color: var(--text);
-}
-.menuUserText{ display:flex; flex-direction:column; min-width:0; }
-.menuUserName{ font-weight: 950; letter-spacing: .2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.menuUserHandle{ font-size: 12px; opacity: .75; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-
-
-/* ---------- UI polish v26 ---------- */
-:root{
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-top: env(safe-area-inset-top, 0px);
-}
-
-html, body{
-  height: 100%;
-  overscroll-behavior: none;
-}
-
-.app{
-  min-height: 100dvh;
-  padding-bottom: calc(78px + var(--safe-bottom));
-  padding-top: var(--safe-top);
-}
-
-.bottomNav{
-  padding-bottom: calc(10px + var(--safe-bottom));
-  backdrop-filter: blur(14px);
-}
-
-.navBtn{
-  display:flex;
-  flex-direction:column;
-  gap: 3px;
-  line-height: 1;
-}
-.navI{ font-size: 18px; }
-.navT{ font-size: 11px; opacity: .92; font-weight: 800; }
-
-.navBtn.add{
   transform: translateY(-14px);
-  box-shadow: 0 18px 40px rgba(0,0,0,.35);
+  box-shadow: var(--shadowFab);
 }
 .navBtn:active{ transform: scale(.98); }
 
@@ -849,7 +498,7 @@ html, body{
   height: 42px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
+  background: var(--controlBg);
   color: var(--text);
   font-weight: 900;
   cursor:pointer;
@@ -866,7 +515,7 @@ html, body{
   padding: 12px 12px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(0,0,0,.18);
+  background: var(--controlBg);
   color: var(--text);
   font-weight: 800;
   outline: none;
@@ -925,3 +574,248 @@ body{
   .calTitle{ font-size: 18px; }
   .dayPanel.collapsed{ max-height: 110px; }
 }
+
+.input:focus{border-color: rgba(255,107,53,.45); box-shadow: 0 0 0 4px rgba(255,107,53,.12);}
+
+
+/* TickTick-inspired UI (original look preserved, but tuned for modern minimal UI) */
+.topbar{
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,0));
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+html[data-theme="light"] .topbar{
+  background: linear-gradient(180deg, rgba(255,255,255,.75), rgba(255,255,255,0));
+}
+
+.brandTitle{letter-spacing:-.02em}
+.brandSub{font-size:12px}
+
+.ttHeader{padding: 10px 12px 8px; display:flex; flex-direction:column; gap:10px;}
+.ttSearch{
+  display:flex; align-items:center; gap:10px;
+  background: var(--controlBg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+.ttSIcon{opacity:.7; font-weight:700}
+.ttSInput{
+  flex:1;
+  border:none; outline:none; background:transparent;
+  color: var(--text);
+  font-size:14px;
+}
+.ttSClear{
+  border:none;
+  background:transparent;
+  color: var(--muted);
+  font-size:14px;
+  padding:4px 8px;
+  border-radius:10px;
+}
+.ttSClear:hover{background: var(--controlHover);}
+
+.ttSmartBar{
+  display:flex;
+  gap:8px;
+  overflow:auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+.ttSmartBar::-webkit-scrollbar{display:none;}
+.ttChip{
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+}
+.ttChip.active{
+  background: linear-gradient(135deg, rgba(255,107,53,.22), rgba(255,107,53,.10));
+  border-color: rgba(255,107,53,.35);
+  color: var(--text);
+}
+
+.ttStats{
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+.ttStat{
+  flex:0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panelBg);
+}
+.ttStat.danger{border-color: rgba(255,77,77,.38)}
+.ttN{font-weight:900; font-size:14px; line-height:1}
+.ttL{font-size:10px; color: var(--muted); margin-top:2px}
+.ttGhost{
+  margin-left:auto;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 12px;
+}
+.ttGhost:hover{background: var(--controlHover);}
+
+.ttListHeader{margin-top: 4px}
+.listHeader{
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 10px 12px 6px;
+}
+.listTitle{font-weight: 900; font-size: 18px; letter-spacing:-.02em}
+.counter{
+  min-width: 28px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panelBg);
+  display:flex; align-items:center; justify-content:center;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+/* task list items */
+.cards{
+  display:flex;
+  flex-direction:column;
+  gap: 0;
+  padding: 0 8px 18px;
+}
+
+.card{
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+  animation: none;
+}
+.card + .card{border-top: 1px solid var(--border);}
+
+.cardBody{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  padding: 12px 10px;
+  background: transparent;
+  transform: translateX(0);
+}
+
+.taskCheck{
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid rgba(255,255,255,.22);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: transparent;
+  color: transparent;
+  flex: 0 0 auto;
+}
+html[data-theme="light"] .taskCheck{border-color: rgba(2,6,23,.20);}
+.taskCheck.done{
+  background: linear-gradient(135deg, rgba(255,107,53,.9), rgba(255,154,107,.9));
+  border-color: transparent;
+  color: #0b0f14;
+}
+.taskMain{flex: 1; min-width:0;}
+.taskTitle{
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+}
+.taskTitle.done{text-decoration: line-through; opacity:.65}
+.taskDesc{
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+}
+.taskMeta{
+  margin-top: 6px;
+  display:flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items:center;
+}
+.duePill{
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.duePill.accent{border-color: rgba(255,107,53,.35); color: var(--text);}
+.duePill.bad{border-color: rgba(255,77,77,.45); color: #ff6b6b;}
+.prDot{
+  width: 8px; height: 8px; border-radius: 999px;
+  background: rgba(255,255,255,.20);
+}
+html[data-theme="light"] .prDot{background: rgba(2,6,23,.16)}
+.prDot.high{background: rgba(255,77,77,.9)}
+.prDot.low{background: rgba(100,220,160,.9)}
+.prDot.med{background: rgba(255,193,7,.9)}
+.taskActionsMini{
+  display:flex; gap:8px; align-items:center;
+}
+.miniBtn{
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 12px;
+}
+.miniBtn:hover{background: var(--controlHover); color: var(--text);}
+
+/* swipe actions palette tuned */
+.swipeActions{
+  width: 190px;
+  gap: 6px;
+  padding: 10px 8px;
+}
+.sAct{
+  border-radius: 12px;
+}
+
+/* bottom nav more like modern apps */
+.bottomNav{
+  border-top: 1px solid var(--border);
+}
+.navBtn{
+  border: 1px solid var(--border);
+  background: var(--navBtnBg);
+}
+html[data-theme="light"] .navBtn{background: rgba(255,255,255,.92);}
+.navBtn.active{
+  background: linear-gradient(135deg, rgba(255,107,53,.22), rgba(255,107,53,.10));
+  border-color: rgba(255,107,53,.35);
+}
+
+/* calendar tweaks */
+.calCard{box-shadow: var(--shadowCard)}
+.calDay{
+  border: 1px solid var(--border);
+  background: var(--panelBg);
+}
+.calDay:hover{background: var(--controlHover);}
+.calDay.today{border-color: rgba(255,107,53,.35)}

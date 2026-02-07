@@ -59,6 +59,7 @@
     defaultReminder: document.getElementById('defaultReminder'),
     overdueHighlight: document.getElementById('overdueHighlight'),
     tzSelect: document.getElementById('tzSelect'),
+    themeSelect: document.getElementById('themeSelect'),
 
     // top buttons
     syncBtn: document.getElementById('syncBtn'),
@@ -91,7 +92,7 @@
   }
 
   let tasks = [];
-  let filter = 'active';
+  let filter = 'inbox';
   let editingId = null;
   let search = '';
 
@@ -237,7 +238,50 @@
     return utcMs > now && utcMs <= in48;
   }
 
-  // ---------- API ----------
+  
+  // ---------- Theme (dark/light) ----------
+  const THEME_KEY = 'tf_theme_mode'; // auto | dark | light
+  let _themeMode = (localStorage.getItem(THEME_KEY) || 'auto');
+
+  function _prefersLight(){
+    try{ return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches; }catch(_){ return false; }
+  }
+
+  function applyTheme(mode){
+    _themeMode = mode || 'auto';
+    if (!['auto','dark','light'].includes(_themeMode)) _themeMode = 'auto';
+    localStorage.setItem(THEME_KEY, _themeMode);
+
+    const html = document.documentElement;
+    if (_themeMode === 'auto') html.removeAttribute('data-theme');
+    else html.setAttribute('data-theme', _themeMode);
+
+    const effective = (_themeMode === 'auto') ? (_prefersLight() ? 'light' : 'dark') : _themeMode;
+
+    const tc = document.querySelector('meta[name="theme-color"]');
+    if (tc) tc.setAttribute('content', effective === 'light' ? '#F6F7FB' : '#0B0F14');
+
+    try{
+      if (tg && tg.setHeaderColor) tg.setHeaderColor(effective === 'light' ? '#F6F7FB' : '#0B0F14');
+      if (tg && tg.setBackgroundColor) tg.setBackgroundColor(effective === 'light' ? '#F6F7FB' : '#0B0F14');
+    }catch(_){}
+  }
+
+  function bindThemeUI(){
+    if (!el.themeSelect) return;
+    el.themeSelect.value = _themeMode;
+    el.themeSelect.addEventListener('change', () => applyTheme(el.themeSelect.value));
+  }
+
+  try{
+    const mm = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)');
+    const handler = () => { if (_themeMode === 'auto') applyTheme('auto'); };
+    if (mm && mm.addEventListener) mm.addEventListener('change', handler);
+    else if (mm && mm.addListener) mm.addListener(handler);
+  }catch(_){}
+
+
+// ---------- API ----------
   async function apiMe(){
     const r = await fetch(`${API}/api/me`, { headers: apiHeaders({}) });
     if (!r.ok) throw new Error('me failed');
@@ -325,6 +369,7 @@
   function applyFilter(list) {
     let out = list;
     if (filter === 'active') out = out.filter(t => !t.completed);
+    if (filter === 'inbox') out = out.filter(t => !t.completed && !t.due_at);
     if (filter === 'done') out = out.filter(t => t.completed);
     if (filter === 'overdue') out = out.filter(t => isOverdue(t));
     if (filter === 'today') out = out.filter(t => isToday(t));
@@ -346,21 +391,20 @@
   }
 
   function setListTitle() {
-    const map = { active:'Активные', today:'Сегодня', overdue:'Просрочено', upcoming:'Скоро', done:'Готово' };
+    const map = { inbox:'Входящие', active:'Активные', today:'Сегодня', overdue:'Просрочено', upcoming:'Предстоящие', done:'Завершено' };
     el.listTitle.textContent = map[filter] || 'Задачи';
   }
 
-  function cardHTML(t) {
+  
+function cardHTML(t) {
     const overdue = isOverdue(t);
-    const dueTag = t.due_at
-      ? (overdue
-          ? `<span class="tag bad">Просрочено • ${escapeHtml(fmtDue(t.due_at))}</span>`
-          : `<span class="tag accent">${escapeHtml(fmtDue(t.due_at))}</span>`)
-      : `<span class="tag">Без срока</span>`;
     const pr = (t.priority || 'medium');
-    const prTag = pr === 'high' ? `<span class="tag bad">Высокий</span>` : (pr === 'low' ? `<span class="tag good">Низкий</span>` : `<span class="tag">Средний</span>`);
-    const remTag = (t.reminder_enabled === false) ? `<span class="tag">Напом. выкл</span>` : `<span class="tag good">Напом. вкл</span>`;
-    const doneTag = t.completed ? `<span class="tag good">Готово</span>` : '';
+    const prClass = pr === 'high' ? 'high' : (pr === 'low' ? 'low' : 'med');
+    const dueLabel = t.due_at
+      ? (overdue
+          ? `<span class="duePill bad">Просрочено • ${escapeHtml(fmtDue(t.due_at))}</span>`
+          : `<span class="duePill accent">${escapeHtml(fmtDue(t.due_at))}</span>`)
+      : `<span class="duePill">Без срока</span>`;
 
     const snoozeBtn = (!t.completed && t.due_at) ? `<button class="sAct ghost" data-action="snooze" title="Отложить">⏰</button>` : '';
     const toggleIcon = t.completed ? '↩' : '✓';
@@ -375,24 +419,27 @@
         </div>
 
         <div class="cardBody">
-          <div class="cardTop">
-            <div>
-              <div class="cardTitle">${escapeHtml(t.title)}</div>
-              ${t.description ? `<div class="cardDesc">${escapeHtml(t.description)}</div>` : ''}
+          <button class="taskCheck ${t.completed ? 'done' : ''}" data-action="toggle" aria-label="${t.completed ? 'Вернуть' : 'Отметить выполненной'}">✓</button>
+
+          <div class="taskMain">
+            <div class="taskTitle ${t.completed ? 'done' : ''}">${escapeHtml(t.title)}</div>
+            ${t.description ? `<div class="taskDesc">${escapeHtml(t.description)}</div>` : ''}
+            <div class="taskMeta">
+              ${dueLabel}
+              <span class="prDot ${prClass}" title="Приоритет"></span>
+              ${(t.reminder_enabled === false) ? `<span class="duePill">Напом. выкл</span>` : `<span class="duePill">Напом.</span>`}
             </div>
           </div>
-          <div class="tags">
-            ${dueTag}
-            ${prTag}
-            ${remTag}
-            ${doneTag}
+
+          <div class="taskActionsMini">
+            <button class="miniBtn" data-action="edit" aria-label="Редактировать">⋯</button>
           </div>
         </div>
       </div>
     `;
   }
 
-  function renderTasks() {
+function renderTasks() {
     const view = applyFilter(tasks);
     setListTitle();
     el.listCounter.textContent = String(view.length);
@@ -666,9 +713,9 @@
 
   function bind() {
     // task filters
-    document.querySelectorAll('#filtersTasks .seg').forEach(btn => {
+    document.querySelectorAll('#filtersTasks button[data-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('#filtersTasks .seg').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#filtersTasks button[data-filter]').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         filter = btn.dataset.filter;
         renderTasks();
@@ -682,7 +729,7 @@
         if (s === 'overdue') {
           showScreen('tasks','overdue');
           filter = 'overdue';
-          document.querySelectorAll('#filtersTasks .seg').forEach(b => b.classList.toggle('active', b.dataset.filter==='overdue'));
+          document.querySelectorAll('#filtersTasks button[data-filter]').forEach(b => b.classList.toggle('active', b.dataset.filter==='overdue'));
           renderTasks();
           return;
         }
@@ -1066,6 +1113,8 @@
 
   async function boot(){
     initTelegram();
+    applyTheme(_themeMode);
+    bindThemeUI();
     try{
       const me = await apiMe();
       const fullName = [me.first_name, me.last_name].filter(Boolean).join(' ') || 'Пользователь';

@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/style.css?v=1770489063" />
+  <link rel="stylesheet" href="/style.css?v=1770491572" />
 </head>
 <body>
   <div class="toast" id="toast" aria-live="polite"></div>
@@ -37,31 +37,28 @@
     <main class="content" id="content">
       <!-- TASKS SCREEN -->
       <section class="screen show" id="screenTasks">
-        <section class="hero">
-          <div class="heroLeft">
-            <div class="heroTitle">Фокус на сегодня</div>
-            <div class="heroDesc">Добавь дедлайн — бот напомнит за 15 минут. Просроченные подсвечиваются.</div>
-          </div>
-          <button class="pill" id="exportBtn" type="button">Экспорт</button>
-
-          <div class="kpis">
-            <div class="kpi"><div class="kpiVal" id="kpiActive">0</div><div class="kpiLbl">Активные</div></div>
-            <div class="kpi"><div class="kpiVal" id="kpiToday">0</div><div class="kpiLbl">Сегодня</div></div>
-            <div class="kpi danger"><div class="kpiVal" id="kpiOverdue">0</div><div class="kpiLbl">Просрочено</div></div>
+        
+        <section class="ttHeader">
+          <div class="ttSearch">
+            <span class="ttSIcon">⌕</span>
+            <input class="ttSInput" id="searchInput" placeholder="Поиск" />
+            <button class="ttSClear" id="clearSearch" title="Очистить" aria-label="Очистить">✕</button>
           </div>
 
-          <div class="searchRow">
-            <input class="input" id="searchInput" placeholder="Поиск по задачам…" />
-            <button class="chipBtn" id="clearSearch" title="Очистить" aria-label="Очистить">✕</button>
+          <div class="ttSmartBar" id="filtersTasks">
+            <button class="ttChip active" data-filter="inbox">Входящие</button>
+            <button class="ttChip" data-filter="today">Сегодня</button>
+            <button class="ttChip" data-filter="upcoming">Предстоящие</button>
+            <button class="ttChip" data-filter="overdue">Просрочено</button>
+            <button class="ttChip" data-filter="done">Завершено</button>
           </div>
-        </section>
 
-        <section class="filters" id="filtersTasks">
-          <button class="seg active" data-filter="active">Активные</button>
-          <button class="seg" data-filter="today">Сегодня</button>
-          <button class="seg" data-filter="overdue">Просрочено</button>
-          <button class="seg" data-filter="upcoming">Скоро</button>
-          <button class="seg" data-filter="done">Готово</button>
+          <div class="ttStats">
+            <div class="ttStat"><div class="ttN" id="kpiActive">0</div><div class="ttL">Активные</div></div>
+            <div class="ttStat"><div class="ttN" id="kpiToday">0</div><div class="ttL">Сегодня</div></div>
+            <div class="ttStat danger"><div class="ttN" id="kpiOverdue">0</div><div class="ttL">Просрочено</div></div>
+            <button class="ttGhost" id="exportBtn" type="button">Экспорт</button>
+          </div>
         </section>
 
         <section class="listHeader">
@@ -172,7 +169,21 @@
 
             <div class="menuSep"></div>
 
-            <div class="menuNote">
+            
+            <div class="menuRow">
+              <div>
+                <div class="miT">Тема</div>
+                <div class="miS">Светлая / тёмная</div>
+              </div>
+              <select class="input compact" id="themeSelect">
+                <option value="auto">Авто</option>
+                <option value="dark">Тёмная</option>
+                <option value="light">Светлая</option>
+              </select>
+            </div>
+
+            <div class="menuSep"></div>
+<div class="menuNote">
               <div class="miT">TaskFlow</div>
               <div class="miS">Календарь как в LeaderTask: точки на днях + список задач по выбранному дню.</div>
             </div>
@@ -239,11 +250,11 @@
     </div>
   </div>
 
-  <script src="/app.js?v=1770489063" defer></script>
+  <script src="/app.js?v=1770491572" defer></script>
 
 <script>
 (function() {
-  const BUILD = "1770490100";
+  const BUILD = "1770491572";
   // Force-bust cached HTML in Telegram WebView by ensuring query param matches build
   try {
     const url = new URL(location.href);
