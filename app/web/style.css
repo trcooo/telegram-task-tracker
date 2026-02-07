@@ -123,7 +123,7 @@ body{
 .kpis{
   display:grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 12px;
   margin-top: 12px;
   position:relative;
 }
@@ -140,7 +140,7 @@ body{
 .searchRow{
   margin-top: 12px;
   display:flex;
-  gap: 10px;
+  gap: 12px;
 }
 .input{
   width:100%;
@@ -599,4 +599,25 @@ body{
 @media (max-width: 380px){
   .grid2{ grid-template-columns: 1fr; }
   .pill.small{ width: 100%; justify-content:center; }
+}
+
+
+/* iOS/Safari fix: date/time inputs can overflow and visually overlap */
+.grid2 > div{ min-width: 0; }
+.grid2 .input{ width: 100%; max-width: 100%; min-inline-size: 0; }
+input[type="date"].input, input[type="time"].input{
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  overflow: hidden;
+}
+
+
+/* Date/Time row hardening (Telegram iOS WebView overlap fix) */
+.dtRow{ gap: 14px; }
+.isIOS .dtRow{ grid-template-columns: 1fr; } /* no side-by-side on iOS */
+.isIOS .dtRow .input{ padding-right: 46px; } /* leave room for native picker */
+input[type="date"].input::-webkit-calendar-picker-indicator,
+input[type="time"].input::-webkit-calendar-picker-indicator{
+  opacity: .65;
 }

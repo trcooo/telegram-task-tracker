@@ -752,6 +752,10 @@
 
   // ---------- Telegram init ----------
   function initTelegram() {
+    const ua = navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/i.test(ua) || (tg && tg.platform === 'ios');
+    document.body.classList.toggle('isIOS', !!isIOS);
+
     setVh();
     window.addEventListener('resize', setVh);
     tg?.onEvent?.('viewportChanged', setVh);
