@@ -393,7 +393,7 @@ body{
 .lbl{display:block; color: var(--muted); font-weight: 900; font-size: 12px; margin: 10px 0 6px}
 .grid2{
   display:grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
 }
 .modalActions{
@@ -593,4 +593,10 @@ body{
   background: rgba(0,0,0,.10);
   border-radius: 18px;
   padding: 12px;
+}
+
+/* grid2 stack */
+@media (max-width: 380px){
+  .grid2{ grid-template-columns: 1fr; }
+  .pill.small{ width: 100%; justify-content:center; }
 }

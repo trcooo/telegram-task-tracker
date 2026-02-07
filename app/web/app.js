@@ -9,7 +9,6 @@
     screenTasks: document.getElementById('screenTasks'),
     screenCalendar: document.getElementById('screenCalendar'),
     screenMenu: document.getElementById('screenMenu'),
-    bottomNav: document.querySelector('.bottomNav'),
 
     // tasks UI
     cards: document.getElementById('cards'),
@@ -40,6 +39,7 @@
     mClearDone: document.getElementById('mClearDone'),
     defaultReminder: document.getElementById('defaultReminder'),
     overdueHighlight: document.getElementById('overdueHighlight'),
+    tzSelect: document.getElementById('tzSelect'),
 
     // top buttons
     syncBtn: document.getElementById('syncBtn'),
@@ -71,14 +71,15 @@
   let search = '';
 
   // calendar state
-  let calMonth = new Date(); // visible month
-  calMonth.setDate(1);
-  let selectedDay = new Date(); // selected date
+  let calMonth = new Date(); calMonth.setDate(1);
+  let selectedDay = new Date();
 
-  // settings
+  // settings (persist)
   const settings = {
     defaultReminder: localStorage.getItem('defaultReminder') || 'on',
     overdueHighlight: localStorage.getItem('overdueHighlight') || 'on',
+    // timezone: 'auto' or 'fixed:+3' (hours)
+    timezone: localStorage.getItem('timezone') || 'auto',
   };
 
   // ---------- UI helpers ----------
@@ -103,52 +104,112 @@
     }[m]));
   }
 
-  function fmtDue(due_at) {
-    if (!due_at) return 'Без срока';
-    const d = new Date(due_at);
-    const date = d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric' });
-    const time = d.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' });
+  // ---------- Timezone ----------
+  // We store due_at in DB as UTC time WITHOUT 'Z' (naive). Bot treats it as UTC.
+  // UI shows times in selected timezone (auto/device or fixed offset).
+  function deviceOffsetMinutes() {
+    // minutes east of UTC
+    return -new Date().getTimezoneOffset();
+  }
+
+  function tzOffsetMinutes() {
+    if (settings.timezone === 'auto') return deviceOffsetMinutes();
+    const m = settings.timezone.match(/^fixed:([+-]?\d{1,2})$/);
+    if (!m) return deviceOffsetMinutes();
+    const h = Number(m[1]);
+    return h * 60;
+  }
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function utcIsoNoZFromMillis(ms) {
+    const d = new Date(ms);
+    // use UTC getters to build ISO without Z
+    const y = d.getUTCFullYear();
+    const mo = pad(d.getUTCMonth()+1);
+    const da = pad(d.getUTCDate());
+    const hh = pad(d.getUTCHours());
+    const mm = pad(d.getUTCMinutes());
+    return `${y}-${mo}-${da}T${hh}:${mm}:00`;
+  }
+
+  function utcMillisFromIsoNoZ(isoNoZ) {
+    // interpret as UTC
+    return Date.parse(isoNoZ + 'Z');
+  }
+
+  function localMillisFromUtcMillis(utcMs) {
+    // "local" in выбранном часовом поясе
+    return utcMs + tzOffsetMinutes() * 60000;
+  }
+
+  function fmtDue(isoNoZ) {
+    if (!isoNoZ) return 'Без срока';
+    const utcMs = utcMillisFromIsoNoZ(isoNoZ);
+    const ms = localMillisFromUtcMillis(utcMs);
+    const d = new Date(ms);
+    // Use UTC methods because ms already includes offset (so UTC shows "local tz")
+    const date = `${pad(d.getUTCDate())}.${pad(d.getUTCMonth()+1)}.${d.getUTCFullYear()}`;
+    const time = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
     return `${date} ${time}`;
   }
 
-  function dayKey(dateObj) {
-    const y = dateObj.getFullYear();
-    const m = String(dateObj.getMonth()+1).padStart(2,'0');
-    const d = String(dateObj.getDate()).padStart(2,'0');
-    return `${y}-${m}-${d}`;
+  function dateStrFromUtcIso(isoNoZ) {
+    const utcMs = utcMillisFromIsoNoZ(isoNoZ);
+    const ms = localMillisFromUtcMillis(utcMs);
+    const d = new Date(ms);
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+  }
+
+  function timeStrFromUtcIso(isoNoZ) {
+    const utcMs = utcMillisFromIsoNoZ(isoNoZ);
+    const ms = localMillisFromUtcMillis(utcMs);
+    const d = new Date(ms);
+    return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  }
+
+  function isoUtcNoZFromInputs(dateStr, timeStr) {
+    if (!dateStr) return null;
+    const [y,mo,da] = dateStr.split('-').map(Number);
+    const [hh,mm] = (timeStr || '23:59').split(':').map(Number);
+    // This is "local time" in выбранном поясе. Convert to UTC millis:
+    const localMs = Date.UTC(y, mo-1, da, hh, mm, 0);
+    const utcMs = localMs - tzOffsetMinutes() * 60000;
+    return utcIsoNoZFromMillis(utcMs);
+  }
+
+  function dayKeyFromMillis(ms) {
+    const d = new Date(ms);
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
   }
 
   function taskDayKey(t) {
     if (!t.due_at) return null;
-    const d = new Date(t.due_at); // local
-    return dayKey(d);
+    const utcMs = utcMillisFromIsoNoZ(t.due_at);
+    const localMs = localMillisFromUtcMillis(utcMs);
+    return dayKeyFromMillis(localMs);
   }
 
   function isOverdue(t) {
     if (settings.overdueHighlight !== 'on') return false;
-    return !!(t.due_at && !t.completed && (new Date(t.due_at) < new Date()));
+    if (!t.due_at || t.completed) return false;
+    const utcMs = utcMillisFromIsoNoZ(t.due_at);
+    return utcMs < Date.now();
   }
 
   function isToday(t) {
     if (!t.due_at || t.completed) return false;
-    const d = new Date(t.due_at);
-    const now = new Date();
-    return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
+    const nowLocal = localMillisFromUtcMillis(Date.now());
+    const kNow = dayKeyFromMillis(nowLocal);
+    return taskDayKey(t) === kNow;
   }
 
   function isUpcoming(t) {
     if (!t.due_at || t.completed) return false;
-    const d = new Date(t.due_at);
-    const now = new Date();
-    const in48 = new Date(now.getTime() + 48*60*60*1000);
-    return d > now && d <= in48;
-  }
-
-  function isoFromInputs(dateStr, timeStr) {
-    if (!dateStr) return null;
-    const base = timeStr ? `${dateStr}T${timeStr}` : `${dateStr}T23:59`;
-    const dt = new Date(base);
-    return dt.toISOString();
+    const utcMs = utcMillisFromIsoNoZ(t.due_at);
+    const now = Date.now();
+    const in48 = now + 48*60*60*1000;
+    return utcMs > now && utcMs <= in48;
   }
 
   // ---------- API ----------
@@ -289,13 +350,12 @@
     el.cards.innerHTML = view.map(cardHTML).join('');
   }
 
-  // ---------- Calendar view (LeaderTask-like) ----------
+  // ---------- Calendar view ----------
   function monthTitle(d) {
     return d.toLocaleDateString('ru-RU', { month:'long', year:'numeric' }).replace(/^./, c => c.toUpperCase());
   }
 
   function buildDayStats() {
-    // map dayKey -> { total, overdue, done }
     const m = new Map();
     for (const t of tasks) {
       const k = taskDayKey(t);
@@ -317,63 +377,49 @@
     const year = first.getFullYear();
     const month = first.getMonth();
 
-    // Monday-based week: JS getDay() 0=Sun
-    const startDay = (new Date(year, month, 1).getDay() + 6) % 7; // 0=Mon
+    const startDay = (new Date(year, month, 1).getDay() + 6) % 7; // Monday=0
     const daysInMonth = new Date(year, month+1, 0).getDate();
 
-    // previous month days to show
     const prevDays = startDay;
     const prevMonthDays = new Date(year, month, 0).getDate();
 
     const cells = [];
-    // prev month tail
     for (let i=prevDays; i>0; i--) {
       const dayNum = prevMonthDays - i + 1;
       const d = new Date(year, month-1, dayNum);
       cells.push({ date:d, inMonth:false });
     }
-    // current month
     for (let day=1; day<=daysInMonth; day++) {
       const d = new Date(year, month, day);
       cells.push({ date:d, inMonth:true });
     }
-    // next month head until full 6 weeks (42)
     while (cells.length % 7 !== 0) {
       const last = cells[cells.length-1].date;
-      const d = new Date(last);
-      d.setDate(d.getDate()+1);
+      const d = new Date(last); d.setDate(d.getDate()+1);
       cells.push({ date:d, inMonth:false });
     }
-    if (cells.length < 42) {
-      while (cells.length < 42) {
-        const last = cells[cells.length-1].date;
-        const d = new Date(last);
-        d.setDate(d.getDate()+1);
-        cells.push({ date:d, inMonth:false });
-      }
+    while (cells.length < 42) {
+      const last = cells[cells.length-1].date;
+      const d = new Date(last); d.setDate(d.getDate()+1);
+      cells.push({ date:d, inMonth:false });
     }
 
-    const todayKey = dayKey(new Date());
-    const selKey = dayKey(selectedDay);
+    // today & selected in selected timezone
+    const todayKey = dayKeyFromMillis(localMillisFromUtcMillis(Date.now()));
+    const selKey = dayKeyFromMillis(Date.UTC(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate(), 12, 0, 0));
 
     el.calGrid.innerHTML = cells.map(c => {
-      const k = dayKey(c.date);
+      // For calendar cells, treat date object as local calendar date. Build key in that calendar month:
+      const k = `${c.date.getFullYear()}-${pad(c.date.getMonth()+1)}-${pad(c.date.getDate())}`;
       const s = stats.get(k);
       const dots = [];
       if (s) {
-        // LeaderTask-like: dots показывают состояние
-        // overdue (красный), active (оранжевый), done (зелёный)
         if (s.overdue > 0) dots.push('<span class="dot bad"></span>');
         const activeCount = s.total - s.done;
         if (activeCount > 0) dots.push('<span class="dot accent"></span>');
         if (s.done > 0) dots.push('<span class="dot good"></span>');
       }
-      const cls = [
-        'calDay',
-        c.inMonth ? '' : 'muted',
-        k === todayKey ? 'today' : '',
-        k === selKey ? 'selected' : ''
-      ].filter(Boolean).join(' ');
+      const cls = ['calDay', c.inMonth ? '' : 'muted', k===todayKey?'today':'', k===dayKeyFromMillis(Date.UTC(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate(), 12, 0, 0))?'selected':''].filter(Boolean).join(' ');
       return `
         <div class="${cls}" data-date="${k}">
           <div class="calNum">${c.date.getDate()}</div>
@@ -382,7 +428,6 @@
       `;
     }).join('');
 
-    // click handler
     el.calGrid.querySelectorAll('.calDay').forEach(cell => {
       cell.addEventListener('click', () => {
         const k = cell.dataset.date;
@@ -395,12 +440,12 @@
   }
 
   function tasksForSelectedDay() {
-    const k = dayKey(selectedDay);
+    const k = `${selectedDay.getFullYear()}-${pad(selectedDay.getMonth()+1)}-${pad(selectedDay.getDate())}`;
     return tasks
       .filter(t => taskDayKey(t) === k)
       .sort((a,b) => {
-        const ad = a.due_at ? new Date(a.due_at).getTime() : 0;
-        const bd = b.due_at ? new Date(b.due_at).getTime() : 0;
+        const ad = a.due_at ? utcMillisFromIsoNoZ(a.due_at) : 0;
+        const bd = b.due_at ? utcMillisFromIsoNoZ(b.due_at) : 0;
         return ad - bd;
       });
   }
@@ -429,15 +474,16 @@
     el.fDesc.value = task?.description || '';
     el.fPriority.value = task?.priority || 'medium';
 
-    // reminder default from settings (new tasks)
     const rem = (task ? (task.reminder_enabled !== false) : (settings.defaultReminder === 'on'));
     el.fReminder.value = rem ? 'on' : 'off';
 
-    const dateToUse = presetDate || (task?.due_at ? new Date(task.due_at) : null);
-
-    if (dateToUse) {
-      el.fDate.value = dateToUse.toISOString().slice(0,10);
-      el.fTime.value = task?.due_at ? new Date(task.due_at).toTimeString().slice(0,5) : '';
+    if (task?.due_at) {
+      el.fDate.value = dateStrFromUtcIso(task.due_at);
+      el.fTime.value = timeStrFromUtcIso(task.due_at);
+    } else if (presetDate) {
+      // presetDate is a Date in calendar (local). Use that day, keep time empty.
+      el.fDate.value = `${presetDate.getFullYear()}-${pad(presetDate.getMonth()+1)}-${pad(presetDate.getDate())}`;
+      el.fTime.value = '';
     } else {
       el.fDate.value = '';
       el.fTime.value = '';
@@ -458,7 +504,7 @@
     const description = el.fDesc.value.trim();
     if (!title) { toast('Введите название', 'warn'); return; }
 
-    const due_at = isoFromInputs(el.fDate.value, el.fTime.value);
+    const due_at = isoUtcNoZFromInputs(el.fDate.value, el.fTime.value);
     const payload = {
       title,
       description,
@@ -526,7 +572,6 @@
       console.error(e);
     }
     renderTasks();
-    // calendar reacts too
     if (el.screenCalendar.classList.contains('show')) {
       renderCalendar();
       renderDayList();
@@ -550,7 +595,6 @@
       btn.addEventListener('click', () => {
         const s = btn.dataset.screen;
         if (s === 'overdue') {
-          // shortcut to overdue filter on tasks
           showScreen('tasks');
           filter = 'overdue';
           document.querySelectorAll('#filtersTasks .seg').forEach(b => b.classList.toggle('active', b.dataset.filter==='overdue'));
@@ -589,6 +633,7 @@
     el.mExport.addEventListener('click', () => el.exportBtn.click());
     el.mClearDone.addEventListener('click', clearDone);
 
+    // menu settings
     el.defaultReminder.value = settings.defaultReminder;
     el.overdueHighlight.value = settings.overdueHighlight;
 
@@ -602,11 +647,28 @@
       localStorage.setItem('overdueHighlight', settings.overdueHighlight);
       toast('Сохранено', 'good');
       renderTasks();
-      if (el.screenCalendar.classList.contains('show')) {
-        renderCalendar();
-        renderDayList();
-      }
+      if (el.screenCalendar.classList.contains('show')) { renderCalendar(); renderDayList(); }
     });
+
+    // timezone selector
+    if (el.tzSelect) {
+      const opt = [];
+      const dev = deviceOffsetMinutes();
+      const devH = (dev/60);
+      opt.push({ v:'auto', t:`Авто (по телефону, UTC${devH>=0?'+':''}${devH})` });
+      for (let h=-12; h<=14; h++) opt.push({ v:`fixed:${h}`, t:`UTC${h>=0?'+':''}${h}` });
+      el.tzSelect.innerHTML = opt.map(o => `<option value="${o.v}">${o.t}</option>`).join('');
+      el.tzSelect.value = settings.timezone;
+
+      el.tzSelect.addEventListener('change', () => {
+        settings.timezone = el.tzSelect.value;
+        localStorage.setItem('timezone', settings.timezone);
+        toast('Часовой пояс сохранён', 'good');
+        // re-render everything in new timezone
+        renderTasks();
+        if (el.screenCalendar.classList.contains('show')) { renderCalendar(); renderDayList(); }
+      });
+    }
 
     // modal
     el.backdrop.addEventListener('click', closeModal);
@@ -614,7 +676,7 @@
     el.saveBtn.addEventListener('click', saveModal);
     el.deleteBtn.addEventListener('click', deleteModal);
 
-    // card actions (delegation) - shared for tasks and day list
+    // card actions (delegation) - tasks & day
     function onCardsClick(ev) {
       const btn = ev.target.closest('button[data-action]');
       if (!btn) return;
@@ -678,9 +740,7 @@
       if (el.subtitle) el.subtitle.textContent = 'Режим браузера';
     }
 
-    // init calendar month to current month
-    calMonth = new Date();
-    calMonth.setDate(1);
+    calMonth = new Date(); calMonth.setDate(1);
     selectedDay = new Date();
   }
 
