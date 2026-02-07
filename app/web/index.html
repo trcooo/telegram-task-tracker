@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#FF6B35">
-    <title>TaskFlow - LeaderTask Style</title>
+    <title>TaskFlow</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
@@ -30,6 +30,8 @@
             --shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
             --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.05);
             --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.15);
+            --tg-vh: 100vh;
+
         }
 
         * {
@@ -44,7 +46,7 @@
             background: var(--light);
             color: var(--secondary);
             overflow-x: hidden;
-            min-height: 100vh;
+            min-height: var(--tg-vh);
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
@@ -54,7 +56,9 @@
             max-width: 500px;
             margin: 0 auto;
             background: white;
-            min-height: 100vh;
+            min-height: var(--tg-vh);
+            display: flex;
+            flex-direction: column;
             position: relative;
             box-shadow: 0 0 40px rgba(0, 0, 0, 0.05);
         }
@@ -890,9 +894,32 @@
             background: rgba(255, 255, 255, 0.2);
             transform: rotate(30deg);
         }
+/* Toast notifications */
+.notification{
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(45, 52, 54, 0.95);
+    color: #fff;
+    padding: 12px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+    z-index: 9999;
+    max-width: 92%;
+    text-align: center;
+}
+.notification.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.notification.success{background:rgba(0,184,148,.95);}
+.notification.warning{background:rgba(253,203,110,.98);color:#2D3436;}
+.notification.info{background:rgba(9,132,227,.95);}
     </style>
 </head>
 <body>
+    <div id="notification" class="notification"></div>
     <div class="app-container">
         <!-- Header -->
         <header class="app-header">
@@ -901,7 +928,7 @@
                     <div class="logo-icon">TF</div>
                     <div class="logo-text">
                         <h1>TaskFlow</h1>
-                        <p></p>
+                        <p>Управление задачами в стиле LeaderTask</p>
                     </div>
                 </div>
 
@@ -1116,7 +1143,7 @@
 
         <!-- Футер -->
         <footer class="app-footer">
-            <p>TaskFlow © 2024 • Стиль LeaderTask</p>
+            <p>TaskFlow © 2024</p>
             <p>Все задачи сохраняются автоматически</p>
         </footer>
     </div>
@@ -1127,304 +1154,738 @@
 
     <!-- Основной скрипт -->
     <script>
-/**
- * TaskFlow patched JS:
- * - Telegram viewport fix (borders not jumping)
- * - Server sync via /api (for reminders + persistence)
- * - Fix update bug (no duplicates after edit)
- * - Overdue highlight kept
- */
-(function () {
-  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-  const API = window.location.origin;
+        // ==================== ИНИЦИАЛИЗАЦИЯ ====================
+        const tg = window.Telegram?.WebApp;
+        let tasks = JSON.parse(localStorage.getItem('tasks') || '[]');
+        let currentDate = new Date();
+        let currentCalendarDate = new Date();
+        let selectedPriority = 'medium';
+        let isCompletedCollapsed = false;
 
-  function applyTelegramViewportFix() {
-    const setVh = () => {
-      const h = tg?.viewportHeight ? tg.viewportHeight : window.innerHeight;
-      document.documentElement.style.setProperty('--tg-vh', `${h}px`);
-    };
-    setVh();
-    tg?.onEvent?.('viewportChanged', setVh);
-    window.addEventListener('resize', setVh);
-  }
+        // Инициализация Telegram WebApp
+        function initTelegramWebApp() {
+            if (tg) {
+                tg.expand();
+                tg.setHeaderColor('#2D3436');
+                tg.setBackgroundColor('#F5F6FA');
+                tg.enableClosingConfirmation();
 
-  // --- basic notify (uses existing #notification) ---
-  function showNotification(message, type = 'info') {
-    const el = document.getElementById('notification');
-    if (!el) return alert(message);
-    el.textContent = message;
-    el.className = `notification ${type} show`;
-    setTimeout(() => el.classList.remove('show'), 2200);
-  }
+                // Получаем данные пользователя
+                const user = tg.initDataUnsafe?.user;
+                if (user) {
+                    updateUserInfo(user);
+                }
 
-  function isoFromInputs(dateStr, timeStr) {
-    if (!dateStr) return null;
-    let dt;
-    if (timeStr) dt = new Date(`${dateStr}T${timeStr}`);
-    else {
-      dt = new Date(dateStr);
-      dt.setHours(23, 59, 0, 0);
-    }
-    return dt.toISOString();
-  }
+                // Настраиваем кнопку "Назад"
+                tg.BackButton.onClick(() => {
+                    tg.close();
+                });
+            }
+            return tg;
+        }
 
-  // --- state ---
-  let userId = 1;
-  let tasks = [];
-  let selectedPriority = 'medium';
-  let editingTaskId = null;
+        // Обновление информации о пользователе
+        function updateUserInfo(user) {
+            const avatar = document.getElementById('userAvatar');
+            if (user.photo_url) {
+                avatar.innerHTML = `<img src="${user.photo_url}" style="width: 100%; height: 100%; border-radius: 50%;">`;
+            } else {
+                const initials = (user.first_name?.[0] || '') + (user.last_name?.[0] || '');
+                avatar.innerHTML = `<span style="font-weight: 700; color: white;">${initials}</span>`;
+            }
 
-  // --- telegram init ---
-  function initTelegram() {
-    applyTelegramViewportFix();
+            // Обновляем приветствие
+            const hour = new Date().getHours();
+            let greeting = "Доброй ночи";
+            if (hour >= 5 && hour < 12) greeting = "Доброе утро";
+            else if (hour >= 12 && hour < 18) greeting = "Добрый день";
+            else if (hour >= 18 && hour < 23) greeting = "Добрый вечер";
 
-    if (tg) {
-      tg.expand();
-      const user = tg.initDataUnsafe?.user;
-      if (user?.id) userId = user.id;
+            document.querySelector('.logo-text p').textContent = `${greeting}, ${user.first_name || 'пользователь'}!`;
+        }
 
-      // optional: replace slogan with greeting if element exists
-      const p = document.querySelector('.logo-text p');
-      if (p) {
-        const hour = new Date().getHours();
-        let g = 'Привет';
-        if (hour >= 5 && hour < 12) g = 'Доброе утро';
-        else if (hour >= 12 && hour < 18) g = 'Добрый день';
-        else if (hour >= 18 && hour < 23) g = 'Добрый вечер';
-        p.textContent = `${g}, ${user?.first_name || 'друг'}!`;
-      }
-    }
-  }
+        // ==================== ОБНОВЛЕНИЕ ИНТЕРФЕЙСА ====================
+        // Обновление даты
+        function updateDateDisplay() {
+            const days = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+            const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 
-  // --- API helpers ---
-  async function apiGetTasks() {
-    const r = await fetch(`${API}/api/tasks/${userId}`);
-    if (!r.ok) throw new Error('get tasks failed');
-    return await r.json();
-  }
-  async function apiCreateTask(payload) {
-    const r = await fetch(`${API}/api/tasks`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
-    });
-    if (!r.ok) throw new Error('create failed');
-    return await r.json();
-  }
-  async function apiUpdateTask(id, payload) {
-    const r = await fetch(`${API}/api/tasks/${id}`, {
-      method: 'PUT',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
-    });
-    if (!r.ok) throw new Error('update failed');
-    return await r.json();
-  }
-  async function apiDeleteTask(id) {
-    const r = await fetch(`${API}/api/tasks/${id}`, {method:'DELETE'});
-    if (!r.ok) throw new Error('delete failed');
-    return await r.json();
-  }
-  async function apiToggle(id, done) {
-    const ep = done ? 'done' : 'undone';
-    const r = await fetch(`${API}/api/tasks/${id}/${ep}`, {method:'POST'});
-    if (!r.ok) throw new Error('toggle failed');
-    return await r.json();
-  }
+            document.getElementById('currentDate').textContent =
+                `${days[currentDate.getDay()]}, ${currentDate.getDate()} ${months[currentDate.getMonth()].toLowerCase()}`;
+            document.getElementById('currentDay').textContent = currentDate.getDate();
+            document.getElementById('currentMonth').textContent =
+                `${months[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+        }
 
-  // --- rendering ---
-  function isOverdue(task) {
-    if (task.completed || !task.due_at) return false;
-    return new Date(task.due_at) < new Date();
-  }
+        // ==================== КАЛЕНДАРЬ ====================
+        // Инициализация календаря
+        function initCalendar() {
+            updateCalendar();
 
-  function formatDue(task) {
-    if (!task.due_at) return 'Без срока';
-    const d = new Date(task.due_at);
-    const date = d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric' });
-    const time = d.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' });
-    return `${date} ${time}`;
-  }
+            // Навигация по месяцам
+            document.getElementById('prevMonth').addEventListener('click', () => {
+                currentCalendarDate.setMonth(currentCalendarDate.getMonth() - 1);
+                updateCalendar();
+            });
 
-  function render() {
-    const activeList = document.getElementById('activeTasksList');
-    const completedList = document.getElementById('completedTasksList');
-    if (!activeList || !completedList) return;
+            document.getElementById('nextMonth').addEventListener('click', () => {
+                currentCalendarDate.setMonth(currentCalendarDate.getMonth() + 1);
+                updateCalendar();
+            });
+        }
 
-    const active = tasks.filter(t => !t.completed);
-    const done = tasks.filter(t => t.completed);
+        // Обновление календаря
+        function updateCalendar() {
+            const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+            document.getElementById('currentMonthYear').textContent =
+                `${monthNames[currentCalendarDate.getMonth()]} ${currentCalendarDate.getFullYear()}`;
 
-    activeList.innerHTML = '';
-    completedList.innerHTML = '';
+            const firstDay = new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth(), 1);
+            const lastDay = new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + 1, 0);
+            const daysInMonth = lastDay.getDate();
+            const startingDay = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1; // Понедельник = 0
 
-    active.forEach(t => activeList.appendChild(taskEl(t)));
-    done.forEach(t => completedList.appendChild(taskEl(t)));
+            // Очищаем календарь
+            const calendarDays = document.getElementById('calendarDays');
+            calendarDays.innerHTML = '';
 
-    const stats = document.getElementById('tasksCount') || document.getElementById('statsPill');
-    if (stats) stats.textContent = `${active.length}`;
-  }
+            // Добавляем пустые дни в начале
+            for (let i = 0; i < startingDay; i++) {
+                const emptyDay = document.createElement('div');
+                emptyDay.className = 'calendar-day other-month';
+                calendarDays.appendChild(emptyDay);
+            }
 
-  function taskEl(task) {
-    const el = document.createElement('div');
-    el.className = 'task-item';
-    if (task.completed) el.classList.add('completed');
-    if (isOverdue(task)) el.classList.add('overdue');
+            // Добавляем дни месяца
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
 
-    el.innerHTML = `
-      <div class="task-header">
-        <div class="task-title">${escapeHtml(task.title)}</div>
-        <div class="task-actions">
-          <button class="btn-edit">✏️</button>
-          <button class="btn-del">🗑️</button>
-        </div>
-      </div>
-      ${task.description ? `<div class="task-desc">${escapeHtml(task.description)}</div>` : ''}
-      <div class="task-footer">
-        <span class="task-date ${isOverdue(task) ? 'overdue' : ''}">${formatDue(task)}</span>
-        <span class="task-priority">${task.priority || 'medium'}</span>
-        <label class="task-check">
-          <input type="checkbox" ${task.completed ? 'checked' : ''} />
-          <span>Готово</span>
-        </label>
-      </div>
-    `;
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayElement = document.createElement('div');
+                dayElement.className = 'calendar-day';
+                dayElement.textContent = day;
 
-    el.querySelector('input[type="checkbox"]').addEventListener('change', async (e) => {
-      await apiToggle(task.id, e.target.checked);
-      await refresh();
-    });
+                const date = new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth(), day);
+                date.setHours(0, 0, 0, 0);
 
-    el.querySelector('.btn-del').addEventListener('click', async () => {
-      if (!confirm('Удалить задачу?')) return;
-      await apiDeleteTask(task.id);
-      await refresh();
-      showNotification('Удалено', 'info');
-    });
+                // Проверяем сегодняшний день
+                if (date.getTime() === today.getTime()) {
+                    dayElement.classList.add('today');
+                }
 
-    el.querySelector('.btn-edit').addEventListener('click', () => {
-      startEdit(task);
-    });
+                // Проверяем есть ли задачи на этот день
+                const hasTasks = tasks.some(task => {
+                    if (!task.dueDate) return false;
+                    const taskDate = new Date(task.dueDate);
+                    taskDate.setHours(0, 0, 0, 0);
+                    return taskDate.getTime() === date.getTime() && !task.completed;
+                });
 
-    return el;
-  }
+                if (hasTasks) {
+                    dayElement.classList.add('has-tasks');
+                }
 
-  function escapeHtml(str) {
-    return (str || '').replace(/[&<>"']/g, (m) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
-    }[m]));
-  }
+                // Клик по дню
+                dayElement.addEventListener('click', () => {
+                    document.querySelectorAll('.calendar-day').forEach(d => d.classList.remove('selected'));
+                    dayElement.classList.add('selected');
+                    showTasksForDate(date);
+                });
 
-  // --- form ---
-  function bindPriorityButtons() {
-    const buttons = document.querySelectorAll('.priority-btn');
-    if (!buttons.length) return;
-    buttons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        buttons.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        selectedPriority = btn.dataset.priority || 'medium';
-      });
-    });
-  }
+                calendarDays.appendChild(dayElement);
+            }
 
-  function resetForm() {
-    document.getElementById('taskTitle').value = '';
-    document.getElementById('taskDescription').value = '';
-    document.getElementById('taskDate').value = '';
-    document.getElementById('taskTime').value = '';
-    editingTaskId = null;
+            // Автоматически выбираем сегодняшний день
+            if (currentCalendarDate.getMonth() === today.getMonth() &&
+                currentCalendarDate.getFullYear() === today.getFullYear()) {
+                const todayElement = calendarDays.querySelector(`.calendar-day.today`);
+                if (todayElement) {
+                    todayElement.click();
+                }
+            }
+        }
 
-    selectedPriority = 'medium';
-    const buttons = document.querySelectorAll('.priority-btn');
-    buttons.forEach(b => b.classList.toggle('active', (b.dataset.priority||'') === 'medium'));
+        // Показать задачи на выбранную дату
+        function showTasksForDate(date) {
+            const calendarTasksList = document.getElementById('calendarTasksList');
+            const dateTasks = tasks.filter(task => {
+                if (!task.dueDate) return false;
+                const taskDate = new Date(task.dueDate);
+                taskDate.setHours(0, 0, 0, 0);
+                date.setHours(0, 0, 0, 0);
+                return taskDate.getTime() === date.getTime();
+            });
 
-    const btn = document.getElementById('addTaskBtn');
-    if (btn) btn.textContent = 'Добавить задачу';
-  }
+            if (dateTasks.length === 0) {
+                calendarTasksList.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-calendar-check"></i>
+                        <h3>Нет задач на этот день</h3>
+                        <p>Добавьте задачи на выбранную дату</p>
+                    </div>
+                `;
+            } else {
+                calendarTasksList.innerHTML = '';
+                dateTasks.forEach(task => {
+                    calendarTasksList.appendChild(createTaskElement(task));
+                });
+            }
+        }
 
-  async function addOrSave() {
-    const title = document.getElementById('taskTitle').value.trim();
-    const description = document.getElementById('taskDescription').value.trim();
-    const date = document.getElementById('taskDate').value;
-    const time = document.getElementById('taskTime').value;
+        // ==================== ЗАДАЧИ ====================
+        // Сохранение задач
+        function saveTasks() {
+            localStorage.setItem('tasks', JSON.stringify(tasks));
+            updateStats();
+            renderTasks();
+        }
 
-    if (!title) {
-      showNotification('Введите название', 'warning');
-      return;
-    }
+        // Создание элемента задачи
+        function createTaskElement(task) {
+            const element = document.createElement('div');
+            element.className = `task-item ${task.completed ? 'completed' : ''} ${task.priority || 'medium'}-priority`;
 
-    const due_at = isoFromInputs(date, time);
+            const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+            const now = new Date();
+            const isOverdue = dueDate && dueDate < now && !task.completed;
 
-    if (!editingTaskId) {
-      await apiCreateTask({
-        user_id: userId,
-        title,
-        description,
-        priority: selectedPriority,
-        due_at
-      });
-      showNotification('Задача добавлена', 'success');
-    } else {
-      await apiUpdateTask(editingTaskId, {
-        title,
-        description,
-        priority: selectedPriority,
-        due_at
-      });
-      showNotification('Задача обновлена', 'success');
-    }
+            if (isOverdue) {
+                element.classList.add('overdue');
+            }
 
-    resetForm();
-    await refresh();
-  }
+            // Форматирование даты
+            let dateText = 'Без срока';
+            if (dueDate) {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const taskDay = new Date(dueDate);
+                taskDay.setHours(0, 0, 0, 0);
 
-  function startEdit(task) {
-    editingTaskId = task.id;
-    document.getElementById('taskTitle').value = task.title || '';
-    document.getElementById('taskDescription').value = task.description || '';
+                const diffTime = taskDay - today;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    if (task.due_at) {
-      const d = new Date(task.due_at);
-      document.getElementById('taskDate').value = d.toISOString().slice(0,10);
-      document.getElementById('taskTime').value = d.toTimeString().slice(0,5);
-    } else {
-      document.getElementById('taskDate').value = '';
-      document.getElementById('taskTime').value = '';
-    }
+                if (diffDays === 0) dateText = 'Сегодня';
+                else if (diffDays === 1) dateText = 'Завтра';
+                else if (diffDays === -1) dateText = 'Вчера';
+                else if (diffDays < 0) dateText = `${Math.abs(diffDays)} дн. назад`;
+                else dateText = `${diffDays} дн.`;
 
-    selectedPriority = task.priority || 'medium';
-    const buttons = document.querySelectorAll('.priority-btn');
-    buttons.forEach(b => b.classList.toggle('active', (b.dataset.priority||'') === selectedPriority));
+                dateText += ` • ${dueDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+            }
 
-    const btn = document.getElementById('addTaskBtn');
-    if (btn) btn.textContent = 'Сохранить изменения';
+            // Приоритет
+            const priorityText = {
+                'high': 'Высокий',
+                'medium': 'Средний',
+                'low': 'Низкий'
+            }[task.priority] || 'Средний';
 
-    window.scrollTo({top:0, behavior:'smooth'});
-  }
+            element.innerHTML = `
+                <div class="task-content">
+                    <div class="task-checkbox ${task.completed ? 'checked' : ''}" data-id="${task.id}">
+                        ${task.completed ? '<i class="bi bi-check-lg"></i>' : ''}
+                    </div>
+                    <div class="task-details">
+                        <h4 class="task-title">${escapeHtml(task.title)}</h4>
+                        ${task.description ? `<p class="task-description">${escapeHtml(task.description)}</p>` : ''}
+                        <div class="task-meta">
+                            <div class="task-date ${isOverdue ? 'overdue' : ''}">
+                                <i class="bi bi-calendar"></i>
+                                <span>${dateText}</span>
+                            </div>
+                            <div class="task-priority priority-${task.priority || 'medium'}">
+                                ${priorityText}
+                            </div>
+                        </div>
+                        <div class="task-actions">
+                            <button class="action-btn btn-edit" data-id="${task.id}">
+                                <i class="bi bi-pencil"></i>
+                                Редактировать
+                            </button>
+                            <button class="action-btn btn-delete" data-id="${task.id}">
+                                <i class="bi bi-trash"></i>
+                                Удалить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
 
-  async function refresh() {
-    try {
-      tasks = await apiGetTasks();
-      localStorage.setItem('tasks_cache', JSON.stringify(tasks));
-    } catch (e) {
-      const cached = localStorage.getItem('tasks_cache');
-      tasks = cached ? JSON.parse(cached) : [];
-      showNotification('Нет связи с сервером, показан кэш', 'warning');
-    }
-    render();
-  }
+            // Обработчики событий
+            const checkbox = element.querySelector('.task-checkbox');
+            checkbox.addEventListener('click', () => toggleTask(task.id));
 
-  document.addEventListener('DOMContentLoaded', async () => {
-    initTelegram();
-    bindPriorityButtons();
+            const editBtn = element.querySelector('.btn-edit');
+            editBtn.addEventListener('click', () => editTask(task.id));
 
-    const btn = document.getElementById('addTaskBtn');
-    if (btn) btn.addEventListener('click', addOrSave);
+            const deleteBtn = element.querySelector('.btn-delete');
+            deleteBtn.addEventListener('click', () => deleteTask(task.id));
 
-    await refresh();
-  });
+            return element;
+        }
 
-})();
-</script>
+        // Отображение задач
+        function renderTasks() {
+            const activeTasksList = document.getElementById('activeTasksList');
+            const completedTasksList = document.getElementById('completedTasksList');
+
+            // Активные задачи
+            const activeTasks = tasks.filter(task => !task.completed);
+            const completedTasks = tasks.filter(task => task.completed);
+
+            if (activeTasks.length === 0) {
+                activeTasksList.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-check2-all"></i>
+                        <h3>Нет активных задач</h3>
+                        <p>Добавьте свою первую задачу!</p>
+                    </div>
+                `;
+            } else {
+                activeTasksList.innerHTML = '';
+                activeTasks.forEach(task => {
+                    activeTasksList.appendChild(createTaskElement(task));
+                });
+            }
+
+            // Завершенные задачи
+            if (completedTasks.length === 0) {
+                completedTasksList.innerHTML = `
+                    <div class="empty-state">
+                        <i class="bi bi-trophy"></i>
+                        <h3>Нет завершенных задач</h3>
+                        <p>Начните выполнять задачи!</p>
+                    </div>
+                `;
+            } else {
+                completedTasksList.innerHTML = '';
+                completedTasks.forEach(task => {
+                    completedTasksList.appendChild(createTaskElement(task));
+                });
+            }
+
+            // Обновляем счетчики
+            document.getElementById('activeCount').textContent = `${activeTasks.length} задач`;
+            document.getElementById('pendingBadge').textContent = activeTasks.length;
+
+            // Обновляем календарь если он открыт
+            if (document.getElementById('calendarSection').classList.contains('active')) {
+                updateCalendar();
+            }
+        }
+
+        // ==================== ОПЕРАЦИИ С ЗАДАЧАМИ ====================
+        // Добавление задачи
+        function addTask() {
+            const title = document.getElementById('taskTitle').value.trim();
+            const description = document.getElementById('taskDescription').value.trim();
+            const date = document.getElementById('taskDate').value;
+            const time = document.getElementById('taskTime').value;
+
+            if (!title) {
+                showNotification('Введите название задачи', 'warning');
+                return;
+            }
+
+            let dueDate = null;
+            if (date) {
+                if (time) {
+                    dueDate = new Date(`${date}T${time}`);
+                } else {
+                    dueDate = new Date(date);
+                    dueDate.setHours(23, 59, 0, 0); // Конец дня
+                }
+            }
+
+            const task = {
+                id: Date.now(),
+                title: title,
+                description: description || '',
+                dueDate: dueDate ? dueDate.toISOString() : null,
+                priority: selectedPriority,
+                completed: false,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            tasks.unshift(task);
+            saveTasks();
+
+            // Очищаем форму
+            document.getElementById('taskTitle').value = '';
+            document.getElementById('taskDescription').value = '';
+            document.getElementById('taskDate').value = '';
+            document.getElementById('taskTime').value = '';
+
+            // Показываем уведомление
+            showNotification('Задача добавлена!', 'success');
+
+            // Переходим на вкладку задач
+            switchSection('tasks');
+
+            // Виброотклик если доступен
+            if (navigator.vibrate) navigator.vibrate(50);
+        }
+
+        // Переключение статуса задачи
+        function toggleTask(taskId) {
+            const taskIndex = tasks.findIndex(t => t.id === taskId);
+            if (taskIndex === -1) return;
+
+            tasks[taskIndex].completed = !tasks[taskIndex].completed;
+            tasks[taskIndex].updatedAt = new Date().toISOString();
+
+            // Если задача завершена, перемещаем ее в конец списка активных
+            if (tasks[taskIndex].completed) {
+                const completedTask = tasks.splice(taskIndex, 1)[0];
+                tasks.push(completedTask);
+                showNotification('Задача завершена!', 'success');
+            }
+
+            saveTasks();
+
+            if (navigator.vibrate) navigator.vibrate(30);
+        }
+
+        // Редактирование задачи
+        function editTask(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            // Заполняем форму
+            document.getElementById('taskTitle').value = task.title;
+            document.getElementById('taskDescription').value = task.description || '';
+
+            if (task.dueDate) {
+                const date = new Date(task.dueDate);
+                document.getElementById('taskDate').value = date.toISOString().split('T')[0];
+                document.getElementById('taskTime').value = date.toTimeString().slice(0,5);
+            }
+
+            // Устанавливаем приоритет
+            document.querySelectorAll('.priority-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.priority === task.priority) {
+                    btn.classList.add('active');
+                }
+            });
+            selectedPriority = task.priority;
+
+            // Меняем кнопку на "Сохранить"
+            const addBtn = document.getElementById('addTaskBtn');
+            addBtn.innerHTML = '<i class="bi bi-save"></i> Сохранить изменения';
+            addBtn.onclick = () => updateTask(taskId);
+
+            // Переходим на вкладку добавления
+            switchSection('add');
+
+            showNotification('Редактируйте задачу', 'info');
+        }
+
+        // Обновление задачи
+        function updateTask(taskId) {
+            const taskIndex = tasks.findIndex(t => t.id === taskId);
+            if (taskIndex === -1) return;
+
+            const title = document.getElementById('taskTitle').value.trim();
+            const description = document.getElementById('taskDescription').value.trim();
+            const date = document.getElementById('taskDate').value;
+            const time = document.getElementById('taskTime').value;
+
+            if (!title) {
+                showNotification('Введите название задачи', 'warning');
+                return;
+            }
+
+            let dueDate = null;
+            if (date) {
+                if (time) {
+                    dueDate = new Date(`${date}T${time}`);
+                } else {
+                    dueDate = new Date(date);
+                    dueDate.setHours(23, 59, 0, 0);
+                }
+            }
+
+            tasks[taskIndex] = {
+                ...tasks[taskIndex],
+                title: title,
+                description: description || '',
+                dueDate: dueDate ? dueDate.toISOString() : null,
+                priority: selectedPriority,
+                updatedAt: new Date().toISOString()
+            };
+
+            saveTasks();
+
+            // Восстанавливаем кнопку добавления
+            const addBtn = document.getElementById('addTaskBtn');
+            addBtn.innerHTML = '<i class="bi bi-plus-lg"></i> Добавить задачу';
+            addBtn.onclick = addTask;
+
+            // Очищаем форму
+            document.getElementById('taskTitle').value = '';
+            document.getElementById('taskDescription').value = '';
+            document.getElementById('taskDate').value = '';
+            document.getElementById('taskTime').value = '';
+
+            showNotification('Задача обновлена!', 'success');
+            switchSection('tasks');
+        }
+
+        // Удаление задачи
+        function deleteTask(taskId) {
+            if (!confirm('Удалить эту задачу?')) return;
+
+            tasks = tasks.filter(t => t.id !== taskId);
+            saveTasks();
+            showNotification('Задача удалена', 'info');
+
+            if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+        }
+
+        // ==================== СТАТИСТИКА ====================
+        // Обновление статистики
+        function updateStats() {
+            const total = tasks.length;
+            const completed = tasks.filter(t => t.completed).length;
+            const pending = total - completed;
+            const overdue = tasks.filter(t => {
+                if (t.completed || !t.dueDate) return false;
+                return new Date(t.dueDate) < new Date();
+            }).length;
+
+            document.getElementById('totalTasksStat').textContent = total;
+            document.getElementById('completedTasksStat').textContent = completed;
+            document.getElementById('pendingTasksStat').textContent = pending;
+            document.getElementById('overdueTasksStat').textContent = overdue;
+        }
+
+        // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
+        // Переключение секций
+        function switchSection(sectionId) {
+            // Скрываем все секции
+            document.querySelectorAll('.content-section').forEach(section => {
+                section.classList.remove('active');
+            });
+
+            // Убираем активный класс у всех кнопок навигации
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+
+            // Показываем нужную секцию
+            document.getElementById(`${sectionId}Section`).classList.add('active');
+
+            // Активируем соответствующую кнопку навигации
+            document.querySelector(`.nav-item[data-section="${sectionId}"]`).classList.add('active');
+
+            // Если переключаемся на календарь, обновляем его
+            if (sectionId === 'calendar') {
+                updateCalendar();
+            }
+        }
+
+        // Показать уведомление
+        function showNotification(message, type = 'info') {
+            // Создаем элемент уведомления
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+
+            const colors = {
+                'success': '#00B894',
+                'warning': '#FDCB6E',
+                'error': '#D63031',
+                'info': '#0984E3'
+            };
+
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: ${colors[type] || colors.info};
+                color: white;
+                padding: 14px 20px;
+                border-radius: 10px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                z-index: 10000;
+                animation: slideInRight 0.3s ease-out;
+                max-width: 300px;
+                font-weight: 500;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            `;
+
+            const icons = {
+                'success': 'bi-check-circle',
+                'warning': 'bi-exclamation-triangle',
+                'error': 'bi-x-circle',
+                'info': 'bi-info-circle'
+            };
+
+            notification.innerHTML = `
+                <i class="bi ${icons[type] || icons.info}" style="font-size: 20px;"></i>
+                <span>${message}</span>
+            `;
+
+            document.body.appendChild(notification);
+
+            // Удаляем через 3 секунды
+            setTimeout(() => {
+                notification.style.animation = 'slideOutRight 0.3s ease-out';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+
+            // Добавляем стили для анимации
+            if (!document.getElementById('notification-styles')) {
+                const style = document.createElement('style');
+                style.id = 'notification-styles';
+                style.textContent = `
+                    @keyframes slideInRight {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                    @keyframes slideOutRight {
+                        from { transform: translateX(0); opacity: 1; }
+                        to { transform: translateX(100%); opacity: 0; }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+
+        // Экранирование HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ==================== ИНИЦИАЛИЗАЦИЯ ПРИ ЗАГРУЗКЕ ====================
+        document.addEventListener('DOMContentLoaded', function() {
+            // Инициализация Telegram WebApp
+            initTelegramWebApp();
+
+            // Обновление даты
+            updateDateDisplay();
+
+            // Инициализация календаря
+            initCalendar();
+
+            // Устанавливаем текущую дату в форме
+            const today = new Date().toISOString().split('T')[0];
+            const now = new Date().toTimeString().slice(0,5);
+            document.getElementById('taskDate').value = today;
+            document.getElementById('taskDate').min = today;
+            document.getElementById('taskTime').value = now;
+
+            // Обработчики навигации
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const section = this.dataset.section;
+                    switchSection(section);
+                });
+            });
+
+            // Выбор приоритета
+            document.querySelectorAll('.priority-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.priority-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    selectedPriority = this.dataset.priority;
+                });
+            });
+
+            // Кнопка добавления задачи
+            document.getElementById('addTaskBtn').addEventListener('click', addTask);
+
+            // Enter для добавления задачи
+            document.getElementById('taskTitle').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') addTask();
+            });
+
+            // Переключение завершенных задач
+            document.getElementById('toggleCompleted').addEventListener('click', function() {
+                const list = document.getElementById('completedTasksList');
+                const icon = this.querySelector('i');
+                const text = this.querySelector('span');
+
+                if (isCompletedCollapsed) {
+                    list.classList.remove('collapsed');
+                    icon.className = 'bi bi-chevron-up';
+                    text.textContent = 'Скрыть';
+                } else {
+                    list.classList.add('collapsed');
+                    icon.className = 'bi bi-chevron-down';
+                    text.textContent = 'Показать';
+                }
+
+                isCompletedCollapsed = !isCompletedCollapsed;
+            });
+
+            // Очистка завершенных задач
+            document.getElementById('clearCompleted').addEventListener('click', function(e) {
+                e.preventDefault();
+                if (confirm('Удалить все завершенные задачи?')) {
+                    tasks = tasks.filter(t => !t.completed);
+                    saveTasks();
+                    showNotification('Завершенные задачи очищены', 'success');
+                }
+            });
+
+            // Синхронизация
+            document.getElementById('syncTasks').addEventListener('click', function(e) {
+                e.preventDefault();
+                showNotification('Синхронизация...', 'info');
+                setTimeout(() => {
+                    showNotification('Задачи синхронизированы', 'success');
+                }, 1000);
+            });
+
+            // Экспорт задач
+            document.getElementById('exportTasks').addEventListener('click', function(e) {
+                e.preventDefault();
+                const dataStr = JSON.stringify(tasks, null, 2);
+                const dataBlob = new Blob([dataStr], {type: 'application/json'});
+
+                // Создаем временную ссылку для скачивания
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(dataBlob);
+                link.download = `tasks_${new Date().toISOString().split('T')[0]}.json`;
+                link.click();
+
+                showNotification('Задачи экспортированы', 'success');
+            });
+
+            // Переключение темы
+            document.getElementById('themeToggle').addEventListener('click', function() {
+                const icon = this.querySelector('i');
+                if (icon.classList.contains('bi-sun')) {
+                    icon.className = 'bi bi-moon';
+                    document.documentElement.style.setProperty('--primary', '#4361ee');
+                    document.documentElement.style.setProperty('--primary-dark', '#3a0ca3');
+                    document.documentElement.style.setProperty('--primary-light', '#4895ef');
+                } else {
+                    icon.className = 'bi bi-sun';
+                    document.documentElement.style.setProperty('--primary', '#FF6B35');
+                    document.documentElement.style.setProperty('--primary-dark', '#E55A2B');
+                    document.documentElement.style.setProperty('--primary-light', '#FF8B5C');
+                }
+            });
+
+            // Автосохранение при закрытии
+            window.addEventListener('beforeunload', function() {
+                localStorage.setItem('tasks', JSON.stringify(tasks));
+            });
+
+            // Загружаем и отображаем задачи
+            renderTasks();
+            updateStats();
+
+            showNotification('TaskFlow загружен!', 'success');
+        });
+    </script>
 </body>
 </html>

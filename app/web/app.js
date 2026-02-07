@@ -1,4 +1,4 @@
-const API_URL = window.location.origin;
+const API_BASE = window.location.origin; // https://taskflowtrack.up.railway.app
 let user_id = null;
 
 // Initialize Telegram WebApp
