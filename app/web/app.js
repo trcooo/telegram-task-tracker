@@ -80,6 +80,7 @@
   };
 
   let userId = 1;
+  let authKey = 'u1';
   function getEffectiveUserKey(){
     if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) return String(tg.initDataUnsafe.user.id);
     return getClientId();
@@ -929,6 +930,13 @@
     const ua = navigator.userAgent || '';
     const isIOS = /iPad|iPhone|iPod/i.test(ua) || (tg && tg.platform === 'ios');
     document.body.classList.toggle('isIOS', !!isIOS);
+    // identity key for local caches
+    if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) {
+      userId = tg.initDataUnsafe.user.id;
+      authKey = 'tg_' + String(userId);
+    } else {
+      authKey = 'dev_' + getClientId();
+    }
 
     setVh();
     window.addEventListener('resize', setVh);

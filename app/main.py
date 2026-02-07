@@ -261,7 +261,7 @@ def to_out(t: Task) -> TaskOut:
 async def get_tasks(request: Request, db: Session = Depends(get_db)):
     tasks = (
         db.query(Task)
-        .filter(Task.user_id == user_id)
+        .filter(Task.user_id == uid)
         .order_by(Task.completed.asc(), Task.due_at.is_(None).asc(), Task.due_at.asc(), Task.id.desc())
         .all()
     )
@@ -342,7 +342,7 @@ async def migrate_user(payload: MigrateUser, request: Request, db: Session = Dep
 
 
 @app.delete("/api/tasks/{task_id}")
-async def delete_task(task_id: int, request: Request, db: Session = Depends(get_db)):
+async def delete_task(request: Request, task_id: int, request: Request, db: Session = Depends(get_db)):
     t = db.query(Task).filter(Task.id == task_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
