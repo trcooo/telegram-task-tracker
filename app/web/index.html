@@ -220,6 +220,34 @@
         </div>
       </div>
 
+      
+      <div class="grid2">
+        <div>
+          <label class="lbl">Повторять</label>
+          <select class="input" id="fRepeat">
+            <option value="none" selected>Не повторять</option>
+            <option value="daily">Каждый день</option>
+            <option value="weekly">Каждую неделю</option>
+            <option value="monthly">Каждый месяц</option>
+            <option value="custom">По дням недели</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl">Повторять до</label>
+          <input class="input" id="fRepeatUntil" type="date" />
+        </div>
+      </div>
+
+      <div class="weekdays" id="weekdays" style="display:none;">
+        <button type="button" class="wd" data-wd="0">Пн</button>
+        <button type="button" class="wd" data-wd="1">Вт</button>
+        <button type="button" class="wd" data-wd="2">Ср</button>
+        <button type="button" class="wd" data-wd="3">Чт</button>
+        <button type="button" class="wd" data-wd="4">Пт</button>
+        <button type="button" class="wd" data-wd="5">Сб</button>
+        <button type="button" class="wd" data-wd="6">Вс</button>
+      </div>
+
       <div class="modalActions">
         <button class="btn ghost" id="deleteBtn" type="button">Удалить</button>
         <button class="btn" id="saveBtn" type="button">Сохранить</button>

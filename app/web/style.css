@@ -633,3 +633,42 @@ input[type="time"].input::-webkit-calendar-picker-indicator{
   object-fit: cover;
   display:block;
 }
+
+/* repeat weekdays */
+.weekdays{
+  display:flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.wd{
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-weight: 900;
+  cursor:pointer;
+}
+.wd.active{
+  border-color: rgba(255,107,53,.35);
+  background: linear-gradient(135deg, rgba(255,107,53,.20), rgba(50,194,255,.10));
+}
+/* drag/drop calendar */
+.calDay.dropTarget{
+  outline: 2px dashed rgba(255,107,53,.55);
+  outline-offset: -4px;
+}
+.card.dragging{
+  opacity: .7;
+  transform: scale(.98);
+}
+.dragGhost{
+  position: fixed;
+  left: 0; top: 0;
+  z-index: 9999;
+  pointer-events: none;
+  transform: translate(-9999px, -9999px);
+  width: min(92vw, 420px);
+  opacity: .92;
+}

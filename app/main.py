@@ -1,7 +1,7 @@
 import os
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +17,70 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger("taskflow")
 
 app = FastAPI(title="TaskFlow API", version="3.1.0")
+
+
+def _parse_utc_noz(dt_str: str):
+    # dt_str: 'YYYY-MM-DDTHH:MM:SS' stored as UTC naive
+    return datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S")
+
+def _format_utc_noz(dt: datetime):
+    return dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+def _to_local(utc_dt: datetime, tz_off_min: int) -> datetime:
+    return utc_dt + timedelta(minutes=tz_off_min)
+
+def _to_utc(local_dt: datetime, tz_off_min: int) -> datetime:
+    return local_dt - timedelta(minutes=tz_off_min)
+
+WEEKDAY_MAP = {"mon":0,"tue":1,"wed":2,"thu":3,"fri":4,"sat":5,"sun":6}
+
+def _iter_recurrences(local_start: datetime, rule: dict, local_until: datetime):
+    # inclusive until (by date)
+    freq = (rule or {}).get("freq")
+    interval = int((rule or {}).get("interval") or 1)
+    byweekday = rule.get("byweekday") if isinstance(rule, dict) else None
+
+    # normalize until to end-of-day
+    until_end = local_until.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    if not freq:
+        return
+
+    if freq == "daily":
+        cur = local_start
+        while cur <= until_end:
+            yield cur
+            cur = cur + timedelta(days=interval)
+
+    elif freq == "weekly":
+        # if byweekday provided (0=Mon..6=Sun) generate those weekdays
+        # start from week of local_start
+        byweekday = sorted(set(int(x) for x in (byweekday or [local_start.weekday()])))
+        # We generate day by day from start to until, stepping 1 day, but only emit selected weekdays.
+        cur = local_start
+        while cur <= until_end:
+            if cur.weekday() in byweekday:
+                yield cur
+            cur = cur + timedelta(days=1)
+
+    elif freq == "monthly":
+        # same day-of-month (or last day if shorter month)
+        from calendar import monthrange
+        cur = local_start
+        day = local_start.day
+        while cur <= until_end:
+            yield cur
+            # advance month
+            y = cur.year
+            m = cur.month + interval
+            y += (m-1)//12
+            m = (m-1)%12 + 1
+            last_day = monthrange(y, m)[1]
+            d = min(day, last_day)
+            cur = cur.replace(year=y, month=m, day=d)
+    else:
+        return
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -85,6 +149,9 @@ class TaskCreate(BaseModel):
     priority: str = Field("medium")
     due_at: Optional[str] = None
     reminder_enabled: bool = True
+    tz_offset_minutes: Optional[int] = None  # minutes east of UTC
+    recurrence: Optional[Dict] = None  # {freq, byweekday, interval}
+    recurrence_until: Optional[str] = None  # YYYY-MM-DD (local)
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=200)
@@ -108,6 +175,9 @@ def to_out(t: Task) -> TaskOut:
         created_at=iso(getattr(t, "created_at", None)),
         updated_at=iso(getattr(t, "updated_at", None)),
     )
+    tz_offset_minutes: Optional[int] = None
+    recurrence: Optional[Dict] = None
+    recurrence_until: Optional[str] = None
 
 @app.get("/api/tasks/{user_id}", response_model=List[TaskOut])
 async def get_tasks(user_id: int, db: Session = Depends(get_db)):

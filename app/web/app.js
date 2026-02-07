@@ -62,6 +62,9 @@
     fTime: document.getElementById('fTime'),
     fPriority: document.getElementById('fPriority'),
     fReminder: document.getElementById('fReminder'),
+    fRepeat: document.getElementById('fRepeat'),
+    fRepeatUntil: document.getElementById('fRepeatUntil'),
+    weekdays: document.getElementById('weekdays'),
   };
 
   let userId = 1;
@@ -73,6 +76,7 @@
   // calendar state
   let calMonth = new Date(); calMonth.setDate(1);
   let selectedDay = new Date();
+  let repeatWeekdays = new Set([0]);
 
   // settings (persist)
   const settings = {
@@ -513,14 +517,35 @@
     const title = el.fTitle.value.trim();
     const description = el.fDesc.value.trim();
     if (!title) { toast('Введите название', 'warn'); return; }
+    if (el.fRepeat && el.fRepeat.value !== 'none' && !el.fRepeatUntil.value) {
+      toast('Введите дату окончания повтора', 'warn');
+      return;
+    }
+
 
     const due_at = isoUtcNoZFromInputs(el.fDate.value, el.fTime.value);
+        const tzOff = tzOffsetMinutes();
+    // recurrence
+    let recurrence = null;
+    let recurrence_until = null;
+    if (el.fRepeat && el.fRepeat.value !== 'none') {
+      recurrence_until = el.fRepeatUntil.value || null;
+      const freq = el.fRepeat.value === 'custom' ? 'weekly' : el.fRepeat.value;
+      recurrence = { freq, interval: 1 };
+      if (el.fRepeat.value === 'custom') {
+        recurrence.byweekday = Array.from(repeatWeekdays).sort((a,b)=>a-b);
+      }
+    }
+
     const payload = {
       title,
       description,
       priority: el.fPriority.value,
       due_at,
-      reminder_enabled: (el.fReminder.value !== 'off')
+      reminder_enabled: (el.fReminder.value !== 'off'),
+      tz_offset_minutes: tzOff,
+      recurrence,
+      recurrence_until
     };
 
     try {
@@ -532,7 +557,8 @@
         toast('Сохранено', 'good');
       }
       closeModal();
-      await refresh(true);
+      enableCalendarDrag();
+    await refresh(true);
     } catch (e) {
       toast('Ошибка сохранения', 'bad');
       console.error(e);
@@ -611,6 +637,30 @@
   }
 
   // ---------- Events ----------
+  
+    // repeat UI
+    function bindRepeatUI(){
+      if (!el.fRepeat) return;
+      const updateVisibility = () => {
+        const v = el.fRepeat.value;
+        if (el.weekdays) el.weekdays.style.display = (v === 'custom') ? 'flex' : 'none';
+      };
+      el.fRepeat.addEventListener('change', updateVisibility);
+      updateVisibility();
+
+      if (el.weekdays) {
+        el.weekdays.querySelectorAll('.wd').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const wd = Number(btn.dataset.wd);
+            if (repeatWeekdays.has(wd)) repeatWeekdays.delete(wd);
+            else repeatWeekdays.add(wd);
+            btn.classList.toggle('active', repeatWeekdays.has(wd));
+          });
+        });
+        // default select Monday+Thursday? no, keep none
+      }
+    }
+
   function bind() {
     // task filters
     document.querySelectorAll('#filtersTasks .seg').forEach(btn => {
@@ -750,6 +800,121 @@
     el.dayCards.addEventListener('click', onCardsClick);
   }
 
+  
+  // --- Drag & drop in calendar (touch-friendly) ---
+  function enableCalendarDrag(){
+    const ghost = document.createElement('div');
+    ghost.className = 'dragGhost card';
+    ghost.style.display = 'none';
+    document.body.appendChild(ghost);
+
+    let dragId = null;
+    let dragging = false;
+    let startTimer = null;
+
+    function clearTargets(){
+      document.querySelectorAll('.calDay.dropTarget').forEach(d => d.classList.remove('dropTarget'));
+    }
+    function markTargets(){
+      document.querySelectorAll('#calGrid .calDay').forEach(d => d.classList.add('dropTarget'));
+    }
+
+    function getDayCellFromPoint(x,y){
+      const elAt = document.elementFromPoint(x,y);
+      return elAt ? elAt.closest('.calDay') : null;
+    }
+
+    function showGhostFromCard(card, x, y){
+      ghost.innerHTML = card.innerHTML;
+      ghost.style.display = 'block';
+      ghost.style.transform = `translate(${Math.max(8, x-ghost.offsetWidth/2)}px, ${Math.max(8, y-40)}px)`;
+    }
+    function moveGhost(x,y){
+      ghost.style.transform = `translate(${Math.max(8, x-ghost.offsetWidth/2)}px, ${Math.max(8, y-40)}px)`;
+    }
+    function hideGhost(){
+      ghost.style.display = 'none';
+      ghost.style.transform = 'translate(-9999px,-9999px)';
+      ghost.innerHTML = '';
+    }
+
+    async function dropToDay(taskId, dayKeyStr){
+      const t = tasks.find(x => x.id === taskId);
+      if (!t) return;
+      // keep time (in selected TZ). If no time => keep 23:59
+      let time = "23:59";
+      if (t.due_at) time = timeStrFromUtcIso(t.due_at);
+      // build new due_at
+      const due_at = isoUtcNoZFromInputs(dayKeyStr, time);
+      try{
+        await apiUpdate(taskId, { due_at, tz_offset_minutes: tzOffsetMinutes() });
+        toast('Перенесено', 'good');
+        await refresh(true);
+      }catch(e){
+        toast('Не удалось перенести', 'bad');
+        console.error(e);
+      }
+    }
+
+    function attachTo(container){
+      container.addEventListener('pointerdown', (ev) => {
+        const card = ev.target.closest('.card');
+        if (!card) return;
+        // don't start drag if tapping a button
+        if (ev.target.closest('button')) return;
+
+        const id = Number(card.dataset.id);
+        if (!id) return;
+
+        startTimer = setTimeout(() => {
+          dragging = true;
+          dragId = id;
+          card.classList.add('dragging');
+          markTargets();
+          showGhostFromCard(card, ev.clientX, ev.clientY);
+          try{ card.setPointerCapture(ev.pointerId); }catch{}
+        }, 220);
+      });
+
+      container.addEventListener('pointermove', (ev) => {
+        if (!dragging) return;
+        moveGhost(ev.clientX, ev.clientY);
+        clearTargets();
+        const cell = getDayCellFromPoint(ev.clientX, ev.clientY);
+        if (cell) cell.classList.add('dropTarget');
+      });
+
+      container.addEventListener('pointerup', async (ev) => {
+        if (startTimer){ clearTimeout(startTimer); startTimer = null; }
+        if (!dragging) return;
+
+        const card = container.querySelector(`.card[data-id="${dragId}"]`);
+        const cell = getDayCellFromPoint(ev.clientX, ev.clientY);
+
+        dragging = false;
+        clearTargets();
+        hideGhost();
+        if (card) card.classList.remove('dragging');
+
+        if (cell && cell.dataset.date){
+          await dropToDay(dragId, cell.dataset.date);
+        }
+        dragId = null;
+      });
+
+      container.addEventListener('pointercancel', () => {
+        if (startTimer){ clearTimeout(startTimer); startTimer = null; }
+        dragging = false; dragId = null;
+        clearTargets(); hideGhost();
+        container.querySelectorAll('.card.dragging').forEach(c=>c.classList.remove('dragging'));
+      });
+    }
+
+    // attach to dayCards only (calendar screen)
+    if (el.dayCards) attachTo(el.dayCards);
+  }
+
+
   // ---------- Telegram init ----------
   function initTelegram() {
     const ua = navigator.userAgent || '';
@@ -783,6 +948,7 @@
   document.addEventListener('DOMContentLoaded', async () => {
     initTelegram();
     bind();
+    bindRepeatUI();
     showScreen('tasks');
     await refresh(true);
   });
