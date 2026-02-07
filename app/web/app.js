@@ -937,11 +937,18 @@
     selectedDay = new Date();
   }
 
-  document.addEventListener('DOMContentLoaded', async () => {
+  async function boot(){
     initTelegram();
     bind();
     bindRepeatUI();
     showScreen('tasks');
     await refresh(true);
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    // Script injected after DOMContentLoaded (Telegram WebView cache-busting loader)
+    boot();
+  }
 })();
