@@ -96,13 +96,17 @@
           <div class="calGrid" id="calGrid"></div>
         </section>
 
-        <section class="dayPanel">
+        <section class="dayPanel" id="dayPanel">
+          <div class="sheetHandle" id="dayHandle"></div>
           <div class="dayPanelHead">
             <div>
               <div class="dayTitle" id="dayTitle">День</div>
               <div class="dayHint" id="dayHint">Задачи на выбранный день</div>
             </div>
-            <button class="pill small" id="dayAddBtn" type="button">＋ Задача</button>
+            <div class="dayHeadBtns">
+              <button class="ghostIcon" id="dayCollapse" type="button" aria-label="Свернуть/развернуть">▾</button>
+              <button class="pill small" id="dayAddBtn" type="button">＋ Задача</button>
+            </div>
           </div>
 
           <div class="cards" id="dayCards"></div>
@@ -225,7 +229,7 @@
 
 <script>
 (function() {
-  const BUILD = "1770487156";
+  const BUILD = "1770487883";
   // Force-bust cached HTML in Telegram WebView by ensuring query param matches build
   try {
     const url = new URL(location.href);

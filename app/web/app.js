@@ -48,6 +48,9 @@
     dayCards: document.getElementById('dayCards'),
     dayEmpty: document.getElementById('dayEmpty'),
     dayAddBtn: document.getElementById('dayAddBtn'),
+    dayPanel: document.getElementById('dayPanel'),
+    dayHandle: document.getElementById('dayHandle'),
+    dayCollapse: document.getElementById('dayCollapse'),
 
     // menu UI
     mSync: document.getElementById('mSync'),
@@ -302,13 +305,14 @@
   }
 
   // ---------- Screens ----------
-  function showScreen(name) {
+  function showScreen(name, navName) {
     el.screenTasks.classList.toggle('show', name==='tasks');
     el.screenCalendar.classList.toggle('show', name==='calendar');
     el.screenMenu.classList.toggle('show', name==='menu');
 
     document.querySelectorAll('.bottomNav .navBtn[data-screen]').forEach(b => {
-      b.classList.toggle('active', b.dataset.screen===name);
+      const act = (navName || name);
+      b.classList.toggle('active', b.dataset.screen===act);
     });
 
     if (name === 'calendar') {
@@ -357,28 +361,33 @@
     const prTag = pr === 'high' ? `<span class="tag bad">Высокий</span>` : (pr === 'low' ? `<span class="tag good">Низкий</span>` : `<span class="tag">Средний</span>`);
     const remTag = (t.reminder_enabled === false) ? `<span class="tag">Напом. выкл</span>` : `<span class="tag good">Напом. вкл</span>`;
     const doneTag = t.completed ? `<span class="tag good">Готово</span>` : '';
+
+    const snoozeBtn = (!t.completed && t.due_at) ? `<button class="sAct ghost" data-action="snooze" title="Отложить">⏰</button>` : '';
+    const toggleIcon = t.completed ? '↩' : '✓';
+
     return `
-      <div class="card" data-id="${t.id}">
-        <div class="cardTop">
-          <div>
-            <div class="cardTitle">${escapeHtml(t.title)}</div>
-            ${t.description ? `<div class="cardDesc">${escapeHtml(t.description)}</div>` : ''}
+      <div class="card swipe" data-id="${t.id}">
+        <div class="swipeActions" aria-hidden="true">
+          <button class="sAct good" data-action="toggle" title="${t.completed ? 'Вернуть' : 'Готово'}">${toggleIcon}</button>
+          <button class="sAct ghost" data-action="edit" title="Редактировать">✎</button>
+          ${snoozeBtn}
+          <button class="sAct bad" data-action="delete" title="Удалить">🗑</button>
+        </div>
+
+        <div class="cardBody">
+          <div class="cardTop">
+            <div>
+              <div class="cardTitle">${escapeHtml(t.title)}</div>
+              ${t.description ? `<div class="cardDesc">${escapeHtml(t.description)}</div>` : ''}
+            </div>
+          </div>
+          <div class="tags">
+            ${dueTag}
+            ${prTag}
+            ${remTag}
+            ${doneTag}
           </div>
         </div>
-        <div class="tags">
-          ${dueTag}
-          ${prTag}
-          ${remTag}
-          ${doneTag}
-        </div>
-        <div class="cardActions">
-          <button class="smallBtn ${t.completed ? 'ghost' : 'good'}" data-action="toggle">${t.completed ? 'Вернуть' : 'Готово'}</button>
-          <button class="smallBtn ghost" data-action="edit">Редакт.</button>
-          <button class="smallBtn bad" data-action="delete">Удалить</button>
-        </div>
-        ${(!t.completed && t.due_at) ? `<div class="cardActions" style="margin-top:8px">
-          <button class="smallBtn ghost" data-action="snooze">Отложить +15 мин</button>
-        </div>` : ''}
       </div>
     `;
   }
@@ -671,7 +680,7 @@
       btn.addEventListener('click', () => {
         const s = btn.dataset.screen;
         if (s === 'overdue') {
-          showScreen('tasks');
+          showScreen('tasks','overdue');
           filter = 'overdue';
           document.querySelectorAll('#filtersTasks .seg').forEach(b => b.classList.toggle('active', b.dataset.filter==='overdue'));
           renderTasks();
@@ -769,6 +778,9 @@
       const id = Number(card.dataset.id);
       const t = tasks.find(x => x.id === id);
       const action = btn.dataset.action;
+      // close swipe after action
+      card.classList.remove('open');
+      try{ tg?.HapticFeedback?.impactOccurred('light'); }catch{};
 
       (async () => {
         try {
@@ -798,12 +810,109 @@
         }
       })();
     }
+    // premium interactions
+    enableSwipe(el.cards);
+    enableSwipe(el.dayCards);
+    initDayPanelSheet();
+
     el.cards.addEventListener('click', onCardsClick);
     el.dayCards.addEventListener('click', onCardsClick);
   }
 
   
-  // --- Drag & drop in calendar (touch-friendly) ---
+  
+
+  // ---------- Swipe actions (mobile friendly) ----------
+  function enableSwipe(container){
+    if (!container) return;
+
+    let activeCard = null;
+
+    function closeActive(){
+      if (activeCard) activeCard.classList.remove('open');
+      activeCard = null;
+    }
+
+    // close when tapping outside card buttons
+    document.addEventListener('pointerdown', (e) => {
+      if (!activeCard) return;
+      if (!container.contains(e.target)) { closeActive(); return; }
+      const card = e.target.closest('.card.swipe');
+      if (!card) { closeActive(); return; }
+      if (card !== activeCard && !e.target.closest('button')) closeActive();
+    }, { passive:true });
+
+    container.addEventListener('pointerdown', (ev) => {
+      const card = ev.target.closest('.card.swipe');
+      if (!card) return;
+      if (ev.target.closest('button')) return;
+
+      const body = card.querySelector('.cardBody');
+      if (!body) return;
+
+      if (activeCard && activeCard !== card) closeActive();
+
+      let startX = ev.clientX;
+      let startY = ev.clientY;
+      let dragging = false;
+
+      const openX = -190;
+
+      const onMove = (e) => {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        if (!dragging) {
+          if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) dragging = true;
+          else return;
+        }
+
+        let x = dx;
+        if (card.classList.contains('open')) x = openX + dx; // from open position
+
+        x = Math.min(0, Math.max(openX, x));
+        body.style.transition = 'none';
+        body.style.transform = `translateX(${x}px)`;
+      };
+
+      const onUp = () => {
+        container.removeEventListener('pointermove', onMove);
+        container.removeEventListener('pointerup', onUp);
+        container.removeEventListener('pointercancel', onUp);
+
+        body.style.transition = '';
+        const m = body.style.transform.match(/-?\d+/);
+        const current = m ? Number(m[0]) : 0;
+        body.style.transform = '';
+
+        const shouldOpen = current < (openX/2);
+        if (shouldOpen) {
+          card.classList.add('open');
+          activeCard = card;
+        } else {
+          card.classList.remove('open');
+          if (activeCard === card) activeCard = null;
+        }
+      };
+
+      container.addEventListener('pointermove', onMove);
+      container.addEventListener('pointerup', onUp);
+      container.addEventListener('pointercancel', onUp);
+    });
+
+    // clicking on a revealed area closes
+    container.addEventListener('click', (e) => {
+      const card = e.target.closest('.card.swipe');
+      if (!card) return;
+      if (!e.target.closest('button') && card.classList.contains('open')) {
+        // tap on card body while open closes
+        card.classList.remove('open');
+        if (activeCard === card) activeCard = null;
+      }
+    });
+  }
+
+// --- Drag & drop in calendar (touch-friendly) ---
   function enableCalendarDrag(){
     const ghost = document.createElement('div');
     ghost.className = 'dragGhost card';
@@ -854,12 +963,17 @@
     }
 
     function attachTo(container){
+      let downX = 0;
+      let downY = 0;
       container.addEventListener('pointerdown', (ev) => {
         const card = ev.target.closest('.card');
         if (!card) return;
         if (ev.target.closest('button')) return;
         const id = Number(card.dataset.id);
         if (!id) return;
+
+        downX = ev.clientX;
+        downY = ev.clientY;
 
         startTimer = setTimeout(() => {
           dragging = true;
@@ -871,6 +985,11 @@
       });
 
       container.addEventListener('pointermove', (ev) => {
+        if (startTimer) {
+          const dx0 = ev.clientX - downX;
+          const dy0 = ev.clientY - downY;
+          if (Math.abs(dx0) > 12 || Math.abs(dy0) > 12) { clearTimeout(startTimer); startTimer = null; }
+        }
         if (!dragging) return;
         moveGhost(ev.clientX, ev.clientY);
         clearTargets();
@@ -969,3 +1088,66 @@
     boot();
   }
 })();
+
+  // ---------- Day panel bottom sheet ----------
+  function initDayPanelSheet(){
+    if (!el.dayPanel) return;
+
+    const key = authKey + ':dayPanelCollapsed';
+    let collapsed = localStorage.getItem(key) === '1';
+
+    function apply(){
+      el.dayPanel.classList.toggle('collapsed', collapsed);
+      if (el.dayCollapse) el.dayCollapse.textContent = collapsed ? '▴' : '▾';
+    }
+    function setCollapsed(v){
+      collapsed = !!v;
+      localStorage.setItem(key, collapsed ? '1' : '0');
+      apply();
+    }
+    function toggle(){
+      setCollapsed(!collapsed);
+      try{ tg?.HapticFeedback?.impactOccurred('light'); }catch{}
+    }
+
+    if (el.dayCollapse) el.dayCollapse.addEventListener('click', toggle);
+    if (el.dayHandle) el.dayHandle.addEventListener('click', toggle);
+
+    // drag handle up/down
+    let startY = 0;
+    let moved = 0;
+    let dragging = false;
+
+    const onDown = (ev) => {
+      if (!ev.isPrimary) return;
+      startY = ev.clientY;
+      moved = 0;
+      dragging = true;
+      el.dayPanel.style.transition = 'none';
+      try{ el.dayHandle?.setPointerCapture(ev.pointerId); }catch{}
+    };
+    const onMove = (ev) => {
+      if (!dragging) return;
+      moved = ev.clientY - startY;
+      const t = Math.max(-60, Math.min(160, moved));
+      el.dayPanel.style.transform = `translateY(${t}px)`;
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      el.dayPanel.style.transition = '';
+      el.dayPanel.style.transform = '';
+      if (moved > 40) setCollapsed(true);
+      if (moved < -40) setCollapsed(false);
+    };
+
+    el.dayHandle?.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+
+    apply();
+  }
+
+
+
