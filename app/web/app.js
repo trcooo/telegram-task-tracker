@@ -1074,6 +1074,21 @@
       if (el.menuAvatar) {
         const initials = (me.first_name||'').slice(0,1) + (me.last_name||'').slice(0,1);
         el.menuAvatar.textContent = (initials || 'TF').toUpperCase();
+
+      // Prefer Telegram nickname when available (even in browser mode)
+      try{
+        const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+        if (u){
+          const tFull = [u.first_name, u.last_name].filter(Boolean).join(' ') || (u.username ? '@'+u.username : 'Пользователь');
+          if (el.menuUserName) el.menuUserName.textContent = tFull;
+          if (el.menuUserHandle) el.menuUserHandle.textContent = u.username ? '@' + u.username : 'Telegram';
+          if (el.menuAvatar){
+            const initials = ((u.first_name||'').slice(0,1) + (u.last_name||'').slice(0,1)) || (u.username||'').slice(0,2) || 'TF';
+            el.menuAvatar.textContent = String(initials).toUpperCase();
+          }
+        }
+      }catch(_){/* ignore */}
+
       }
     }catch(e){
       // telegram fallback user
