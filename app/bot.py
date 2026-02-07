@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
@@ -10,6 +11,10 @@ import sys
 
 # Добавляем путь для импортов
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Импорт БД для напоминаний
+from database import SessionLocal
+from models import Task
 
 # Настройки
 API_TOKEN = os.getenv("BOT_TOKEN")
@@ -428,10 +433,56 @@ async def handle_text(message: types.Message):
         )
 
 
-# ==================== ЗАПУСК БОТА ====================
+# 
+# ==================== НАПОМИНАНИЯ ====================
+async def reminders_loop():
+    """Каждые 30 секунд проверяет задачи, которым осталось ~15 минут, и шлёт уведомление."""
+    while True:
+        try:
+            now = datetime.utcnow()
+            frm = now + timedelta(minutes=15)
+            to = now + timedelta(minutes=16)
+
+            db = SessionLocal()
+            try:
+                tasks_to_remind = (
+                    db.query(Task)
+                    .filter(Task.completed == False)
+                    .filter(Task.due_at.isnot(None))
+                    .filter(Task.reminder_sent == False)
+                    .filter(Task.due_at >= frm)
+                    .filter(Task.due_at < to)
+                    .all()
+                )
+
+                for t in tasks_to_remind:
+                    try:
+                        await bot.send_message(
+                            t.user_id,
+                            f"⏰ Напоминание: через 15 минут задача:\n\n*{t.title}*",
+                            parse_mode="Markdown",
+                            reply_markup=get_main_keyboard()
+                        )
+                        t.reminder_sent = True
+                    except Exception as e:
+                        logger.error(f"❌ Не удалось отправить напоминание пользователю {t.user_id}: {e}")
+
+                db.commit()
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка reminders_loop: {e}")
+
+        await asyncio.sleep(30)
+
+==================== ЗАПУСК БОТА ====================
 async def on_startup(dp):
     """Действия при запуске бота"""
     logger.info("🤖 Запуск Telegram бота...")
+
+    # Запускаем цикл напоминаний
+    asyncio.create_task(reminders_loop())
 
     # Отправляем сообщение администратору
     if ADMIN_ID:

@@ -30,6 +30,7 @@
             --shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
             --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.05);
             --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.15);
+                    --tg-vh: 100vh;       /* Telegram viewport fix */
         }
 
         * {
@@ -44,7 +45,8 @@
             background: var(--light);
             color: var(--secondary);
             overflow-x: hidden;
-            min-height: 100vh;
+            overflow: hidden;
+            min-height: var(--tg-vh, 100vh);
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
@@ -54,7 +56,8 @@
             max-width: 500px;
             margin: 0 auto;
             background: white;
-            min-height: 100vh;
+            height: var(--tg-vh, 100vh);
+            min-height: var(--tg-vh, 100vh);
             position: relative;
             box-shadow: 0 0 40px rgba(0, 0, 0, 0.05);
         }
@@ -901,7 +904,7 @@
                     <div class="logo-icon">TF</div>
                     <div class="logo-text">
                         <h1>TaskFlow</h1>
-                        <p>Управление задачами в стиле LeaderTask</p>
+                        <p id="subtitle"></p>
                     </div>
                 </div>
 
@@ -1129,7 +1132,101 @@
     <script>
         // ==================== ИНИЦИАЛИЗАЦИЯ ====================
         const tg = window.Telegram?.WebApp;
-        let tasks = JSON.parse(localStorage.getItem('tasks') || '[]');
+        const API_URL = window.location.origin;
+        let userId = 1;
+        let tasks = [];
+        const TASKS_CACHE_KEY = 'tasks_cache_v2';
+
+
+        // ==================== VIEWPORT FIX (Telegram Mini App) ====================
+        function applyTelegramViewportFix() {
+            const setVh = () => {
+                const h = tg?.viewportHeight ? tg.viewportHeight : window.innerHeight;
+                document.documentElement.style.setProperty('--tg-vh', `${h}px`);
+            };
+            setVh();
+            tg?.onEvent?.('viewportChanged', setVh);
+            window.addEventListener('resize', setVh);
+        }
+
+        // ==================== API HELPERS ====================
+        function toUiTask(apiTask) {
+            return {
+                id: apiTask.id,
+                user_id: apiTask.user_id,
+                title: apiTask.title,
+                description: apiTask.description || '',
+                dueDate: apiTask.due_at || null,
+                priority: apiTask.priority || 'medium',
+                completed: !!apiTask.completed,
+                createdAt: apiTask.created_at || null,
+                updatedAt: apiTask.updated_at || null,
+                reminder_sent: !!apiTask.reminder_sent
+            };
+        }
+
+        function toApiPayloadFromUi(uiTask) {
+            return {
+                user_id: userId,
+                title: uiTask.title,
+                description: uiTask.description || '',
+                priority: uiTask.priority || 'medium',
+                due_at: uiTask.dueDate || null
+            };
+        }
+
+        async function apiGetTasks() {
+            const res = await fetch(`${API_URL}/api/tasks/${userId}`);
+            if (!res.ok) throw new Error('Failed to load tasks');
+            const data = await res.json();
+            return data.map(toUiTask);
+        }
+
+        async function apiCreateTask(uiTask) {
+            const res = await fetch(`${API_URL}/api/tasks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(toApiPayloadFromUi(uiTask))
+            });
+            if (!res.ok) throw new Error('Failed to create task');
+            return toUiTask(await res.json());
+        }
+
+        async function apiUpdateTask(taskId, uiTask) {
+            const res = await fetch(`${API_URL}/api/tasks/${taskId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: uiTask.title,
+                    description: uiTask.description || '',
+                    priority: uiTask.priority || 'medium',
+                    due_at: uiTask.dueDate || null
+                })
+            });
+            if (!res.ok) throw new Error('Failed to update task');
+            return toUiTask(await res.json());
+        }
+
+        async function apiDeleteTask(taskId) {
+            const res = await fetch(`${API_URL}/api/tasks/${taskId}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Failed to delete task');
+            return await res.json();
+        }
+
+        async function apiToggleTask(taskId, completed) {
+            const endpoint = completed ? 'done' : 'undone';
+            const res = await fetch(`${API_URL}/api/tasks/${taskId}/${endpoint}`, { method: 'POST' });
+            if (!res.ok) throw new Error('Failed to toggle task');
+            return await res.json();
+        }
+
+        async function refreshTasks() {
+            tasks = await apiGetTasks();
+            localStorage.setItem(TASKS_CACHE_KEY, JSON.stringify(tasks));
+            updateStats();
+            renderTasks();
+        }
+
         let currentDate = new Date();
         let currentCalendarDate = new Date();
         let selectedPriority = 'medium';
@@ -1138,6 +1235,7 @@
         // Инициализация Telegram WebApp
         function initTelegramWebApp() {
             if (tg) {
+                applyTelegramViewportFix();
                 tg.expand();
                 tg.setHeaderColor('#2D3436');
                 tg.setBackgroundColor('#F5F6FA');
@@ -1166,6 +1264,9 @@
                 const initials = (user.first_name?.[0] || '') + (user.last_name?.[0] || '');
                 avatar.innerHTML = `<span style="font-weight: 700; color: white;">${initials}</span>`;
             }
+
+            // Telegram user id
+            userId = user.id || 1;
 
             // Обновляем приветствие
             const hour = new Date().getHours();
@@ -1308,7 +1409,8 @@
         // ==================== ЗАДАЧИ ====================
         // Сохранение задач
         function saveTasks() {
-            localStorage.setItem('tasks', JSON.stringify(tasks));
+            // Локальный кэш (на случай оффлайн/ошибок сети)
+            localStorage.setItem(TASKS_CACHE_KEY, JSON.stringify(tasks));
             updateStats();
             renderTasks();
         }
@@ -1450,6 +1552,14 @@
         // ==================== ОПЕРАЦИИ С ЗАДАЧАМИ ====================
         // Добавление задачи
         function addTask() {
+            // wrapper for backward compatibility (old handlers)
+            addTaskAsync().catch(e => {
+                console.error(e);
+                showNotification('Ошибка добавления задачи', 'warning');
+            });
+        }
+
+        async function addTaskAsync() {
             const title = document.getElementById('taskTitle').value.trim();
             const description = document.getElementById('taskDescription').value.trim();
             const date = document.getElementById('taskDate').value;
@@ -1470,19 +1580,15 @@
                 }
             }
 
-            const task = {
-                id: Date.now(),
-                title: title,
+            const uiTask = {
+                title,
                 description: description || '',
                 dueDate: dueDate ? dueDate.toISOString() : null,
                 priority: selectedPriority,
-                completed: false,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
+                completed: false
             };
 
-            tasks.unshift(task);
-            saveTasks();
+            await apiCreateTask(uiTask);
 
             // Очищаем форму
             document.getElementById('taskTitle').value = '';
@@ -1490,38 +1596,34 @@
             document.getElementById('taskDate').value = '';
             document.getElementById('taskTime').value = '';
 
-            // Показываем уведомление
+            // Сбрасываем приоритет
+            document.querySelectorAll('.priority-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector('.priority-btn[data-priority="medium"]').classList.add('active');
+            selectedPriority = 'medium';
+
+            await refreshTasks();
             showNotification('Задача добавлена!', 'success');
-
-            // Переходим на вкладку задач
-            switchSection('tasks');
-
-            // Виброотклик если доступен
             if (navigator.vibrate) navigator.vibrate(50);
         }
+function toggleTask(taskId) {
+            toggleTaskAsync(taskId).catch(e => {
+                console.error(e);
+                showNotification('Ошибка изменения статуса', 'warning');
+            });
+        }
 
-        // Переключение статуса задачи
-        function toggleTask(taskId) {
-            const taskIndex = tasks.findIndex(t => t.id === taskId);
-            if (taskIndex === -1) return;
+        async function toggleTaskAsync(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
 
-            tasks[taskIndex].completed = !tasks[taskIndex].completed;
-            tasks[taskIndex].updatedAt = new Date().toISOString();
+            const newCompleted = !task.completed;
+            await apiToggleTask(taskId, newCompleted);
 
-            // Если задача завершена, перемещаем ее в конец списка активных
-            if (tasks[taskIndex].completed) {
-                const completedTask = tasks.splice(taskIndex, 1)[0];
-                tasks.push(completedTask);
-                showNotification('Задача завершена!', 'success');
-            }
-
-            saveTasks();
-
+            await refreshTasks();
             if (navigator.vibrate) navigator.vibrate(30);
         }
 
-        // Редактирование задачи
-        function editTask(taskId) {
+function editTask(taskId) {
             const task = tasks.find(t => t.id === taskId);
             if (!task) return;
 
@@ -1557,9 +1659,13 @@
 
         // Обновление задачи
         function updateTask(taskId) {
-            const taskIndex = tasks.findIndex(t => t.id === taskId);
-            if (taskIndex === -1) return;
+            updateTaskAsync(taskId).catch(e => {
+                console.error(e);
+                showNotification('Ошибка обновления задачи', 'warning');
+            });
+        }
 
+        async function updateTaskAsync(taskId) {
             const title = document.getElementById('taskTitle').value.trim();
             const description = document.getElementById('taskDescription').value.trim();
             const date = document.getElementById('taskDate').value;
@@ -1580,20 +1686,18 @@
                 }
             }
 
-            tasks[taskIndex] = {
-                ...tasks[taskIndex],
-                title: title,
+            const uiTask = {
+                title,
                 description: description || '',
                 dueDate: dueDate ? dueDate.toISOString() : null,
-                priority: selectedPriority,
-                updatedAt: new Date().toISOString()
+                priority: selectedPriority
             };
 
-            saveTasks();
+            await apiUpdateTask(taskId, uiTask);
 
-            // Восстанавливаем кнопку добавления
+            // Возвращаем кнопку в режим добавления
             const addBtn = document.getElementById('addTaskBtn');
-            addBtn.innerHTML = '<i class="bi bi-plus-lg"></i> Добавить задачу';
+            addBtn.innerHTML = '<i class="bi bi-plus-circle"></i> Добавить задачу';
             addBtn.onclick = addTask;
 
             // Очищаем форму
@@ -1602,24 +1706,34 @@
             document.getElementById('taskDate').value = '';
             document.getElementById('taskTime').value = '';
 
+            // Сбрасываем приоритет
+            document.querySelectorAll('.priority-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector('.priority-btn[data-priority="medium"]').classList.add('active');
+            selectedPriority = 'medium';
+
+            await refreshTasks();
             showNotification('Задача обновлена!', 'success');
-            switchSection('tasks');
+            if (navigator.vibrate) navigator.vibrate(40);
         }
 
-        // Удаление задачи
-        function deleteTask(taskId) {
+function deleteTask(taskId) {
+            deleteTaskAsync(taskId).catch(e => {
+                console.error(e);
+                showNotification('Ошибка удаления задачи', 'warning');
+            });
+        }
+
+        async function deleteTaskAsync(taskId) {
             if (!confirm('Удалить эту задачу?')) return;
 
-            tasks = tasks.filter(t => t.id !== taskId);
-            saveTasks();
-            showNotification('Задача удалена', 'info');
+            await apiDeleteTask(taskId);
+            await refreshTasks();
 
-            if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+            showNotification('Задача удалена', 'info');
+            if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
         }
 
-        // ==================== СТАТИСТИКА ====================
-        // Обновление статистики
-        function updateStats() {
+function updateStats() {
             const total = tasks.length;
             const completed = tasks.filter(t => t.completed).length;
             const pending = total - completed;
@@ -1850,12 +1964,27 @@
 
             // Автосохранение при закрытии
             window.addEventListener('beforeunload', function() {
-                localStorage.setItem('tasks', JSON.stringify(tasks));
+                localStorage.setItem(TASKS_CACHE_KEY, JSON.stringify(tasks));
             });
 
-            // Загружаем и отображаем задачи
-            renderTasks();
-            updateStats();
+            // Загружаем задачи (сервера) + fallback на кэш
+            (async () => {
+                const cached = localStorage.getItem(TASKS_CACHE_KEY);
+                if (cached) {
+                    try {
+                        tasks = JSON.parse(cached) || [];
+                        renderTasks();
+                        updateStats();
+                    } catch (e) {}
+                }
+
+                try {
+                    await refreshTasks();
+                } catch (e) {
+                    console.error(e);
+                    showNotification('Нет связи с сервером — показан кэш', 'warning');
+                }
+            })();
 
             showNotification('TaskFlow загружен!', 'success');
         });
