@@ -118,6 +118,15 @@
       <section class="screen" id="screenMenu">
         <section class="menuCard">
           <div class="menuTitle">Меню</div>
+
+          <div class="menuUser">
+            <div class="menuAvatar" id="menuAvatar">TF</div>
+            <div class="menuUserText">
+              <div class="menuUserName" id="menuUserName">Гость</div>
+              <div class="menuUserHandle" id="menuUserHandle">—</div>
+            </div>
+          </div>
+
           <div class="menuList">
             <button class="menuItem" id="mSync"><span>⟳</span><div><div class="miT">Синхронизировать</div><div class="miS">Обновить данные с сервера</div></div></button>
             <button class="menuItem" id="mExport"><span>⤓</span><div><div class="miT">Экспорт JSON</div><div class="miS">Скопировать задачи в буфер</div></div></button>
@@ -263,7 +272,7 @@
 
 <script>
 (function() {
-  const BUILD = "1770484656";
+  const BUILD = "1770485572";
   // Force-bust cached HTML in Telegram WebView by ensuring query param matches build
   try {
     const url = new URL(location.href);

@@ -672,3 +672,23 @@ input[type="time"].input::-webkit-calendar-picker-indicator{
   width: min(92vw, 420px);
   opacity: .92;
 }
+
+/* menu user auth block */
+.menuUser{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  padding: 12px 12px 6px;
+}
+.menuAvatar{
+  width:44px; height:44px;
+  border-radius: 14px;
+  display:flex; align-items:center; justify-content:center;
+  font-weight: 1000;
+  background: linear-gradient(135deg, rgba(255,107,53,.28), rgba(50,194,255,.16));
+  border: 1px solid rgba(255,255,255,.10);
+  color: var(--text);
+}
+.menuUserText{ display:flex; flex-direction:column; min-width:0; }
+.menuUserName{ font-weight: 950; letter-spacing: .2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.menuUserHandle{ font-size: 12px; opacity: .75; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

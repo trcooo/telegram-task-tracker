@@ -16,6 +16,9 @@
 
   const el = {
     subtitle: document.getElementById('subtitle'),
+    menuUserName: document.getElementById('menuUserName'),
+    menuUserHandle: document.getElementById('menuUserHandle'),
+    menuAvatar: document.getElementById('menuAvatar'),
 
     // screens
     screenTasks: document.getElementById('screenTasks'),
@@ -235,9 +238,19 @@
   }
 
   // ---------- API ----------
+  async function apiMe(){
+    const r = await fetch(`${API}/api/me`, { headers: apiHeaders({}) });
+    if (!r.ok) throw new Error('me failed');
+    return await r.json();
+  }
+
   async function apiGetTasks() {
     const r = await fetch(`${API}/api/tasks`, { headers: apiHeaders() });
-    if (!r.ok) throw new Error('get tasks failed');
+    if (!r.ok) {
+      let detail='';
+      try{ const j=await r.json(); detail=j.detail||JSON.stringify(j);}catch(e){ try{detail=await r.text();}catch(_){} }
+      throw new Error(detail || `HTTP ${r.status}`);
+    }
     return await r.json();
   }
   async function apiCreate(payload) {
@@ -578,7 +591,7 @@
 
     try {
       if (!editingId) {
-        const res = await apiCreate({ user_id: userId, ...payload });
+        const res = await apiCreate(payload);
         if (res.createdCount && res.createdCount > 1) toast(`Создано ${res.createdCount} задач`, 'good');
         else toast('Задача добавлена', 'good');
       } else {
@@ -589,7 +602,7 @@
       enableCalendarDrag();
     await refresh(true);
     } catch (e) {
-      toast('Ошибка сохранения', 'bad');
+      toast('Ошибка: ' + (e?.message || e), 'bad');
       console.error(e);
     }
   }
@@ -971,6 +984,16 @@
 
   async function boot(){
     initTelegram();
+    try{
+      const me = await apiMe();
+      const fullName = [me.first_name, me.last_name].filter(Boolean).join(' ') || 'Пользователь';
+      if (el.menuUserName) el.menuUserName.textContent = fullName;
+      if (el.menuUserHandle) el.menuUserHandle.textContent = me.username ? '@' + me.username : (me.mode === 'telegram' ? 'Telegram' : 'Браузер');
+      if (el.menuAvatar) {
+        const initials = (me.first_name||'').slice(0,1) + (me.last_name||'').slice(0,1);
+        el.menuAvatar.textContent = (initials || 'TF').toUpperCase();
+      }
+    }catch(e){ /* ignore */ }
     bind();
     bindRepeatUI();
     showScreen('tasks');

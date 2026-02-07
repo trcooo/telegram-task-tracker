@@ -105,16 +105,18 @@ def _to_local(utc_dt: datetime, tz_off_min: int) -> datetime:
 def _to_utc(local_dt: datetime, tz_off_min: int) -> datetime:
     return local_dt - timedelta(minutes=tz_off_min)
 
-def _iter_recurrences(local_start: datetime, rule: dict, local_until_date: datetime):
-    # emit local datetimes for occurrences, inclusive until date
+
+def _iter_recurrences(local_start: datetime, rule: dict, local_until_date: date):
+    """Yield occurrences as LOCAL datetimes, inclusive until local_until_date (date)."""
     freq = (rule or {}).get("freq")
     interval = int((rule or {}).get("interval") or 1)
     byweekday = rule.get("byweekday") if isinstance(rule, dict) else None
 
-    until_end = local_until_date.replace(hour=23, minute=59, second=59, microsecond=0)
+    until_end = datetime.combine(local_until_date, dtime(23, 59, 59))
 
     if not freq:
         return
+
     if freq == "daily":
         cur = local_start
         while cur <= until_end:
@@ -139,24 +141,13 @@ def _iter_recurrences(local_start: datetime, rule: dict, local_until_date: datet
             yield cur
             y = cur.year
             m = cur.month + interval
-            y += (m-1)//12
-            m = (m-1)%12 + 1
+            y += (m - 1) // 12
+            m = (m - 1) % 12 + 1
             last_day = monthrange(y, m)[1]
             d = min(day, last_day)
             cur = cur.replace(year=y, month=m, day=d)
         return
 
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-WEB_DIR = os.path.join(BASE_DIR, "web")
 
 def get_db():
     db = SessionLocal()
@@ -191,6 +182,36 @@ async def health():
 @app.get("/api")
 async def api_status():
     return {"status": "ok", "version": app.version}
+
+
+@app.get("/api/me")
+async def api_me(request: Request):
+    """Return current authenticated user (Telegram) or dev-browser identity."""
+    init_data = request.headers.get("X-Tg-Init-Data") or request.headers.get("x-tg-init-data")
+    if init_data:
+        token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or ""
+        if not token:
+            raise HTTPException(status_code=500, detail="BOT_TOKEN not set for telegram auth")
+        data = verify_telegram_init_data(init_data, token)
+        user_json = data.get("user")
+        user = json.loads(user_json) if user_json else {}
+        uid = int(user.get("id"))
+        return {
+            "mode": "telegram",
+            "user_id": uid,
+            "first_name": user.get("first_name"),
+            "last_name": user.get("last_name"),
+            "username": user.get("username"),
+            "language_code": user.get("language_code"),
+        }
+    client_id = request.headers.get("X-Client-Id") or request.headers.get("x-client-id")
+    if client_id:
+        uid = client_id_to_user_id(client_id)
+        return {"mode": "browser", "user_id": uid, "first_name": "Гость", "username": None}
+    raise HTTPException(status_code=401, detail="no auth")
+
+
+
 
 def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
     if value is None:
