@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Планировщик дня</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="top">
+      <div class="card top-card">
+        <div class="top-left">
+          <div class="h1">Планировщик дня</div>
+          <div class="sub" id="userSub">Telegram Mini App</div>
+        </div>
+        <div class="avatar" id="avatar"></div>
+      </div>
+    </header>
+
+    <main class="content" id="app">
+      <div class="card p16">
+        <div class="h2">Загрузка…</div>
+        <div class="sub">Если ты открыл это не из Telegram — логин не пройдёт (нет initData).</div>
+      </div>
+    </main>
+
+    <nav class="tabbar safe-bottom">
+      <div class="card tab-card">
+        <a href="#/inbox" class="tab" data-tab="inbox">Inbox</a>
+        <a href="#/calendar" class="tab" data-tab="calendar">Calendar</a>
+        <a href="#/schedule" class="tab" data-tab="schedule">Schedule</a>
+        <a href="#/matrix" class="tab" data-tab="matrix">Priority</a>
+        <a href="#/reminders" class="tab" data-tab="reminders">Reminders</a>
+        <a href="#/settings" class="tab" data-tab="settings">Settings</a>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Telegram WebApp SDK is injected by Telegram client. -->
+  <script src="/app.js"></script>
+</body>
+</html>

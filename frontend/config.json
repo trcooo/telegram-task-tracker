@@ -1,0 +1,5 @@
+{
+  "name": "tg-planner-miniapp",
+  "ui": "vanilla",
+  "apiBase": "/"
+}

@@ -1,0 +1,143 @@
+:root{
+  --bg: #F3F6FF;
+  --text: #0F172A;
+  --muted: #64748B;
+  --border: rgba(148,163,184,0.35);
+  --card: rgba(255,255,255,0.78);
+  --shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  --radius: 20px;
+}
+
+*{ box-sizing: border-box; }
+html, body { height: 100%; }
+body{
+  margin:0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji","Segoe UI Emoji";
+  background: var(--bg);
+  color: var(--text);
+}
+
+.safe-bottom{ padding-bottom: env(safe-area-inset-bottom); }
+
+.page{ min-height: 100vh; padding-bottom: 92px; }
+
+.top{ padding: 18px 16px 0; }
+.content{ padding: 12px 16px; display:flex; flex-direction: column; gap: 10px; }
+
+.card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+.top-card{ padding: 14px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.top-left{ min-width:0; }
+.h1{ font-size: 16px; font-weight: 700; line-height: 1.1; }
+.h2{ font-size: 14px; font-weight: 700; }
+.sub{ font-size: 12px; color: var(--muted); margin-top: 6px; }
+.p16{ padding: 16px; }
+
+.avatar{
+  width: 40px; height: 40px;
+  border-radius: 16px;
+  border: 1px solid rgba(226,232,240,0.9);
+  background: rgba(255,255,255,0.7);
+  overflow:hidden;
+}
+.avatar img{ width:100%; height:100%; object-fit: cover; display:block; }
+
+.row{ display:flex; gap: 10px; align-items:center; justify-content: space-between; }
+.gap8{ gap: 8px; }
+.wrap{ flex-wrap: wrap; }
+.m0{ margin:0; }
+
+.btn{
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(226,232,240,0.9);
+  background: rgba(255,255,255,0.6);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor:pointer;
+  transition: transform .06s ease;
+  user-select: none;
+}
+.btn:active{ transform: scale(0.98); }
+.btn.primary{
+  background: #0F172A;
+  border-color: #0F172A;
+  color: #fff;
+}
+.btn.danger{
+  background: rgba(239,68,68,0.12);
+  border-color: rgba(239,68,68,0.30);
+}
+.input, .select, .textarea{
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(226,232,240,0.9);
+  background: rgba(255,255,255,0.7);
+  font-size: 13px;
+}
+.textarea{ min-height: 80px; resize: vertical; }
+
+.pill{
+  display:inline-flex;
+  align-items:center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(226,232,240,0.9);
+  background: rgba(255,255,255,0.6);
+  font-size: 11px;
+  color: #334155;
+}
+
+.list{ display:flex; flex-direction: column; gap: 10px; }
+.task{
+  padding: 12px;
+}
+.task-title{ font-weight: 700; font-size: 14px; margin:0; }
+.task-desc{ font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+.badge{ font-size: 11px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(226,232,240,0.9); background: rgba(255,255,255,0.6); }
+.badge.done{ background: rgba(16,185,129,0.14); border-color: rgba(16,185,129,0.25); color: #064E3B; }
+
+.tabbar{ position: fixed; left:0; right:0; bottom:0; padding: 0 12px 12px; }
+.tab-card{ padding: 10px; display:flex; justify-content: space-between; gap: 8px; overflow:auto; }
+.tab{ text-decoration:none; color: var(--muted); font-size: 12px; font-weight: 700; padding: 10px 10px; border-radius: 14px; white-space: nowrap; }
+.tab.active{ background: #0F172A; color: #fff; }
+
+.grid2{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mini{ font-size: 11px; color: var(--muted); }
+
+.kv{ display:flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+.timeline{ position: relative; padding-left: 52px; }
+.hour{ height: 44px; border-top: 1px solid rgba(226,232,240,0.8); position: relative; }
+.hour .label{ position:absolute; left: -52px; top: 10px; font-size: 11px; color: var(--muted); }
+
+.block{
+  position: absolute;
+  left: 6px; right: 6px;
+  border-radius: 18px;
+  border: 1px solid rgba(226,232,240,0.9);
+  background: rgba(255,255,255,0.7);
+  padding: 10px 10px;
+}
+
+.modal{
+  position: fixed;
+  inset:0;
+  display:none;
+  align-items:flex-end;
+  justify-content:center;
+  background: rgba(15,23,42,0.35);
+  padding: 12px;
+}
+.modal.show{ display:flex; }
+.modal .sheet{ width:100%; max-width: 640px; margin: 0 auto 10px; }
