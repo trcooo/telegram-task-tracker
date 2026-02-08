@@ -13,13 +13,15 @@ export default function TaskCard({
   lists,
   onToggleDone,
   onScheduleToday,
-  onDelete
+  onDelete,
+  onFocus
 }: {
   task: Task;
   lists: List[];
   onToggleDone: () => void;
   onScheduleToday: () => void;
   onDelete: () => void;
+  onFocus: () => void;
 }) {
   const list = lists.find((l) => l.id === task.listId);
   const when = task.startAt
@@ -58,6 +60,7 @@ export default function TaskCard({
       </div>
 
       <div className="flex flex-col gap-2">
+        <button onClick={onFocus} className="text-[11px] px-2 py-1 rounded-xl bg-slate-900 text-white">Focus</button>
         <button onClick={onScheduleToday} className="text-[11px] px-2 py-1 rounded-xl bg-slate-100">Today</button>
         <button onClick={onDelete} className="text-[11px] px-2 py-1 rounded-xl bg-slate-100">Del</button>
       </div>

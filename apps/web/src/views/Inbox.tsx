@@ -7,12 +7,15 @@ import { useFilters } from "../store/filters";
 import { useUI } from "../store/ui";
 import TaskCard from "./components/TaskCard";
 import QuickAdd from "./components/QuickAdd";
+import FocusDock from "./components/FocusDock";
 
 export default function Inbox({ lists }: { lists: List[] }) {
   const qc = useQueryClient();
   const filters = useFilters();
   const setTab = useUI((s) => s.setTab);
   const selectedDate = useUI((s) => s.selectedDate);
+  const startFocus = useUI((s) => s.startFocus);
+  const startPomodoro = useUI((s) => s.startPomodoro);
 
   const tasksQ = useQuery({
     queryKey: ["tasks", filters.smart, filters.listId, filters.tag],
@@ -80,6 +83,11 @@ export default function Inbox({ lists }: { lists: List[] }) {
             onToggleDone={() => update.mutate({ id: t.id, patch: { done: !t.done } })}
             onScheduleToday={() => update.mutate({ id: t.id, patch: { date: selectedDate, startAt: `${selectedDate}T09:00:00.000Z` } })}
             onDelete={() => del.mutate(t.id)}
+            onFocus={() => {
+              startFocus(t.id);
+              startPomodoro(25);
+              update.mutate({ id: t.id, patch: { focusFlag: true } });
+            }}
           />
         ))}
         {!tasks.length && (
@@ -88,6 +96,8 @@ export default function Inbox({ lists }: { lists: List[] }) {
           </div>
         )}
       </div>
+
+      <FocusDock tasks={tasks} />
     </div>
   );
 }

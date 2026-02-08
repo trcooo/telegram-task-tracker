@@ -1,26 +1,31 @@
-import { Queue } from "bullmq";
+import { Queue, type ConnectionOptions } from "bullmq";
 import { env } from "./env.js";
 
-function parseRedisUrl(url: string) {
-  if (!url) return null;
-  // BullMQ accepts ioredis options. Railway often provides REDIS_URL like redis://...
+function getRedisConnection(): ConnectionOptions {
+  const url = env.REDIS_URL;
+  if (!url) {
+    // Local/dev fallback (also makes TS happy during CI builds where env may be absent).
+    return { host: "127.0.0.1", port: 6379 };
+  }
   try {
     const u = new URL(url);
-    const tls = u.protocol === "rediss:";
-    return {
-      host: u.hostname,
-      port: Number(u.port || 6379),
-      password: u.password || undefined,
-      username: u.username || undefined,
-      tls: tls ? {} : undefined
-    };
+    const isTls = u.protocol === "rediss:";
+    const host = u.hostname || "127.0.0.1";
+    const port = Number(u.port || (isTls ? 6380 : 6379));
+    const password = u.password ? u.password : undefined;
+    const username = u.username ? u.username : undefined;
+
+    // BullMQ uses ioredis connection options. TLS is enabled when using rediss://
+    const tls = isTls ? {} : undefined;
+
+    return { host, port, password, username, tls };
   } catch {
-    return null;
+    return { host: "127.0.0.1", port: 6379 };
   }
 }
 
-export const connection = parseRedisUrl(env.REDIS_URL);
+export const connection = getRedisConnection();
 
 export const remindersQueue = new Queue("reminders", {
-  connection: connection || undefined
+  connection
 });
