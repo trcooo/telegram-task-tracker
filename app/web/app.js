@@ -4,7 +4,7 @@
   const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 
   const state = {
-    me: { name: "Гость", key: null, is_guest: true },
+    me: { name: "Гость", key: null, is_guest: true, initData: null },
     theme: localStorage.getItem("tf_theme") || "auto",
     tz: localStorage.getItem("tf_tz") || "auto",
     view: "tasks",           // tasks | calendar | overdue | settings
@@ -43,9 +43,13 @@
 
   function ensureIdentity() {
     const tgUser = getTelegramUser();
+    try{
+      const tg = window.Telegram && window.Telegram.WebApp;
+      state.me.initData = (tg && tg.initData) ? tg.initData : null;
+    }catch(_){ state.me.initData = null; }
     if (tgUser && tgUser.id) {
       state.me.key = `tg:${tgUser.id}`;
-      state.me.name = tgUser.name || tgUser.username || "Telegram";
+      state.me.name = (tgUser.username || tgUser.name || "Telegram");
       state.me.is_guest = false;
       return;
     }
@@ -83,6 +87,7 @@
       "Content-Type": "application/json",
       "X-User-Key": state.me.key,
       "X-User-Name": state.me.name,
+      ...(state.me.initData ? {"X-Telegram-Init-Data": state.me.initData} : {}),
     });
     const res = await fetch(path, Object.assign({}, opts, { headers }));
     if (!res.ok) {
@@ -599,7 +604,7 @@
       renderAll();
     } catch(e){
       console.error(e);
-      toast("Не удалось сохранить");
+      toast(`Не удалось сохранить: ${e.message || ""}`.trim());
     } finally {
       $("#saveTaskBtn").disabled = false;
     }
@@ -786,9 +791,49 @@
     renderCalendar();
   }
 
-  // -------------------- boot --------------------
+  
+  // -------------------- Telegram helpers --------------------
+  function applyTelegramParams(){
+    try{
+      const tg = window.Telegram && window.Telegram.WebApp;
+      if (!tg) return;
+
+      // viewport
+      const setVh = () => {
+        const h = tg.viewportStableHeight || window.innerHeight;
+        document.documentElement.style.setProperty("--tg-vh", `${h}px`);
+        const inset = tg.safeAreaInset || {};
+        const b = (inset.bottom ?? 0);
+        const t = (inset.top ?? 0);
+        document.documentElement.style.setProperty("--safe-bottom", `${b}px`);
+        document.documentElement.style.setProperty("--safe-top", `${t}px`);
+      };
+      setVh();
+      tg.onEvent?.("viewportChanged", setVh);
+
+      // theme params -> CSS variables
+      const setTheme = () => {
+        const p = tg.themeParams || {};
+        const root = document.documentElement.style;
+        if (p.bg_color) root.setProperty("--tg-bg", p.bg_color);
+        if (p.text_color) root.setProperty("--tg-text", p.text_color);
+        if (p.hint_color) root.setProperty("--tg-hint", p.hint_color);
+        if (p.secondary_bg_color) root.setProperty("--tg-secondary", p.secondary_bg_color);
+        if (p.button_color) root.setProperty("--tg-button", p.button_color);
+        if (p.button_text_color) root.setProperty("--tg-button-text", p.button_text_color);
+      };
+      setTheme();
+      tg.onEvent?.("themeChanged", setTheme);
+
+      tg.ready?.();
+      tg.expand?.();
+    }catch(_){}
+  }
+
+// -------------------- boot --------------------
   function boot(){
     ensureIdentity();
+    applyTelegramParams();
     applyTheme();
 
     // telegram polish

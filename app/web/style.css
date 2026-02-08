@@ -519,3 +519,81 @@ select{appearance:none}
   }
   .drawer.open{transform: translateX(0)}
 }
+
+
+/* Telegram Mini App + TickTick-inspired v37 */
+:root{
+  --accent: #3A7AFE;
+  --accent2: #2F6BFF;
+  --tg-vh: 100vh;
+  --safe-bottom: 0px;
+  --safe-top: 0px;
+
+  /* Telegram theme params (fallbacks) */
+  --tg-bg: var(--bg);
+  --tg-text: var(--text);
+  --tg-hint: var(--muted);
+  --tg-secondary: rgba(255,255,255,.06);
+  --tg-button: var(--accent);
+  --tg-button-text: #ffffff;
+}
+
+/* Use Telegram viewport height to avoid 'web page' feel */
+html, body{
+  height: var(--tg-vh);
+  background: var(--tg-bg);
+  overscroll-behavior: none;
+}
+body{
+  margin: 0;
+  -webkit-tap-highlight-color: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, system-ui, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+/* Full-width app (no web-like centered layout) */
+.app{
+  width: 100% !important;
+  max-width: 100% !important;
+  height: var(--tg-vh);
+  padding-top: var(--safe-top);
+  padding-bottom: calc(var(--safe-bottom));
+}
+
+/* TickTick-like surfaces */
+.card, .menuCard, .calCard{
+  background: rgba(255,255,255,.06) !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  box-shadow: 0 10px 34px rgba(0,0,0,.22) !important;
+}
+html[data-theme="light"] .card,
+html[data-theme="light"] .menuCard,
+html[data-theme="light"] .calCard{
+  background: rgba(255,255,255,.96) !important;
+  border: 1px solid rgba(2,6,23,.10) !important;
+  box-shadow: 0 12px 34px rgba(2,6,23,.10) !important;
+}
+
+/* Accent buttons */
+.navBtn.add{
+  background: linear-gradient(135deg, var(--accent), var(--accent2)) !important;
+}
+.ttChip.active{
+  background: linear-gradient(135deg, rgba(58,122,254,.22), rgba(58,122,254,.10)) !important;
+  border-color: rgba(58,122,254,.40) !important;
+}
+.input:focus{
+  border-color: rgba(58,122,254,.55) !important;
+  box-shadow: 0 0 0 4px rgba(58,122,254,.14) !important;
+}
+
+/* Bottom nav safe area */
+.bottomNav{
+  padding-bottom: calc(12px + var(--safe-bottom)) !important;
+}
+
+/* Calendar grid always 7 columns, prevent 'vertical list' */
+#calGrid, .calGrid{
+  display: grid !important;
+  grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}

@@ -50,13 +50,12 @@ def get_identity(request: Request) -> dict:
     if init_data:
         u = _parse_tg_user_from_init_data(init_data)
         if u and u.get("id") is not None:
-            raw_uid = int(u["id"])
-            uid = _sha_user_int(f"tg:{raw_uid}")
+            uid = int(u["id"])
             username = u.get("username")
             first = (u.get("first_name") or "").strip()
             last = (u.get("last_name") or "").strip()
             name = (f"{first} {last}".strip() or (f"@{username}" if username else "Telegram"))
-            return {"user_id": uid, "name": name, "username": username, "is_guest": False, "key": f"tg:{raw_uid}"}
+            return {"user_id": uid, "name": name, "username": username, "is_guest": False, "key": f"tg:{uid}"}
 
     # 2) Explicit user key (recommended)
     user_key = request.headers.get("X-User-Key") or request.headers.get("x-user-key")
@@ -79,32 +78,81 @@ def get_identity(request: Request) -> dict:
     raise HTTPException(status_code=401, detail="no auth headers (X-User-Key recommended)")
 
 def ensure_schema():
+    """
+    Lightweight schema migration without Alembic.
+    Your project has been evolving (new columns were added), but Railway keeps the same DB.
+    create_all() does NOT add columns to existing tables, so we patch missing columns here.
+    """
     Base.metadata.create_all(bind=engine)
 
-    # add list_id column if missing
+    # Desired columns for tasks table (PostgreSQL + SQLite friendly)
+    desired_cols = {
+        "list_id": "INTEGER",
+        "series_id": "VARCHAR(64)",
+        "recurrence_rule": "TEXT",
+        "recurrence_until": "TIMESTAMP",
+        "description": "VARCHAR(1000)",
+        "priority": "VARCHAR(20)",
+        "due_at": "TIMESTAMP",
+        "completed": "BOOLEAN",
+        "reminder_enabled": "BOOLEAN",
+        "reminder_sent": "BOOLEAN",
+        "created_at": "TIMESTAMP",
+        "updated_at": "TIMESTAMP",
+    }
+
+    def _get_cols(conn, table: str):
+        dialect = conn.dialect.name
+        if dialect == "sqlite":
+            res = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+            return set([r[1] for r in res])
+        else:
+            res = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = :t
+            """), {"t": table}).fetchall()
+            return set([r[0] for r in res])
+
+    def _add_col(conn, table: str, col: str, coltype: str):
+        dialect = conn.dialect.name
+
+        # reasonable defaults to keep inserts working on existing rows
+        defaults = {
+            "description": "DEFAULT ''",
+            "priority": "DEFAULT 'medium'",
+            "completed": "DEFAULT FALSE",
+            "reminder_enabled": "DEFAULT TRUE",
+            "reminder_sent": "DEFAULT FALSE",
+        }
+
+        # created_at/updated_at: keep nullable if adding to existing table
+        if col in ("created_at", "updated_at"):
+            ddl = f"ALTER TABLE {table} ADD COLUMN {col} {coltype}"
+        else:
+            extra = defaults.get(col, "")
+            ddl = f"ALTER TABLE {table} ADD COLUMN {col} {coltype} {extra}".strip()
+
+        conn.execute(text(ddl))
+
     try:
         with engine.connect() as conn:
-            dialect = conn.dialect.name
-            has_list_id = False
-            if dialect == "sqlite":
-                res = conn.execute(text("PRAGMA table_info(tasks)")).fetchall()
-                cols = [r[1] for r in res]
-                has_list_id = "list_id" in cols
-            else:
-                res = conn.execute(text("""
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_name = 'tasks'
-                """)).fetchall()
-                cols = [r[0] for r in res]
-                has_list_id = "list_id" in cols
-
-            if not has_list_id:
-                conn.execute(text("ALTER TABLE tasks ADD COLUMN list_id INTEGER"))
-                conn.commit()
-                logger.info("Added tasks.list_id column")
+            cols = _get_cols(conn, "tasks")
+            missing = [c for c in desired_cols.keys() if c not in cols]
+            if missing:
+                for c in missing:
+                    try:
+                        _add_col(conn, "tasks", c, desired_cols[c])
+                        logger.info(f"Added tasks.{c}")
+                    except Exception as e:
+                        logger.warning(f"Could not add tasks.{c}: {e}")
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
     except Exception as e:
         logger.warning(f"Schema ensure warning: {e}")
+
 
 # -------------------- datetime helpers --------------------
 def parse_iso_datetime(val: str) -> datetime:
@@ -370,7 +418,7 @@ async def serve_index():
     index_path = os.path.join(WEB_DIR, "index.html")
     if not os.path.exists(index_path):
         raise HTTPException(status_code=404, detail="index.html not found")
-    return FileResponse(index_path)
+    return FileResponse(index_path, headers={"Cache-Control":"no-store, max-age=0"})
 
 if os.path.exists(WEB_DIR):
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
@@ -378,19 +426,19 @@ if os.path.exists(WEB_DIR):
 # asset shortcuts
 @app.get("/style.css")
 async def style_css():
-    return FileResponse(os.path.join(WEB_DIR, "style.css"), media_type="text/css")
+    return FileResponse(os.path.join(WEB_DIR, "style.css"), media_type="text/css", headers={"Cache-Control":"no-store, max-age=0"})
 
 @app.get("/app.js")
 async def app_js():
-    return FileResponse(os.path.join(WEB_DIR, "app.js"), media_type="application/javascript")
+    return FileResponse(os.path.join(WEB_DIR, "app.js"), media_type="application/javascript", headers={"Cache-Control":"no-store, max-age=0"})
 
 @app.get("/logo.png")
 async def logo_png():
-    return FileResponse(os.path.join(WEB_DIR, "logo.png"), media_type="image/png")
+    return FileResponse(os.path.join(WEB_DIR, "logo.png"), media_type="image/png", headers={"Cache-Control":"no-store, max-age=0"})
 
 @app.get("/manifest.json")
 async def manifest_json():
-    return FileResponse(os.path.join(WEB_DIR, "manifest.json"), media_type="application/json")
+    return FileResponse(os.path.join(WEB_DIR, "manifest.json"), media_type="application/json", headers={"Cache-Control":"no-store, max-age=0"})
 
 @app.exception_handler(Exception)
 async def any_error(request: Request, exc: Exception):
