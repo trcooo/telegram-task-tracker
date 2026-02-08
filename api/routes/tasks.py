@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import List as TList, Optional
 from datetime import datetime, date as dt_date, timedelta
 
@@ -51,7 +52,8 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db), user_and_jwt
     t = Task(
         user_id=user.id,
         title=payload.title,
-        note=payload.note,
+        note=(payload.note or ""),
+        description=(payload.note or ""),
         priority=payload.priority or 0,
         date=payload.date,
         time=payload.time,
@@ -66,7 +68,12 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db), user_and_jwt
         end_at=payload.end_at,
     )
     db.add(t)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        # Give a clearer error to the client (and avoid endless 500s).
+        raise HTTPException(status_code=400, detail=f"DB integrity error: {str(e.orig) if hasattr(e, 'orig') else str(e)}")
     db.refresh(t)
     return t
 
@@ -78,6 +85,8 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="task not found")
 
     for k, v in payload.model_dump(exclude_unset=True).items():
+        if k in ("note", "description") and v is None:
+            v = ""
         setattr(t, k, v)
 
     db.commit()

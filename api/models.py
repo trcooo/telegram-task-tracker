@@ -32,6 +32,10 @@ class Task(Base):
     title = Column(String, nullable=False)
     note = Column(Text, nullable=True)
 
+    # Legacy compatibility: older DB schemas used `description` (NOT NULL).
+    # We keep it with a safe default so inserts never fail even if the DB enforces NOT NULL.
+    description = Column(Text, nullable=False, default="")
+
     priority = Column(Integer, default=0)  # 0..3
     date = Column(String, nullable=True)   # YYYY-MM-DD (local)
     time = Column(String, nullable=True)   # HH:mm
