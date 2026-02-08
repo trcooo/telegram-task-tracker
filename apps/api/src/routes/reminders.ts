@@ -1,47 +1,89 @@
 import { Router } from "express";
 import dayjs from "dayjs";
-import type { AuthedRequest } from "../auth.js";
 import { prisma } from "../prisma.js";
 import { remindersQueue } from "../queue.js";
 
 export const remindersRouter = Router();
 
-remindersRouter.get("/", async (req: AuthedRequest, res) => {
-  const mode = String((req.query as any).mode || "upcoming");
-  const now = new Date();
-  let where: any = { task: { userId: req.userId! } };
+/**
+ * Reminder Center API
+ * - If REDIS_URL isn't configured, we still allow CRUD,
+ *   but job scheduling returns a clear error.
+ */
 
-  if (mode === "upcoming") where.status = { in: ["scheduled", "snoozed"] }, where.at = { gte: now };
-  if (mode === "snoozed") where.status = "snoozed";
-  if (mode === "sent") where.status = "sent";
+remindersRouter.get("/", async (req, res) => {
+  const userId = req.userId!;
+  const status = String(req.query.status || "OPEN").toUpperCase();
 
-  const reminders = await prisma.reminder.findMany({
-    where,
-    orderBy: { at: "asc" },
-    include: { task: true }
+  const list = await prisma.reminder.findMany({
+    where: { userId, status: status as any },
+    include: { task: true },
+    orderBy: { fireAt: "asc" },
+    take: 200,
   });
-  res.json(reminders);
+
+  return res.json({ reminders: list });
 });
 
-remindersRouter.post("/:id/snooze", async (req: AuthedRequest, res) => {
-  const id = req.params.id;
-  const minutes = Number(req.body?.minutes || 10);
-  const reminder = await prisma.reminder.findFirst({
-    where: { id, task: { userId: req.userId! } },
-    include: { task: true }
-  });
-  if (!reminder) return res.status(404).json({ error: "Not found" });
+remindersRouter.post("/:taskId", async (req, res) => {
+  const userId = req.userId!;
+  const taskId = String(req.params.taskId);
+  const { fireAt } = req.body as { fireAt?: string };
 
-  const at = dayjs(reminder.at).add(minutes, "minute").toDate();
+  if (!fireAt) return res.status(400).json({ error: "fireAt required" });
+
+  const r = await prisma.reminder.create({
+    data: {
+      userId,
+      taskId,
+      fireAt: new Date(fireAt),
+      status: "OPEN",
+    },
+  });
+
+  if (!remindersQueue) {
+    return res.status(503).json({
+      reminder: r,
+      warning: "REDIS_URL not configured; reminders queue is disabled.",
+    });
+  }
+
+  await remindersQueue.add(
+    "fire",
+    { reminderId: r.id },
+    { delay: Math.max(0, dayjs(fireAt).diff(dayjs())), removeOnComplete: true, removeOnFail: true }
+  );
+
+  return res.json({ reminder: r });
+});
+
+remindersRouter.post("/:id/snooze", async (req, res) => {
+  const userId = req.userId!;
+  const id = String(req.params.id);
+  const minutes = Number(req.body?.minutes || 10);
+
+  const r = await prisma.reminder.findFirst({ where: { id, userId } });
+  if (!r) return res.status(404).json({ error: "Not found" });
+
+  const nextAt = dayjs().add(minutes, "minute").toDate();
+
   const updated = await prisma.reminder.update({
     where: { id },
-    data: { at, status: "snoozed" }
+    data: { fireAt: nextAt, status: "SNOOZED", sentAt: null },
   });
 
-  await remindersQueue.remove(id).catch(() => {});
-  const delay = Math.max(0, at.getTime() - Date.now());
-  await remindersQueue.add("send", { reminderId: id, userId: req.userId!, taskId: reminder.taskId }, { jobId: id, delay, removeOnComplete: true, removeOnFail: 1000 });
+  if (!remindersQueue) {
+    return res.status(503).json({
+      reminder: updated,
+      warning: "REDIS_URL not configured; reminders queue is disabled.",
+    });
+  }
 
-  await prisma.reminderLog.create({ data: { userId: req.userId!, taskId: reminder.taskId, reminderId: id, status: "snoozed", message: `+${minutes}m` } });
-  res.json(updated);
+  await remindersQueue.add(
+    "fire",
+    { reminderId: updated.id },
+    { delay: Math.max(0, dayjs(nextAt).diff(dayjs())), removeOnComplete: true, removeOnFail: true }
+  );
+
+  return res.json({ reminder: updated });
 });

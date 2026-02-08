@@ -47,10 +47,24 @@ async function authedFetch<T>(url: string, init?: RequestInit): Promise<T> {
     ...(init?.headers as any),
     "content-type": "application/json",
   };
+  const initData = getInitData();
+  if (initData) headers["x-tg-init-data"] = initData;
+
   if (token && token !== "dev") headers.authorization = `Bearer ${token}`;
   // dev fallback: no auth middleware? In this project API requires auth; for dev token won't work.
   if (!headers.authorization) headers.authorization = `Bearer ${token || ""}`;
-  const res = await fetch(`${API_BASE}${url}`, { ...init, headers });
+  let res = await fetch(`${API_BASE}${url}`, { ...init, headers });
+  if (res.status === 401) {
+    // Token might be stale (JWT_SECRET rotated). Re-auth with Telegram initData and retry once.
+    localStorage.removeItem("pp_token");
+    try {
+      const auth = await ensureAuth();
+      headers.authorization = `Bearer ${auth.token}`;
+      res = await fetch(`${API_BASE}${url}`, { ...init, headers });
+    } catch {
+      // fall through
+    }
+  }
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

@@ -57,15 +57,33 @@ export function signJwt(payload: { userId: string }) {
 
 export type AuthedRequest = Request & { userId?: string };
 
-export function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
-  const hdr = req.headers.authorization || "";
-  if (!hdr.startsWith("Bearer ")) return res.status(401).json({ error: "Missing token" });
-  const token = hdr.slice("Bearer ".length);
-  try {
-    const decoded = jwt.verify(token, env.JWT_SECRET) as { userId: string };
-    req.userId = decoded.userId;
-    next();
-  } catch {
-    return res.status(401).json({ error: "Invalid token" });
+export async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
+  const hdr = String(req.headers.authorization || "");
+  const initData = String(req.headers["x-tg-init-data"] || "");
+
+  // Preferred: JWT
+  if (hdr.startsWith("Bearer ")) {
+    const token = hdr.slice("Bearer ".length);
+    try {
+      const decoded = jwt.verify(token, env.JWT_SECRET) as { userId: string };
+      req.userId = decoded.userId;
+      return next();
+    } catch {
+      // stale/invalid token — try initData fallback below
+    }
   }
+
+  // Fallback: Telegram initData (works inside Telegram Mini App)
+  if (initData) {
+    try {
+      const user = await upsertUserFromInitData(initData);
+      req.userId = user.id;
+      return next();
+    } catch (e: any) {
+      return res.status(401).json({ error: e?.message || "Invalid token" });
+    }
+  }
+
+  return res.status(401).json({ error: "Invalid token" });
 }
+

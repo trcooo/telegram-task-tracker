@@ -2,33 +2,42 @@ import { Queue } from "bullmq";
 import type { ConnectionOptions } from "bullmq";
 import { env } from "./env.js";
 
-function parseRedisUrl(url?: string): ConnectionOptions {
-  // IMPORTANT for Railway builds:
-  // BullMQ's `connection` must be a ConnectionOptions object (not undefined),
-  // otherwise TypeScript fails during `npm run build`.
-  if (!url) {
-    return { host: "127.0.0.1", port: 6379 };
-  }
+/**
+ * Upstash Redis:
+ * - Usually provides REDIS_URL starting with `rediss://` (TLS)
+ * - BullMQ uses ioredis connection options.
+ *
+ * IMPORTANT:
+ * - `connection` must be a ConnectionOptions object for TypeScript (not undefined),
+ *   otherwise builds can fail.
+ * - But we should NOT try to connect to localhost in production if REDIS_URL is missing.
+ *   So we expose `hasRedis` and create the queue conditionally.
+ */
+function connectionFromRedisUrl(url: string): ConnectionOptions {
+  const u = new URL(url);
+  const tls = u.protocol === "rediss:";
+  const port = Number(u.port || 6379);
+  const host = u.hostname;
+  const password = u.password || undefined;
+  const username = u.username || undefined;
 
-  // BullMQ accepts ioredis options. Railway often provides REDIS_URL like redis://...
-  try {
-    const u = new URL(url);
-    const tls = u.protocol === "rediss:";
-    const port = Number(u.port || 6379);
-    const host = u.hostname || "127.0.0.1";
-    const password = u.password || undefined;
-    const username = u.username || undefined;
-    // Upstash commonly uses rediss:// and requires TLS.
-    // BullMQ accepts ioredis options. Passing an object to `tls` enables TLS.
-    // `rejectUnauthorized: false` avoids issues with some managed cert chains.
-    const tlsOpt = tls ? ({ rejectUnauthorized: false } as any) : undefined;
-    return { host, port, password, username, tls: tlsOpt } as ConnectionOptions;
-  } catch {
-    // Fallback keeps TS happy and prevents build-time failures.
-    return { host: "127.0.0.1", port: 6379 };
-  }
+  // Upstash requires TLS when using rediss://
+  const tlsOpt = tls ? ({ rejectUnauthorized: false } as any) : undefined;
+
+  return { host, port, password, username, tls: tlsOpt } as ConnectionOptions;
 }
 
-export const connection: ConnectionOptions = parseRedisUrl(env.REDIS_URL);
+export const hasRedis = Boolean(env.REDIS_URL);
 
-export const remindersQueue = new Queue("reminders", { connection });
+export const connection: ConnectionOptions = hasRedis
+  ? connectionFromRedisUrl(env.REDIS_URL!)
+  // Dummy value only to satisfy TS typing — do not use unless hasRedis=true.
+  : ({ host: "127.0.0.1", port: 6379 } as ConnectionOptions);
+
+/**
+ * Queue is created ONLY when Redis is configured.
+ * This prevents ECONNREFUSED on Railway when REDIS_URL is missing.
+ */
+export const remindersQueue: Queue | null = hasRedis
+  ? new Queue("reminders", { connection })
+  : null;
