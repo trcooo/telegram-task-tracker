@@ -1,294 +1,261 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-  <meta http-equiv="Pragma" content="no-cache" />
-  <meta http-equiv="Expires" content="0" />
-
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#0B0F14" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="theme-color" content="#0B0F19"/>
   <title>TaskFlow</title>
-  <link rel="manifest" href="/static/manifest.json" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
-  
-
-  <script>
-  (function() {
-    const BUILD = "1770492909";
-    try {
-      const url = new URL(location.href);
-      if (url.searchParams.get("v") !== BUILD) {
-        url.searchParams.set("v", BUILD);
-        location.replace(url.toString());
-        return;
-      }
-      const v = url.searchParams.get("v") || BUILD;
-      const css = document.createElement("link");
-      css.rel = "stylesheet";
-      css.href = "/style.css?v=" + encodeURIComponent(v);
-      document.head.appendChild(css);
-
-      const js = document.createElement("script");
-      js.src = "/app.js?v=" + encodeURIComponent(v);
-      js.defer = true;
-      document.head.appendChild(js);
-
-      window.__BUILD = BUILD;
-    } catch (e) {
-      // fallback (no cache-bust)
-      const css = document.createElement("link");
-      css.rel = "stylesheet";
-      css.href = "/style.css";
-      document.head.appendChild(css);
-
-      const js = document.createElement("script");
-      js.src = "/app.js";
-      js.defer = true;
-      document.head.appendChild(js);
-    }
-  })();
-  </script>
-
+  <link rel="manifest" href="/manifest.json"/>
+  <link rel="icon" href="/logo.png"/>
+  <link rel="stylesheet" href="/style.css"/>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-  <div class="toast" id="toast" aria-live="polite"></div>
-
-  <div class="app" id="app">
-    <header class="topbar">
-      <div class="brand">
-        <div class="logo"><img class="logoImg" src="/logo.png" alt="TaskFlow"></div>
-        <div class="brandText">
-          <div class="brandTitle">TaskFlow</div>
-          <div class="brandSub" id="subtitle">Подключаемся…</div>
-        </div>
-      </div>
-
-      <div class="topActions">
-        <button class="iconBtn" id="syncBtn" title="Синхронизировать" aria-label="Синхронизировать"><span class="i">⟳</span></button>
-        <button class="iconBtn" id="addBtn" title="Новая задача" aria-label="Новая задача"><span class="i">＋</span></button>
-      </div>
-    </header>
-
-    <main class="content" id="content">
-      <!-- TASKS SCREEN -->
-      <section class="screen show" id="screenTasks">
-        
-        <header class="ttHeader">
-          <div class="ttTopRow">
-            <div class="ttTitleWrap">
-              <div class="ttTitle">Задачи</div>
-              <div class="ttSub" id="ttSubtitle">Входящие</div>
+  <div id="app" class="app" data-theme="dark">
+    <div class="shell">
+      <!-- Drawer -->
+      <aside id="drawer" class="drawer" aria-hidden="true">
+        <div class="drawer__top">
+          <div class="user">
+            <img class="user__avatar" src="/logo.png" alt=""/>
+            <div class="user__meta">
+              <div class="user__name" id="userName">Гость</div>
+              <div class="user__sub" id="userSub">TaskFlow</div>
             </div>
-</div>
+          </div>
+          <button class="iconbtn" id="closeDrawerBtn" aria-label="Закрыть">✕</button>
+        </div>
 
-          <div class="ttSearch">
-            <span class="ttSearchIcon">⌕</span>
-            <input class="ttSInput" id="searchInput" placeholder="Поиск по задачам…" />
-            <button class="ttClear" id="clearSearch" type="button" aria-label="Очистить">×</button>
+        <div class="drawer__section">
+          <div class="drawer__title">Умные списки</div>
+          <button class="navitem" data-smart="inbox">📥 Входящие</button>
+          <button class="navitem" data-smart="today">📅 Сегодня</button>
+          <button class="navitem" data-smart="upcoming">⏳ Предстоящие</button>
+          <button class="navitem" data-smart="overdue">⚠️ Просрочено</button>
+          <button class="navitem" data-smart="done">✅ Завершено</button>
+        </div>
+
+        <div class="drawer__section">
+          <div class="drawer__title row">
+            <span>Списки</span>
+            <button class="chip" id="newListBtn">＋</button>
+          </div>
+          <div id="listsWrap" class="lists"></div>
+        </div>
+
+        <div class="drawer__section">
+          <div class="drawer__title">Настройки</div>
+          <div class="field">
+            <label>Тема</label>
+            <select id="themeSelect">
+              <option value="auto">Авто</option>
+              <option value="dark">Тёмная</option>
+              <option value="light">Светлая</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Часовой пояс (отображение)</label>
+            <select id="tzSelect">
+              <option value="auto">Авто</option>
+              <option value="UTC">UTC</option>
+              <option value="Europe/Moscow">Europe/Moscow</option>
+              <option value="Europe/Kyiv">Europe/Kyiv</option>
+              <option value="Asia/Almaty">Asia/Almaty</option>
+              <option value="Asia/Tbilisi">Asia/Tbilisi</option>
+            </select>
           </div>
 
-          <div class="ttChips" id="filtersTasks">
-            <button class="ttChip active" data-filter="inbox" type="button">Входящие</button>
-            <button class="ttChip" data-filter="today" type="button">Сегодня</button>
-            <button class="ttChip" data-filter="upcoming" type="button">Предстоящие</button>
-            <button class="ttChip" data-filter="overdue" type="button">Просрочено</button>
-            <button class="ttChip" data-filter="done" type="button">Завершено</button>
+          <button class="ghostbtn" id="exportBtn">Экспорт JSON</button>
+        </div>
+      </aside>
+
+      <!-- Main -->
+      <main class="main">
+        <header class="topbar">
+          <button class="iconbtn" id="openDrawerBtn" aria-label="Меню">☰</button>
+          <div class="topbar__title">
+            <div id="pageTitle" class="topbar__h">Входящие</div>
+            <div id="pageSubtitle" class="topbar__s">TickTick‑like</div>
+          </div>
+          <div class="topbar__actions">
+            <button class="iconbtn" id="syncBtn" title="Обновить">⟳</button>
+            <button class="iconbtn primary" id="quickAddBtn" title="Добавить">＋</button>
           </div>
         </header>
-<section class="listHeader">
-          <div class="listTitle" id="listTitle">Входящие</div>
-          <div class="counter" id="listCounter">0</div>
-        </section>
 
-        <section class="cards" id="cards"></section>
-
-        <section class="empty" id="empty">
-          <div class="emptyIcon">📝</div>
-          <div class="emptyTitle">Пока пусто</div>
-          <div class="emptyDesc">Нажми <b>＋</b> и добавь первую задачу</div>
-        </section>
-      </section>
-
-      <!-- CALENDAR SCREEN -->
-      <section class="screen" id="screenCalendar">
-        <section class="calHeader">
-          <button class="calNav" id="calPrev" aria-label="Предыдущий месяц">‹</button>
-          <div class="calTitleWrap">
-            <div class="calTitle" id="calTitle">Месяц 2026</div>
-            <div class="calSub" id="calSub">Нажми день — увидишь задачи</div>
+        <!-- TASKS VIEW -->
+        <section id="viewTasks" class="view view--active">
+          <div class="searchbar">
+            <span class="searchbar__icon">⌕</span>
+            <input id="searchInput" placeholder="Поиск задач..." autocomplete="off"/>
+            <button class="iconbtn small" id="clearSearchBtn" title="Очистить">✕</button>
           </div>
-          <button class="calNav" id="calNext" aria-label="Следующий месяц">›</button>
+
+          <div class="chips" id="filterChips">
+            <button class="chip chip--active" data-filter="active">Активные</button>
+            <button class="chip" data-filter="all">Все</button>
+          </div>
+
+          <div id="tasksList" class="tasklist"></div>
+          <div id="emptyState" class="empty">
+            <div class="empty__icon">📝</div>
+            <div class="empty__h">Пока пусто</div>
+            <div class="empty__p">Нажми «＋» чтобы добавить задачу</div>
+          </div>
         </section>
 
-        <section class="calCard">
-          <div class="calWeek">
+        <!-- CALENDAR VIEW -->
+        <section id="viewCalendar" class="view">
+          <div class="calhead">
+            <button class="iconbtn" id="calPrev">‹</button>
+            <div class="calhead__mid">
+              <div id="calTitle" class="calhead__title">—</div>
+              <div class="calhead__sub">Нажми день — увидишь задачи</div>
+            </div>
+            <button class="iconbtn" id="calNext">›</button>
+          </div>
+
+          <div class="calgrid__week">
             <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div class="wknd">Сб</div><div class="wknd">Вс</div>
           </div>
-          <div class="calGrid" id="calGrid"></div>
-        </section>
+          <div id="calGrid" class="calgrid"></div>
 
-        <section class="dayPanel" id="dayPanel">
-          <div class="sheetHandle" id="dayHandle"></div>
-          <div class="dayPanelHead">
-            <div>
-              <div class="dayTitle" id="dayTitle">День</div>
-              <div class="dayHint" id="dayHint">Задачи на выбранный день</div>
-            </div>
-            <div class="dayHeadBtns">
-              <button class="ghostIcon" id="dayCollapse" type="button" aria-label="Свернуть/развернуть">▾</button>
-              <button class="pill small" id="dayAddBtn" type="button">＋ Задача</button>
-            </div>
-          </div>
-
-          <div class="cards" id="dayCards"></div>
-          <section class="empty" id="dayEmpty">
-            <div class="emptyIcon">📅</div>
-            <div class="emptyTitle">Нет задач на этот день</div>
-            <div class="emptyDesc">Нажми <b>＋ Задача</b> чтобы добавить</div>
-          </section>
-        </section>
-      </section>
-
-      <!-- MENU SCREEN -->
-      <section class="screen" id="screenMenu">
-        <section class="menuCard">
-          <div class="menuTitle">Меню</div>
-          <div class="menuBuild" id="buildBadge"></div>
-
-          <div class="menuUser">
-            <div class="menuAvatar" id="menuAvatar">TF</div>
-            <div class="menuUserText">
-              <div class="menuUserName" id="menuUserName">Гость</div>
-              <div class="menuUserHandle" id="menuUserHandle">—</div>
-            </div>
-          </div>
-
-          <div class="menuList">
-            <button class="menuItem" id="mSync"><span>⟳</span><div><div class="miT">Синхронизировать</div><div class="miS">Обновить данные с сервера</div></div></button>
-            <button class="menuItem" id="mExport"><span>⤓</span><div><div class="miT">Экспорт JSON</div><div class="miS">Скопировать задачи в буфер</div></div></button>
-            <button class="menuItem" id="mClearDone"><span>🧹</span><div><div class="miT">Очистить выполненные</div><div class="miS">Удалить все задачи «Готово»</div></div></button>
-
-            <div class="menuSep"></div>
-
-            <div class="menuRow">
+          <div class="agenda">
+            <div class="agenda__top">
               <div>
-                <div class="miT">Напоминания по умолчанию</div>
-                <div class="miS">Для новых задач</div>
+                <div id="agendaTitle" class="agenda__h">—</div>
+                <div class="agenda__s">Задачи на выбранный день</div>
               </div>
-              <select class="input compact" id="defaultReminder">
-                <option value="on" selected>Вкл</option>
-                <option value="off">Выкл</option>
-              </select>
+              <button class="pill" id="addFromCalendarBtn">＋ Задача</button>
             </div>
-
-            <div class="menuRow">
-              <div>
-                <div class="miT">Подсветка просроченных</div>
-                <div class="miS">Красным и в фильтре</div>
-              </div>
-              <select class="input compact" id="overdueHighlight">
-                <option value="on" selected>Вкл</option>
-                <option value="off">Выкл</option>
-              </select>
-            </div>
-
-            <div class="menuSep"></div>
-
-            <div class="menuRow">
-              <div>
-                <div class="miT">Часовой пояс</div>
-                <div class="miS">Влияет на время и календарь</div>
-              </div>
-              <select class="input compact" id="tzSelect"></select>
-            </div>
-
-            <div class="menuSep"></div>
-
-            
-            <div class="menuRow">
-              <div>
-                <div class="miT">Тема</div>
-                <div class="miS">Светлая / тёмная</div>
-              </div>
-              <select class="input compact" id="themeSelect">
-                <option value="auto">Авто</option>
-                <option value="dark">Тёмная</option>
-                <option value="light">Светлая</option>
-              </select>
-            </div>
-
-            <div class="menuSep"></div>
-<div class="miS">Календарь как в LeaderTask: точки на днях + список задач по выбранному дню.</div>
+            <div id="agendaList" class="agendalist"></div>
+            <div id="agendaEmpty" class="agendaempty">
+              <div class="agendaempty__icon">📆</div>
+              <div class="agendaempty__h">Нет задач на этот день</div>
+              <div class="agendaempty__p">Нажми «＋ Задача» чтобы добавить</div>
             </div>
           </div>
         </section>
-      </section>
-    </main>
 
-    <nav class="bottomNav">
-      <button class="navBtn active" data-screen="tasks"><span class="navI">🗒️</span><span class="navT">Задачи</span></button>
-      <button class="navBtn" data-screen="calendar"><span class="navI">📅</span><span class="navT">Календарь</span></button>
-      <button class="navBtn add" id="fab" aria-label="Добавить">＋</button>
-      <button class="navBtn" data-screen="overdue"><span class="navI">⏰</span><span class="navT">Просрочено</span></button>
-      <button class="navBtn" data-screen="menu"><span class="navI">👤</span><span class="navT">Меню</span></button>
-    </nav>
-  </div>
+        <!-- OVERDUE VIEW -->
+        <section id="viewOverdue" class="view">
+          <div class="sectionTitle">Просрочено</div>
+          <div id="overdueList" class="tasklist"></div>
+          <div id="overdueEmpty" class="empty small">
+            <div class="empty__icon">🎉</div>
+            <div class="empty__h">Просроченных задач нет</div>
+          </div>
+        </section>
 
-  <!-- modal -->
-  <div class="backdrop" id="backdrop"></div>
-  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-    <div class="modalHead">
-      <div>
-        <div class="modalTitle" id="modalTitle">Новая задача</div>
-        <div class="modalHint">Если указан дедлайн — бот напомнит за 15 минут (можно выключить).</div>
-      </div>
-      <button class="iconBtn" id="closeModal" aria-label="Закрыть">✕</button>
-    </div>
+        <!-- SETTINGS VIEW (simple) -->
+        <section id="viewSettings" class="view">
+          <div class="sectionTitle">Меню</div>
+          <div class="card">
+            <div class="row space">
+              <div>
+                <div class="card__h">Пользователь</div>
+                <div class="card__p" id="menuUser">—</div>
+              </div>
+              <button class="ghostbtn" id="openDrawerFromMenu">Открыть настройки</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card__h">Советы</div>
+            <div class="card__p">Открой TaskFlow как WebApp внутри Telegram — имя подтянется автоматически.</div>
+          </div>
+        </section>
 
-    <div class="form">
-      <label class="lbl">Название</label>
-      <input class="input" id="fTitle" maxlength="200" placeholder="Например: отправить отчёт" />
+        <!-- Bottom nav -->
+        <nav class="bottomnav">
+          <button class="bnav bnav--active" data-nav="tasks">🧾<span>Задачи</span></button>
+          <button class="bnav" data-nav="calendar">📅<span>Календарь</span></button>
+          <button class="bnav bnav--plus" id="navAdd">＋</button>
+          <button class="bnav" data-nav="overdue">⚠️<span>Просроч.</span></button>
+          <button class="bnav" data-nav="settings">👤<span>Меню</span></button>
+        </nav>
 
-      <label class="lbl">Описание</label>
-      <textarea class="input area" id="fDesc" maxlength="1000" placeholder="Детали (необязательно)"></textarea>
+        <!-- Add/Edit Sheet -->
+        <div id="sheetBackdrop" class="backdrop hidden"></div>
+        <div id="taskSheet" class="sheet hidden" role="dialog" aria-modal="true">
+          <div class="sheet__top">
+            <div class="sheet__title" id="sheetTitle">Новая задача</div>
+            <button class="iconbtn" id="closeSheetBtn">✕</button>
+          </div>
 
-      <div class="grid2 dtRow">
-        <div>
-          <label class="lbl">Дата</label>
-          <input class="input" id="fDate" type="date" />
+          <div class="sheet__body">
+            <div class="field">
+              <label>Название</label>
+              <input id="taskTitleInput" placeholder="Например: отправить отчёт"/>
+            </div>
+
+            <div class="field">
+              <label>Описание</label>
+              <textarea id="taskDescInput" rows="3" placeholder="Детали (необязательно)"></textarea>
+            </div>
+
+            <div class="row2">
+              <div class="field">
+                <label>Дата</label>
+                <input id="taskDateInput" type="date"/>
+              </div>
+              <div class="field">
+                <label>Время</label>
+                <input id="taskTimeInput" type="time"/>
+              </div>
+            </div>
+
+            <div class="row2">
+              <div class="field">
+                <label>Список</label>
+                <select id="taskListSelect"></select>
+              </div>
+              <div class="field">
+                <label>Приоритет</label>
+                <select id="taskPrioSelect">
+                  <option value="low">Низкий</option>
+                  <option value="medium" selected>Средний</option>
+                  <option value="high">Высокий</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row space">
+              <button class="ghostbtn" id="clearDueBtn">Без срока</button>
+              <button class="btn" id="saveTaskBtn">Сохранить</button>
+            </div>
+
+            <div class="dangerRow hidden" id="editActions">
+              <button class="ghostbtn" id="toggleDoneBtn">Завершить</button>
+              <button class="dangerbtn" id="deleteTaskBtn">Удалить</button>
+            </div>
+          </div>
         </div>
-        <div>
-          <label class="lbl">Время</label>
-          <input class="input" id="fTime" type="time" />
+
+        <!-- New List Modal -->
+        <div id="listModalBackdrop" class="backdrop hidden"></div>
+        <div id="listModal" class="modal hidden" role="dialog" aria-modal="true">
+          <div class="modal__top">
+            <div class="modal__title">Новый список</div>
+            <button class="iconbtn" id="closeListModalBtn">✕</button>
+          </div>
+          <div class="modal__body">
+            <div class="field">
+              <label>Название</label>
+              <input id="listNameInput" placeholder="Например: Учёба"/>
+            </div>
+            <div class="field">
+              <label>Цвет</label>
+              <input id="listColorInput" type="color" value="#2ECC71"/>
+            </div>
+            <button class="btn" id="createListBtn">Создать</button>
+          </div>
         </div>
-      </div>
 
-      <label class="lbl">Приоритет</label>
-      <select class="select" id="fPriority">
-        <option value="high">Высокий</option>
-        <option value="medium" selected>Средний</option>
-        <option value="low">Низкий</option>
-      </select>
-
-      <label class="lbl">Напоминание</label>
-      <select class="select" id="fReminder">
-        <option value="on" selected>Включено (за 15 минут)</option>
-        <option value="off">Выключено</option>
-      </select>
-
-<div class="modalActions">
-        <button class="btn ghost" id="deleteBtn" type="button">Удалить</button>
-        <button class="btn" id="saveBtn" type="button">Сохранить</button>
-      </div>
+        <div id="toast" class="toast hidden"></div>
+      </main>
     </div>
   </div>
 
-  
-
-
-
+  <script src="/app.js"></script>
 </body>
 </html>
