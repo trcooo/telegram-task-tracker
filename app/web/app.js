@@ -1,861 +1,1195 @@
-/* TaskFlow v36 - Tick-inspired rewrite (no bot) */
-(() => {
-  const $ = (sel, root=document) => root.querySelector(sel);
-  const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+/* TaskFlow — TickTick iOS inspired (Telegram Mini App) */
+/* Build: 1770550367 */
 
-  const state = {
-    me: { name: "Гость", key: null, is_guest: true, initData: null },
-    theme: localStorage.getItem("tf_theme") || "auto",
-    tz: localStorage.getItem("tf_tz") || "auto",
-    view: "tasks",           // tasks | calendar | overdue | settings
-    smart: "inbox",          // inbox today upcoming overdue done
-    filter: "active",        // active | all
-    listId: 0,               // 0 inbox, >0 custom list
-    search: "",
-    tasks: [],
-    lists: [],
-    cal: {
-      ym: null,
-      selected: todayDateStr(),
-    },
-    editingId: null,
+(() => {
+  'use strict';
+
+  const TG = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+
+  // ---- Elements ----
+  const el = (id) => document.getElementById(id);
+  const app = el('app');
+
+  const userSubtitle = el('userSubtitle');
+  const menuUserName = el('menuUserName');
+
+  const syncBtn = el('syncBtn');
+  const topAddBtn = el('topAddBtn');
+
+  const seg = el('topSeg');
+  const segThumb = el('segThumb');
+
+  const screenTasks = el('screenTasks');
+  const screenCalendar = el('screenCalendar');
+  const screenOverdue = el('screenOverdue');
+  const screenMenu = el('screenMenu');
+
+  const bottomNav = el('bottomNav');
+  const navAddBtn = el('navAddBtn');
+  const fabAdd = el('fabAdd');
+
+  const searchInput = el('searchInput');
+  const clearSearch = el('clearSearch');
+  const exportBtn = el('exportBtn');
+
+  const smartChips = el('smartChips');
+  const taskList = el('taskList');
+  const emptyState = el('emptyState');
+  const listTitle = el('listTitle');
+  const taskCount = el('taskCount');
+
+  const overdueList = el('overdueList');
+  const overdueEmpty = el('overdueEmpty');
+  const overdueCount = el('overdueCount');
+
+  const calTitle = el('calTitle');
+  const calPrev = el('calPrev');
+  const calNext = el('calNext');
+  const calGrid = el('calGrid');
+
+  const daySheet = el('daySheet');
+  const dayTitle = el('dayTitle');
+  const dayTaskList = el('dayTaskList');
+  const dayEmpty = el('dayEmpty');
+  const addTaskForDayBtn = el('addTaskForDayBtn');
+
+  const menuSync = el('menuSync');
+  const menuExport = el('menuExport');
+  const menuClearDone = el('menuClearDone');
+  const themeSelect = el('themeSelect');
+  const tzSelect = el('tzSelect');
+
+  const modalOverlay = el('taskModalOverlay');
+  const closeTaskModal = el('closeTaskModal');
+  const taskModalTitle = el('taskModalTitle');
+  const taskTitleInput = el('taskTitleInput');
+  const taskDescInput = el('taskDescInput');
+  const taskDateInput = el('taskDateInput');
+  const taskTimeInput = el('taskTimeInput');
+  const taskPrioritySelect = el('taskPrioritySelect');
+  const taskRemindSelect = el('taskRemindSelect');
+  const saveTaskBtn = el('saveTaskBtn');
+
+  const toast = el('toast');
+
+  // ---- State ----
+  const LS = {
+    theme: 'tf_theme',
+    tz: 'tf_tz',
   };
 
-  function uuidv4() {
-    return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
-      (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
-    );
+  let state = {
+    user: null,
+    screen: 'tasks',            // tasks | calendar | overdue | menu
+    seg: 'inbox',               // inbox | today | calendar
+    filter: 'inbox',            // inbox | today | upcoming | overdue | done
+    search: '',
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    tasks: [],
+    selectedDayISO: null,       // YYYY-MM-DD
+    calCursor: new Date(),      // month cursor
+    editingTaskId: null,
+    addingForDayISO: null,
+  };
+
+  // ---- Utilities ----
+  function isTelegram() {
+    return !!TG;
   }
 
-  function getTelegramUser() {
+  function haptic(type='impact', style='light') {
     try {
-      const tg = window.Telegram && window.Telegram.WebApp;
-      const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
-      if (!u) return null;
-      const name = (u.first_name || "") + (u.last_name ? (" " + u.last_name) : "");
-      return {
-        id: u.id,
-        username: u.username ? ("@" + u.username) : null,
-        name: name.trim() || (u.username ? ("@" + u.username) : "Telegram"),
-      };
-    } catch (_) { return null; }
+      if (!TG || !TG.HapticFeedback) return;
+      if (type === 'impact') TG.HapticFeedback.impactOccurred(style);
+      if (type === 'notification') TG.HapticFeedback.notificationOccurred(style);
+      if (type === 'selection') TG.HapticFeedback.selectionChanged();
+    } catch (_) {}
   }
 
-  function ensureIdentity() {
-    const tgUser = getTelegramUser();
-    try{
-      const tg = window.Telegram && window.Telegram.WebApp;
-      state.me.initData = (tg && tg.initData) ? tg.initData : null;
-    }catch(_){ state.me.initData = null; }
-    if (tgUser && tgUser.id) {
-      state.me.key = `tg:${tgUser.id}`;
-      state.me.name = (tgUser.username || tgUser.name || "Telegram");
-      state.me.is_guest = false;
-      return;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove('show'), 1800);
+  }
+
+  function pad2(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  function isoDate(d) {
+    return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
+  }
+
+  function parseISODate(iso) {
+    // iso = YYYY-MM-DD
+    const [y,m,dd] = iso.split('-').map(Number);
+    return new Date(y, m-1, dd);
+  }
+
+  function fmtDayTitle(iso) {
+    const d = parseISODate(iso);
+    try {
+      return d.toLocaleDateString('ru-RU', { weekday:'long', day:'numeric', month:'long' });
+    } catch {
+      return iso;
     }
-    let gid = localStorage.getItem("tf_guest_id");
-    if (!gid) {
-      gid = uuidv4();
-      localStorage.setItem("tf_guest_id", gid);
-    }
-    state.me.key = `guest:${gid}`;
-    state.me.name = "Гость";
-    state.me.is_guest = true;
   }
 
-  function applyTheme() {
-    const root = $("#app");
-    let t = state.theme;
-    if (t === "auto") {
-      t = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-    }
-    root.setAttribute("data-theme", t);
-    $("#themeSelect").value = state.theme;
-    $("#tzSelect").value = state.tz;
+  function startOfDay(d) {
+    const x = new Date(d);
+    x.setHours(0,0,0,0);
+    return x;
   }
 
-  function toast(msg) {
-    const el = $("#toast");
-    el.textContent = msg;
-    el.classList.remove("hidden");
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => el.classList.add("hidden"), 2200);
+  function endOfDay(d) {
+    const x = new Date(d);
+    x.setHours(23,59,59,999);
+    return x;
   }
 
-  async function api(path, opts={}) {
-    const headers = Object.assign({}, opts.headers || {}, {
-      "Content-Type": "application/json",
-      "X-User-Key": state.me.key,
-      "X-User-Name": state.me.name,
-      ...(state.me.initData ? {"X-Telegram-Init-Data": state.me.initData} : {}),
+  function nowInTZ() {
+    // For filtering logic we can compare by local dates rendered in user's TZ.
+    // We'll convert task's due_at (UTC ISO) -> date in selected TZ using Intl.
+    return new Date();
+  }
+
+  function toZonedParts(dateObj, timeZone) {
+    const fmt = new Intl.DateTimeFormat('ru-RU', {
+      timeZone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute:'2-digit', hour12:false,
     });
-    const res = await fetch(path, Object.assign({}, opts, { headers }));
+    const parts = fmt.formatToParts(dateObj);
+    const get = (t) => parts.find(p=>p.type===t)?.value || '';
+    return {
+      year: Number(get('year')),
+      month: Number(get('month')),
+      day: Number(get('day')),
+      hour: Number(get('hour')),
+      minute: Number(get('minute')),
+    };
+  }
+
+  function taskDueISO(task) {
+    return task.due_at || task.dueAt || task.deadline || null;
+  }
+
+  function taskDone(task) {
+    return !!(task.is_done ?? task.done ?? task.completed);
+  }
+
+  function taskTitle(task) {
+    return task.title || task.name || '';
+  }
+
+  function taskDesc(task) {
+    return task.description || task.desc || '';
+  }
+
+  function taskPriority(task) {
+    return task.priority || task.prio || 'medium';
+  }
+
+  function taskRemind(task) {
+    return !!(task.remind ?? task.reminder ?? task.remind_enabled);
+  }
+
+  function isOverdue(task) {
+    const due = taskDueISO(task);
+    if (!due) return false;
+    if (taskDone(task)) return false;
+    const dueDate = new Date(due);
+    return dueDate.getTime() < Date.now();
+  }
+
+  function sameZonedDate(d1, d2, tz) {
+    const p1 = toZonedParts(d1, tz);
+    const p2 = toZonedParts(d2, tz);
+    return p1.year===p2.year && p1.month===p2.month && p1.day===p2.day;
+  }
+
+  function zonedISODateFromUTC(utcISO, tz) {
+    const d = new Date(utcISO);
+    const p = toZonedParts(d, tz);
+    return p.year + '-' + pad2(p.month) + '-' + pad2(p.day);
+  }
+
+  function fmtZonedTime(utcISO, tz) {
+    const d = new Date(utcISO);
+    try {
+      return new Intl.DateTimeFormat('ru-RU', {
+        timeZone: tz,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(d);
+    } catch {
+      return '';
+    }
+  }
+
+  function setTheme(theme) {
+    // theme: auto|light|dark
+    const sysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const applied = (theme === 'auto') ? (sysDark ? 'dark' : 'light') : theme;
+    document.documentElement.setAttribute('data-theme', applied);
+
+    // theme-color
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', applied === 'dark' ? '#0B0F17' : '#F3F6FF');
+
+    // Telegram colors
+    if (TG) {
+      try {
+        TG.setHeaderColor(applied === 'dark' ? '#0B0F17' : '#F3F6FF');
+        TG.setBackgroundColor(applied === 'dark' ? '#0B0F17' : '#F3F6FF');
+      } catch (_) {}
+    }
+  }
+
+  function loadPrefs() {
+    const t = localStorage.getItem(LS.theme) || 'auto';
+    themeSelect.value = t;
+    setTheme(t);
+
+    const tz = localStorage.getItem(LS.tz);
+    if (tz) state.tz = tz;
+  }
+
+  function savePrefs() {
+    localStorage.setItem(LS.theme, themeSelect.value);
+    localStorage.setItem(LS.tz, state.tz);
+  }
+
+  function setupTelegram() {
+    if (!TG) return;
+
+    document.documentElement.classList.add('tg');
+
+    try {
+      TG.ready();
+      TG.expand();
+      TG.enableClosingConfirmation();
+    } catch (_) {}
+
+    // set subtitle & username
+    const u = TG.initDataUnsafe && TG.initDataUnsafe.user ? TG.initDataUnsafe.user : null;
+    state.user = u;
+    if (u) {
+      const name = [u.first_name, u.last_name].filter(Boolean).join(' ').trim() || (u.username ? '@'+u.username : 'Пользователь');
+      userSubtitle.textContent = name;
+      menuUserName.textContent = name;
+    } else {
+      userSubtitle.textContent = 'Гость';
+      menuUserName.textContent = 'Гость';
+    }
+
+    // viewport fixes
+    const applyVH = () => {
+      const h = TG.viewportStableHeight || window.innerHeight;
+      document.documentElement.style.setProperty('--vh', h + 'px');
+      document.body.style.height = h + 'px';
+    };
+    applyVH();
+    TG.onEvent('viewportChanged', applyVH);
+    window.addEventListener('resize', applyVH);
+  }
+
+  function populateTimezones() {
+    // keep list lightweight (common + offset)
+    const common = [
+      'Europe/Moscow','Europe/Kiev','Europe/Warsaw','Europe/London',
+      'Europe/Berlin','Europe/Paris','Asia/Dubai','Asia/Yekaterinburg',
+      'Asia/Almaty','Asia/Bishkek','Asia/Tashkent','Asia/Baku',
+      'Asia/Novosibirsk','Asia/Krasnoyarsk','Asia/Irkutsk','Asia/Yakutsk',
+      'Asia/Vladivostok','Asia/Magadan','Asia/Kamchatka',
+      'Asia/Tbilisi','Asia/Yerevan','Asia/Tokyo','Asia/Seoul',
+      'America/New_York','America/Chicago','America/Denver','America/Los_Angeles'
+    ];
+    const uniq = Array.from(new Set([state.tz, ...common]));
+    tzSelect.innerHTML = '';
+    for (const z of uniq) {
+      const opt = document.createElement('option');
+      opt.value = z;
+      opt.textContent = z;
+      tzSelect.appendChild(opt);
+    }
+    tzSelect.value = state.tz;
+  }
+
+  // ---- API ----
+  function apiBase() {
+    // same origin
+    return '';
+  }
+
+  async function apiFetch(path, opts={}) {
+    const url = apiBase() + path;
+    const headers = Object.assign({'Content-Type': 'application/json'}, opts.headers || {});
+    const res = await fetch(url, Object.assign({}, opts, { headers }));
     if (!res.ok) {
-      let detail = "";
-      try { const j = await res.json(); detail = j.detail || j.error || JSON.stringify(j); } catch(_) {}
-      throw new Error(`${res.status} ${detail}`.trim());
+      const txt = await res.text().catch(()=> '');
+      throw new Error(txt || ('HTTP ' + res.status));
     }
-    return res.headers.get("content-type")?.includes("application/json") ? res.json() : res.text();
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) return res.json();
+    return res.text();
   }
 
-  function todayDateStr() {
-    const d = new Date();
-    return dateToStr(d);
+  async function loadTasks() {
+    // try several endpoints to support older backend variations
+    const endpoints = ['/api/tasks', '/tasks', '/api/v1/tasks'];
+    let lastErr = null;
+    for (const ep of endpoints) {
+      try {
+        const data = await apiFetch(ep, { method:'GET' });
+        if (Array.isArray(data)) {
+          state.tasks = data;
+          return;
+        }
+        if (data && Array.isArray(data.tasks)) {
+          state.tasks = data.tasks;
+          return;
+        }
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error('Не удалось загрузить задачи');
   }
 
-  function dateToStr(d) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth()+1).padStart(2,"0");
-    const da = String(d.getDate()).padStart(2,"0");
-    return `${y}-${m}-${da}`;
+  async function createTask(payload) {
+    const endpoints = ['/api/tasks', '/tasks', '/api/v1/tasks'];
+    let lastErr = null;
+    for (const ep of endpoints) {
+      try {
+        const data = await apiFetch(ep, { method:'POST', body: JSON.stringify(payload) });
+        return data;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error('Не удалось создать задачу');
   }
 
-  function strToDate(s) {
-    const [y,m,d] = s.split("-").map(n => parseInt(n,10));
-    return new Date(y, m-1, d);
+  async function updateTask(id, payload) {
+    const endpoints = [`/api/tasks/${id}`, `/tasks/${id}`, `/api/v1/tasks/${id}`];
+    let lastErr = null;
+    for (const ep of endpoints) {
+      try {
+        const data = await apiFetch(ep, { method:'PUT', body: JSON.stringify(payload) });
+        return data;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error('Не удалось обновить задачу');
   }
 
-  function fmtDateTime(iso) {
-    if (!iso) return null;
-    const d = new Date(iso);
+  async function deleteTask(id) {
+    const endpoints = [`/api/tasks/${id}`, `/tasks/${id}`, `/api/v1/tasks/${id}`];
+    let lastErr = null;
+    for (const ep of endpoints) {
+      try {
+        const data = await apiFetch(ep, { method:'DELETE' });
+        return data;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error('Не удалось удалить задачу');
+  }
+
+  async function toggleDone(id, done) {
+    // try PATCH toggle endpoints
+    const tryPayloads = [
+      { is_done: done },
+      { done },
+      { completed: done },
+    ];
+    const endpoints = [`/api/tasks/${id}`, `/tasks/${id}`, `/api/v1/tasks/${id}`];
+
+    let lastErr = null;
+    for (const ep of endpoints) {
+      for (const p of tryPayloads) {
+        try {
+          const data = await apiFetch(ep, { method:'PATCH', body: JSON.stringify(p) });
+          return data;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+    }
+    // fallback PUT
+    for (const ep of endpoints) {
+      for (const p of tryPayloads) {
+        try {
+          const data = await apiFetch(ep, { method:'PUT', body: JSON.stringify(p) });
+          return data;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+    }
+    throw lastErr || new Error('Не удалось изменить статус');
+  }
+
+  // ---- Rendering / Filters ----
+  function getFilteredTasks(filter, search) {
+    const q = (search || '').trim().toLowerCase();
     const tz = state.tz;
-    const optDate = { year:"numeric", month:"short", day:"2-digit" };
-    const optTime = { hour:"2-digit", minute:"2-digit" };
-    const dateFmt = new Intl.DateTimeFormat("ru-RU", Object.assign({}, optDate, tz==="auto"?{}:{timeZone:tz}));
-    const timeFmt = new Intl.DateTimeFormat("ru-RU", Object.assign({}, optTime, tz==="auto"?{}:{timeZone:tz}));
-    return `${dateFmt.format(d)} • ${timeFmt.format(d)}`;
-  }
+    const today = new Date();
 
-  function isOverdue(t) {
-    if (!t.due_at || t.completed) return false;
-    return new Date(t.due_at).getTime() < Date.now();
-  }
+    let list = state.tasks.slice();
 
-  function isToday(t) {
-    if (!t.due_at) return false;
-    const d = new Date(t.due_at);
-    const now = new Date();
-    return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
-  }
-
-  function isUpcoming(t) {
-    if (!t.due_at || t.completed) return false;
-    const d = new Date(t.due_at);
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0,0,0,0);
-    const diff = d.getTime() - start.getTime();
-    return diff > 0 && diff <= 1000*60*60*24*14; // next 14 days
-  }
-
-  function belongsToSelection(t) {
-    // list selection first (inbox vs list)
-    if (state.listId === 0) {
-      if (t.list_id !== null && t.list_id !== undefined) return false;
-    } else {
-      if (t.list_id !== state.listId) return false;
+    if (q) {
+      list = list.filter(t =>
+        (taskTitle(t).toLowerCase().includes(q)) ||
+        (taskDesc(t).toLowerCase().includes(q))
+      );
     }
 
-    // smart filter
-    switch(state.smart) {
-      case "list": return true;
-      case "inbox": return !t.completed && !t.due_at;
-      case "today": return !t.completed && isToday(t);
-      case "upcoming": return !t.completed && (isUpcoming(t) || (t.due_at && new Date(t.due_at) > new Date()));
-      case "overdue": return isOverdue(t);
-      case "done": return !!t.completed;
-      default: return true;
-    }
-  }
-
-  function matchesSearch(t) {
-    const q = state.search.trim().toLowerCase();
-    if (!q) return true;
-    return (t.title||"").toLowerCase().includes(q) || (t.description||"").toLowerCase().includes(q);
-  }
-
-  function filteredTasks() {
-    let items = state.tasks.slice();
-    if (state.smart === "inbox" || state.smart === "today" || state.smart === "upcoming" || state.smart === "overdue" || state.smart === "done") {
-      items = items.filter(belongsToSelection);
-    } else {
-      // if no smart, still apply list selection
-      items = items.filter(t => (state.listId===0 ? (t.list_id==null) : (t.list_id===state.listId)));
-    }
-    if (state.filter === "active") items = items.filter(t => !t.completed);
-    items = items.filter(matchesSearch);
-    // sort: incomplete first, then due, then id desc
-    items.sort((a,b)=>{
-      if (a.completed !== b.completed) return a.completed ? 1 : -1;
-      const ad = a.due_at ? new Date(a.due_at).getTime() : Infinity;
-      const bd = b.due_at ? new Date(b.due_at).getTime() : Infinity;
-      if (ad !== bd) return ad - bd;
-      return b.id - a.id;
-    });
-    return items;
-  }
-
-  function listMeta(listId) {
-    const l = state.lists.find(x => x.id === listId);
-    return l || { id: 0, name: "Входящие", color: "#4A90E2" };
-  }
-
-  // -------------------- rendering --------------------
-  function setView(view) {
-    state.view = view;
-    $$(".view").forEach(v => v.classList.remove("view--active"));
-    $("#viewTasks").classList.toggle("view--active", view==="tasks");
-    $("#viewCalendar").classList.toggle("view--active", view==="calendar");
-    $("#viewOverdue").classList.toggle("view--active", view==="overdue");
-    $("#viewSettings").classList.toggle("view--active", view==="settings");
-
-    $$(".bnav").forEach(b => b.classList.remove("bnav--active"));
-    const btn = $(`.bnav[data-nav="${view}"]`);
-    if (btn) btn.classList.add("bnav--active");
-
-    // title
-    if (view==="tasks") {
-      const l = listMeta(state.listId);
-      $("#pageTitle").textContent = smartTitle();
-      $("#pageSubtitle").textContent = l.id===0 ? "Входящие" : l.name;
-    } else if (view==="calendar") {
-      $("#pageTitle").textContent = "Календарь";
-      $("#pageSubtitle").textContent = "Месяц и задачи";
-    } else if (view==="overdue") {
-      $("#pageTitle").textContent = "Просрочено";
-      $("#pageSubtitle").textContent = "Требуют внимания";
-    } else {
-      $("#pageTitle").textContent = "Меню";
-      $("#pageSubtitle").textContent = state.me.is_guest ? "Гость" : state.me.name;
+    // Smart filters
+    if (filter === 'done') {
+      list = list.filter(t => taskDone(t));
+    } else if (filter === 'overdue') {
+      list = list.filter(t => isOverdue(t));
+    } else if (filter === 'today') {
+      list = list.filter(t => {
+        const due = taskDueISO(t);
+        if (!due) return false;
+        return sameZonedDate(new Date(due), today, tz) && !taskDone(t);
+      });
+    } else if (filter === 'upcoming') {
+      list = list.filter(t => {
+        const due = taskDueISO(t);
+        if (!due) return false;
+        if (taskDone(t)) return false;
+        const dueD = new Date(due);
+        // after today (zoned)
+        const dueISO = zonedISODateFromUTC(due, tz);
+        const todayISO = zonedISODateFromUTC(new Date().toISOString(), tz);
+        return dueISO > todayISO;
+      });
+    } else if (filter === 'inbox') {
+      // Inbox: not done; either no date or future/today (like TickTick inbox is general list)
+      list = list.filter(t => !taskDone(t));
     }
 
-    if (view==="calendar") renderCalendar();
-    if (view==="overdue") renderOverdue();
-  }
-
-  function smartTitle() {
-    switch(state.smart){
-      case "inbox": return "Входящие";
-      case "today": return "Сегодня";
-      case "upcoming": return "Предстоящие";
-      case "overdue": return "Просрочено";
-      case "done": return "Завершено";
-      case "list": return listMeta(state.listId).name;
-      default: return "Задачи";
-    }
-  }
-
-  function renderDrawer() {
-    $("#userName").textContent = state.me.name || "Гость";
-    $("#userSub").textContent = state.me.is_guest ? "Режим браузера" : "Telegram WebApp";
-
-    // smart items
-    $$(".navitem").forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.smart === state.smart && state.view==="tasks");
+    // sort: by due date (null last) then priority
+    const prioRank = (p) => (p === 'high' ? 0 : p === 'medium' ? 1 : 2);
+    list.sort((a,b) => {
+      const ad = taskDueISO(a);
+      const bd = taskDueISO(b);
+      if (ad && bd) return new Date(ad) - new Date(bd);
+      if (ad && !bd) return -1;
+      if (!ad && bd) return 1;
+      return prioRank(taskPriority(a)) - prioRank(taskPriority(b));
     });
 
-    // lists
-    const wrap = $("#listsWrap");
-    wrap.innerHTML = "";
-    state.lists.filter(l => l.id !== 0).forEach(l => {
-      const btn = document.createElement("button");
-      btn.className = "listitem" + (state.listId===l.id ? " active" : "");
-      btn.innerHTML = `
-        <div class="listitem__left">
-          <span class="dot" style="background:${l.color}"></span>
-          <span class="listname">${escapeHtml(l.name)}</span>
-        </div>
-        <span class="count">${countList(l.id)}</span>
-      `;
-      btn.onclick = () => {
-        state.listId = l.id;
-        state.smart = "list"; // custom list view
-        setView("tasks");
-        closeDrawer();
-        renderAll();
-      };
-      wrap.appendChild(btn);
-    });
+    return list;
   }
 
-  function countList(listId) {
-    return state.tasks.filter(t => !t.completed && (listId===0 ? (t.list_id==null) : (t.list_id===listId))).length;
+  function updateTitles() {
+    const map = {
+      inbox: 'Входящие',
+      today: 'Сегодня',
+      upcoming: 'Предстоящие',
+      overdue: 'Просрочено',
+      done: 'Завершено',
+    };
+    listTitle.textContent = map[state.filter] || 'Задачи';
   }
 
-  function renderTasks() {
-    const list = $("#tasksList");
-    const items = filteredTasks();
-    list.innerHTML = "";
-    $("#emptyState").classList.toggle("hidden", items.length>0);
+  function renderTaskList(container, list, opts={ compact:false }) {
+    container.innerHTML = '';
+    for (const t of list) {
+      const id = t.id ?? t.task_id ?? t.taskId;
+      const row = document.createElement('div');
+      row.className = 'taskRow enter' + (taskDone(t) ? ' isDone' : '') + (isOverdue(t) ? ' isOverdue' : '');
+      row.dataset.id = String(id || '');
 
-    items.forEach(t => {
-      const l = listMeta(t.list_id || 0);
-      const el = document.createElement("div");
-      el.className = "task";
-      const due = fmtDateTime(t.due_at);
-      const overdue = isOverdue(t);
-      const done = !!t.completed;
+      const acts = document.createElement('div');
+      acts.className = 'taskRowActions';
+      acts.innerHTML = '<div class="actLeft">Готово</div><div class="actRight">Удалить</div>';
+      row.appendChild(acts);
 
-      el.innerHTML = `
-        <div class="cb ${done ? "done" : ""}" data-id="${t.id}"></div>
-        <div class="task__main">
-          <div class="task__title ${done ? "done" : ""}">${escapeHtml(t.title)}</div>
-          ${t.description ? `<div class="task__desc">${escapeHtml(t.description)}</div>` : ""}
-          <div class="task__meta">
-            ${due ? `<span class="pill ${overdue ? "warn" : "accent"}">${escapeHtml(due)}</span>` : ""}
-            <span class="pill listtag"><span class="tagdot" style="background:${l.color}"></span>${escapeHtml(l.name)}</span>
-            ${t.priority==="high" ? `<span class="pill warn">Высокий</span>` : (t.priority==="low" ? `<span class="pill">Низкий</span>` : "")}
-          </div>
-        </div>
-      `;
-      el.querySelector(".cb").onclick = async (e) => {
+      const inner = document.createElement('div');
+      inner.className = 'taskRowInner';
+      row.appendChild(inner);
+
+      const check = document.createElement('div');
+      check.className = 'taskCheck' + (taskDone(t) ? ' isChecked' : '');
+      check.title = 'Завершить';
+      inner.appendChild(check);
+
+      const main = document.createElement('div');
+      main.className = 'taskMain';
+      inner.appendChild(main);
+
+      const title = document.createElement('div');
+      title.className = 'taskTitle';
+      title.textContent = taskTitle(t) || 'Без названия';
+      main.appendChild(title);
+
+      const desc = taskDesc(t);
+      if (desc) {
+        const d = document.createElement('div');
+        d.className = 'taskDesc';
+        d.textContent = desc;
+        main.appendChild(d);
+      }
+
+      const meta = document.createElement('div');
+      meta.className = 'taskMeta';
+      main.appendChild(meta);
+
+      const due = taskDueISO(t);
+      if (due) {
+        const b1 = document.createElement('span');
+        b1.className = 'badge blue';
+        const dISO = zonedISODateFromUTC(due, state.tz);
+        const tStr = fmtZonedTime(due, state.tz);
+        b1.textContent = dISO + (tStr ? (' • ' + tStr) : '');
+        meta.appendChild(b1);
+      } else {
+        const b1 = document.createElement('span');
+        b1.className = 'badge gray';
+        b1.textContent = 'Без даты';
+        meta.appendChild(b1);
+      }
+
+      const pr = taskPriority(t);
+      const prB = document.createElement('span');
+      prB.className = 'badge' + (pr === 'high' ? ' red' : pr === 'low' ? ' gray' : '');
+      prB.textContent = pr === 'high' ? 'Высокий' : pr === 'low' ? 'Низкий' : 'Средний';
+      meta.appendChild(prB);
+
+      if (taskRemind(t) && due) {
+        const rB = document.createElement('span');
+        rB.className = 'badge';
+        rB.textContent = '⏰ Напомнит';
+        meta.appendChild(rB);
+      }
+
+      const more = document.createElement('button');
+      more.className = 'taskMore';
+      more.type = 'button';
+      more.title = 'Изменить';
+      inner.appendChild(more);
+
+      // events
+      check.addEventListener('click', async (e) => {
         e.stopPropagation();
-        await toggleDone(t);
-      };
-      el.onclick = () => openEdit(t.id);
-      list.appendChild(el);
-    });
+        haptic('selection');
+        await onToggleDone(id, !taskDone(t));
+      });
+
+      more.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openEditModal(t);
+      });
+
+      row.addEventListener('click', () => {
+        openEditModal(t);
+      });
+
+      attachSwipe(row, inner, id);
+
+      container.appendChild(row);
+    }
   }
 
-  function renderOverdue() {
-    const items = state.tasks.filter(t => isOverdue(t)).sort((a,b)=> new Date(a.due_at)-new Date(b.due_at));
-    const list = $("#overdueList");
-    list.innerHTML = "";
-    $("#overdueEmpty").classList.toggle("hidden", items.length>0);
-    items.forEach(t => {
-      const l = listMeta(t.list_id || 0);
-      const el = document.createElement("div");
-      el.className = "task";
-      const due = fmtDateTime(t.due_at);
-      el.innerHTML = `
-        <div class="cb" data-id="${t.id}"></div>
-        <div class="task__main">
-          <div class="task__title">${escapeHtml(t.title)}</div>
-          <div class="task__meta">
-            <span class="pill warn">${escapeHtml(due || "Срок")}</span>
-            <span class="pill listtag"><span class="tagdot" style="background:${l.color}"></span>${escapeHtml(l.name)}</span>
-          </div>
-        </div>
-      `;
-      el.querySelector(".cb").onclick = async (e) => { e.stopPropagation(); await toggleDone(t); };
-      el.onclick = () => openEdit(t.id);
-      list.appendChild(el);
-    });
+  function renderTasksScreen() {
+    updateTitles();
+    const list = getFilteredTasks(state.filter, state.search);
+    taskCount.textContent = String(list.length);
+    renderTaskList(taskList, list);
+    emptyState.style.display = list.length ? 'none' : 'block';
   }
 
-  function renderFilterChips() {
-    $$("#filterChips .chip").forEach(ch => {
-      ch.classList.toggle("chip--active", ch.dataset.filter === state.filter);
-    });
+  function renderOverdueScreen() {
+    const list = getFilteredTasks('overdue', '');
+    overdueCount.textContent = String(list.length);
+    renderTaskList(overdueList, list);
+    overdueEmpty.style.display = list.length ? 'none' : 'block';
   }
 
-  function renderTaskListSelect() {
-    const sel = $("#taskListSelect");
-    sel.innerHTML = "";
-    state.lists.forEach(l => {
-      const opt = document.createElement("option");
-      opt.value = String(l.id);
-      opt.textContent = l.name;
-      sel.appendChild(opt);
+  function renderDaySheet() {
+    const iso = state.selectedDayISO || isoDate(new Date());
+    dayTitle.textContent = fmtDayTitle(iso);
+    const list = state.tasks.filter(t => {
+      const due = taskDueISO(t);
+      if (!due) return false;
+      return zonedISODateFromUTC(due, state.tz) === iso && !taskDone(t);
     });
+    renderTaskList(dayTaskList, list, { compact:true });
+    dayEmpty.style.display = list.length ? 'none' : 'block';
   }
 
   function renderCalendar() {
-    // set month based on selection if not set
-    if (!state.cal.ym) {
-      const d = strToDate(state.cal.selected);
-      state.cal.ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-    }
-    const [yy,mm] = state.cal.ym.split("-").map(n=>parseInt(n,10));
-    const first = new Date(yy, mm-1, 1);
-    const startDow = (first.getDay()+6)%7; // Mon=0
-    const daysInMonth = new Date(yy, mm, 0).getDate();
+    const d = new Date(state.calCursor);
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const title = d.toLocaleDateString('ru-RU', { month:'long', year:'numeric' });
+    calTitle.textContent = title.charAt(0).toUpperCase() + title.slice(1);
 
-    // title
-    const monthName = new Intl.DateTimeFormat("ru-RU", { month:"long", year:"numeric" }).format(first);
-    $("#calTitle").textContent = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+    // grid start: Monday
+    const first = new Date(year, month, 1);
+    const firstWeekday = (first.getDay() + 6) % 7; // 0 = Monday
+    const start = new Date(year, month, 1 - firstWeekday);
 
-    const grid = $("#calGrid");
-    grid.innerHTML = "";
+    const todayISO = zonedISODateFromUTC(new Date().toISOString(), state.tz);
+    const selectedISO = state.selectedDayISO || todayISO;
 
-    // previous month trailing days
-    const prevDays = new Date(yy, mm-1, 0).getDate();
-    for (let i=0; i<startDow; i++){
-      const dayNum = prevDays - startDow + i + 1;
-      const d = new Date(yy, mm-2, dayNum);
-      grid.appendChild(dayCell(d, true));
-    }
-    // current month
-    for (let day=1; day<=daysInMonth; day++){
-      const d = new Date(yy, mm-1, day);
-      grid.appendChild(dayCell(d, false));
-    }
-    // next month leading days to fill 6 rows
-    const totalCells = startDow + daysInMonth;
-    const nextFill = (totalCells <= 35) ? (42 - totalCells) : (49 - totalCells);
-    for (let i=1; i<=nextFill; i++){
-      const d = new Date(yy, mm, i);
-      grid.appendChild(dayCell(d, true));
+    // map tasks by day for dots
+    const dayMap = new Map();
+    for (const t of state.tasks) {
+      const due = taskDueISO(t);
+      if (!due) continue;
+      const iso = zonedISODateFromUTC(due, state.tz);
+      const arr = dayMap.get(iso) || [];
+      arr.push(t);
+      dayMap.set(iso, arr);
     }
 
-    renderAgenda();
-  }
+    calGrid.innerHTML = '';
+    for (let i=0;i<42;i++) {
+      const cur = new Date(start);
+      cur.setDate(start.getDate()+i);
+      const iso = isoDate(cur);
 
-  function dayCell(dateObj, muted) {
-    const s = dateToStr(dateObj);
-    const el = document.createElement("div");
-    el.className = "day" + (muted ? " muted" : "") + (s===state.cal.selected ? " sel" : "");
-    const dots = dayDots(s);
-    el.innerHTML = `
-      <div class="daynum">${dateObj.getDate()}</div>
-      <div class="dots">${dots}</div>
-    `;
-    el.onclick = () => {
-      state.cal.selected = s;
-      renderCalendar();
-    };
-    return el;
-  }
+      const cell = document.createElement('div');
+      cell.className = 'calDay';
+      cell.dataset.iso = iso;
 
-  function tasksOnDate(dateStr) {
-    return state.tasks.filter(t => {
-      if (!t.due_at) return false;
-      const d = new Date(t.due_at);
-      const s = dateToStr(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
-      return s === dateStr;
-    });
-  }
+      if (cur.getMonth() !== month) cell.classList.add('isOtherMonth');
+      if (iso === selectedISO) cell.classList.add('isSelected');
+      if (iso === todayISO) cell.classList.add('isToday');
 
-  function dayDots(dateStr) {
-    const items = tasksOnDate(dateStr);
-    if (!items.length) return "";
-    const hasOver = items.some(isOverdue);
-    const hasDone = items.some(t => t.completed);
-    const hasAct = items.some(t => !t.completed);
-    const dots = [];
-    if (hasOver) dots.push('<span class="warn"></span>');
-    if (hasAct) dots.push('<span class="accent"></span>');
-    if (hasDone) dots.push('<span class="good"></span>');
-    return dots.slice(0,3).join("");
-  }
+      const n = document.createElement('div');
+      n.className = 'calNum';
+      n.textContent = String(cur.getDate());
+      cell.appendChild(n);
 
-  function renderAgenda() {
-    const d = strToDate(state.cal.selected);
-    const title = new Intl.DateTimeFormat("ru-RU", { weekday:"long", day:"numeric", month:"long" }).format(d);
-    $("#agendaTitle").textContent = title.charAt(0).toUpperCase() + title.slice(1);
+      const tasks = dayMap.get(iso) || [];
+      if (tasks.length) {
+        const dots = document.createElement('div');
+        dots.className = 'calDots';
+        const anyOver = tasks.some(t => isOverdue(t) && !taskDone(t));
+        const dot = document.createElement('div');
+        dot.className = 'dot' + (anyOver ? ' red' : '');
+        dots.appendChild(dot);
+        if (tasks.length > 2) {
+          const dot2 = document.createElement('div');
+          dot2.className = 'dot';
+          dots.appendChild(dot2);
+        }
+        cell.appendChild(dots);
+      }
 
-    const list = $("#agendaList");
-    const items = tasksOnDate(state.cal.selected).sort((a,b)=> (new Date(a.due_at||0)) - (new Date(b.due_at||0)));
-    list.innerHTML = "";
-    $("#agendaEmpty").classList.toggle("hidden", items.length>0);
+      cell.addEventListener('click', () => {
+        haptic('selection');
+        state.selectedDayISO = iso;
+        renderCalendar();
+        renderDaySheet();
+      });
 
-    items.forEach(t => {
-      const l = listMeta(t.list_id || 0);
-      const el = document.createElement("div");
-      el.className = "task";
-      const due = fmtDateTime(t.due_at);
-      const overdue = isOverdue(t);
-      el.innerHTML = `
-        <div class="cb ${t.completed ? "done" : ""}"></div>
-        <div class="task__main">
-          <div class="task__title ${t.completed ? "done" : ""}">${escapeHtml(t.title)}</div>
-          <div class="task__meta">
-            ${due ? `<span class="pill ${overdue ? "warn" : "accent"}">${escapeHtml(due)}</span>` : ""}
-            <span class="pill listtag"><span class="tagdot" style="background:${l.color}"></span>${escapeHtml(l.name)}</span>
-          </div>
-        </div>
-      `;
-      el.querySelector(".cb").onclick = async (e)=>{ e.stopPropagation(); await toggleDone(t); };
-      el.onclick = ()=> openEdit(t.id);
-      list.appendChild(el);
-    });
-  }
-
-  function renderAll(){
-    renderDrawer();
-    renderFilterChips();
-    renderTasks();
-    if (state.view==="calendar") renderCalendar();
-    if (state.view==="overdue") renderOverdue();
-    $("#menuUser").textContent = state.me.name + (state.me.is_guest ? " (гость)" : "");
-  }
-
-  function escapeHtml(s){
-    return (s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  }
-
-  // -------------------- data ops --------------------
-  async function loadAll() {
-    $("#syncBtn").disabled = true;
-    try {
-      const me = await api("/api/me");
-      state.me.name = me.name || state.me.name;
-      state.me.is_guest = !!me.is_guest;
-
-      state.lists = await api("/api/lists");
-      state.tasks = await api("/api/tasks");
-      renderTaskListSelect();
-      renderAll();
-    } catch (e) {
-      console.error(e);
-      toast("Нет связи с сервером");
-    } finally {
-      $("#syncBtn").disabled = false;
-    }
-  }
-
-  async function toggleDone(task) {
-    try {
-      const path = task.completed ? `/api/tasks/${task.id}/undone` : `/api/tasks/${task.id}/done`;
-      const updated = await api(path, { method:"POST" });
-      const idx = state.tasks.findIndex(x=>x.id===updated.id);
-      if (idx>=0) state.tasks[idx] = updated;
-      renderAll();
-    } catch(e){
-      console.error(e);
-      toast("Не удалось обновить задачу");
-    }
-  }
-
-  function openAdd(prefill={}) {
-    state.editingId = null;
-    $("#sheetTitle").textContent = "Новая задача";
-    $("#editActions").classList.add("hidden");
-
-    $("#taskTitleInput").value = prefill.title || "";
-    $("#taskDescInput").value = prefill.description || "";
-
-    // date/time
-    $("#taskDateInput").value = prefill.date || "";
-    $("#taskTimeInput").value = prefill.time || "";
-
-    // list
-    renderTaskListSelect();
-    $("#taskListSelect").value = String(prefill.listId ?? state.listId ?? 0);
-
-    $("#taskPrioSelect").value = prefill.priority || "medium";
-
-    openSheet();
-  }
-
-  function openEdit(id) {
-    const t = state.tasks.find(x=>x.id===id);
-    if (!t) return;
-    state.editingId = id;
-    $("#sheetTitle").textContent = "Редактирование";
-    $("#editActions").classList.remove("hidden");
-
-    $("#taskTitleInput").value = t.title || "";
-    $("#taskDescInput").value = t.description || "";
-    $("#taskPrioSelect").value = t.priority || "medium";
-
-    renderTaskListSelect();
-    $("#taskListSelect").value = String(t.list_id ?? 0);
-
-    if (t.due_at) {
-      const d = new Date(t.due_at);
-      $("#taskDateInput").value = dateToStr(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
-      const hh = String(d.getHours()).padStart(2,"0");
-      const mm = String(d.getMinutes()).padStart(2,"0");
-      $("#taskTimeInput").value = `${hh}:${mm}`;
-    } else {
-      $("#taskDateInput").value = "";
-      $("#taskTimeInput").value = "";
+      calGrid.appendChild(cell);
     }
 
-    $("#toggleDoneBtn").textContent = t.completed ? "Сделать активной" : "Завершить";
-    openSheet();
+    if (!state.selectedDayISO) state.selectedDayISO = selectedISO;
+    renderDaySheet();
   }
 
-  async function saveTask() {
-    const title = $("#taskTitleInput").value.trim();
-    const description = $("#taskDescInput").value.trim();
-    const priority = $("#taskPrioSelect").value;
-    const listId = parseInt($("#taskListSelect").value,10);
+  // ---- Swipe gestures ----
+  function attachSwipe(row, inner, id) {
+    let startX = 0;
+    let currentX = 0;
+    let dragging = false;
 
-    if (!title) { toast("Название обязательно"); return; }
+    const threshold = 88;
 
-    // build due_at
-    const ds = $("#taskDateInput").value;
-    const ts = $("#taskTimeInput").value;
+    function onDown(e) {
+      // ignore if clicking on checkbox/more
+      const t = e.target;
+      if (t && (t.closest('.taskCheck') || t.closest('.taskMore'))) return;
+
+      dragging = true;
+      startX = (e.touches ? e.touches[0].clientX : e.clientX);
+      currentX = 0;
+      inner.style.transition = 'none';
+      row.classList.add('dragging');
+    }
+
+    function onMove(e) {
+      if (!dragging) return;
+      const x = (e.touches ? e.touches[0].clientX : e.clientX);
+      currentX = x - startX;
+      // clamp
+      currentX = Math.max(-140, Math.min(140, currentX));
+      inner.style.transform = `translateX(${currentX}px)`;
+      e.preventDefault();
+    }
+
+    async function onUp() {
+      if (!dragging) return;
+      dragging = false;
+      inner.style.transition = '';
+      row.classList.remove('dragging');
+
+      const dx = currentX;
+      currentX = 0;
+
+      if (dx > threshold) {
+        // done
+        inner.style.transform = 'translateX(0px)';
+        haptic('notification', 'success');
+        await onToggleDone(id, true);
+        return;
+      }
+      if (dx < -threshold) {
+        // delete
+        inner.style.transform = 'translateX(0px)';
+        haptic('notification', 'warning');
+        await onDelete(id);
+        return;
+      }
+
+      inner.style.transform = 'translateX(0px)';
+    }
+
+    row.addEventListener('touchstart', onDown, { passive: true });
+    row.addEventListener('touchmove', onMove, { passive: false });
+    row.addEventListener('touchend', onUp, { passive: true });
+
+    row.addEventListener('pointerdown', onDown);
+    row.addEventListener('pointermove', onMove);
+    row.addEventListener('pointerup', onUp);
+    row.addEventListener('pointercancel', onUp);
+  }
+
+  // ---- Modal ----
+  function openModal() {
+    modalOverlay.classList.add('show');
+    modalOverlay.setAttribute('aria-hidden', 'false');
+    // Telegram main button not used; keep UI consistent
+    setTimeout(() => taskTitleInput.focus(), 50);
+  }
+
+  function closeModal() {
+    modalOverlay.classList.remove('show');
+    modalOverlay.setAttribute('aria-hidden', 'true');
+    state.editingTaskId = null;
+    state.addingForDayISO = null;
+  }
+
+  function resetModalFields() {
+    taskTitleInput.value = '';
+    taskDescInput.value = '';
+    taskDateInput.value = '';
+    taskTimeInput.value = '';
+    taskPrioritySelect.value = 'medium';
+    taskRemindSelect.value = 'on';
+  }
+
+  function openAddModal(forDayISO=null) {
+    resetModalFields();
+    state.editingTaskId = null;
+    state.addingForDayISO = forDayISO;
+
+    taskModalTitle.textContent = 'Новая задача';
+    if (forDayISO) {
+      taskDateInput.value = forDayISO;
+    }
+    openModal();
+  }
+
+  function openEditModal(task) {
+    resetModalFields();
+    const id = task.id ?? task.task_id ?? task.taskId;
+    state.editingTaskId = id;
+
+    taskModalTitle.textContent = 'Изменить задачу';
+
+    taskTitleInput.value = taskTitle(task);
+    taskDescInput.value = taskDesc(task);
+
+    const due = taskDueISO(task);
+    if (due) {
+      const dISO = zonedISODateFromUTC(due, state.tz);
+      const tStr = fmtZonedTime(due, state.tz);
+      taskDateInput.value = dISO;
+      taskTimeInput.value = tStr || '';
+    }
+
+    taskPrioritySelect.value = taskPriority(task) || 'medium';
+    taskRemindSelect.value = taskRemind(task) ? 'on' : 'off';
+
+    openModal();
+  }
+
+  function payloadFromModal() {
+    const title = taskTitleInput.value.trim();
+    const description = taskDescInput.value.trim();
+    const dateVal = taskDateInput.value;
+    const timeVal = taskTimeInput.value;
+
+    const priority = taskPrioritySelect.value || 'medium';
+    const remind = taskRemindSelect.value === 'on';
+
+    // Backend expects UTC ISO datetime maybe.
+    // We'll interpret date+time as in selected TZ, then convert to UTC ISO.
     let due_at = null;
-    if (ds) {
-      const [y,m,d] = ds.split("-").map(n=>parseInt(n,10));
-      let hh = 0, mm = 0;
-      if (ts) { [hh,mm] = ts.split(":").map(n=>parseInt(n,10)); }
-      const local = new Date(y, m-1, d, hh, mm, 0, 0);
-      due_at = local.toISOString(); // send UTC Z
+    if (dateVal) {
+      const t = timeVal || '12:00';
+      const [y,m,dd] = dateVal.split('-').map(Number);
+      const [hh,mm] = t.split(':').map(Number);
+
+      // Create a Date object for that local time in selected timezone by using Intl trick:
+      // We'll build a UTC date based on components in TZ.
+      // Approx approach: use Date.UTC then adjust offset by comparing formatted parts.
+      const tentativeUTC = new Date(Date.UTC(y, m-1, dd, hh, mm, 0, 0));
+
+      // Find what date/time that UTC looks like in TZ, and shift difference.
+      const p = toZonedParts(tentativeUTC, state.tz);
+      // difference (in minutes) between intended components and shown components
+      const diffMin = (p.year - y) * 525600 + (p.month - m) * 43200 + (p.day - dd) * 1440 + (p.hour - hh) * 60 + (p.minute - mm);
+      const corrected = new Date(tentativeUTC.getTime() - diffMin * 60 * 1000);
+
+      due_at = corrected.toISOString();
     }
 
-    const payload = { title, description, priority, due_at, list_id: listId };
+    const payload = {
+      title,
+      description,
+      priority,
+      remind,
+      due_at,
+    };
 
-    $("#saveTaskBtn").disabled = true;
+    // pass Telegram identity if backend supports
+    if (state.user) {
+      payload.tg_user_id = state.user.id;
+      payload.tg_username = state.user.username || null;
+      payload.tg_first_name = state.user.first_name || null;
+      payload.tg_last_name = state.user.last_name || null;
+    }
+
+    return payload;
+  }
+
+  // ---- Actions ----
+  async function onSync() {
     try {
-      if (state.editingId) {
-        const updated = await api(`/api/tasks/${state.editingId}`, { method:"PUT", body: JSON.stringify(payload) });
-        const idx = state.tasks.findIndex(x=>x.id===updated.id);
-        if (idx>=0) state.tasks[idx] = updated;
-        toast("Сохранено");
+      userSubtitle.textContent = 'Синхронизируем…';
+      await loadTasks();
+      userSubtitle.textContent = state.user ? menuUserName.textContent : 'Гость';
+      refreshAll();
+      showToast('Синхронизировано');
+      haptic('notification', 'success');
+    } catch (e) {
+      userSubtitle.textContent = 'Нет связи с сервером';
+      showToast('Ошибка синхронизации');
+      haptic('notification', 'error');
+      console.error(e);
+    }
+  }
+
+  async function onSaveTask() {
+    const payload = payloadFromModal();
+    if (!payload.title) {
+      showToast('Введите название');
+      haptic('notification','error');
+      return;
+    }
+    try {
+      saveTaskBtn.disabled = true;
+      saveTaskBtn.textContent = 'Сохраняем…';
+
+      if (state.editingTaskId) {
+        await updateTask(state.editingTaskId, payload);
       } else {
-        const created = await api("/api/tasks", { method:"POST", body: JSON.stringify(payload) });
-        state.tasks.unshift(created);
-        toast("Добавлено");
+        await createTask(payload);
       }
-      closeSheet();
-      renderAll();
-    } catch(e){
+
+      closeModal();
+      await loadTasks();
+      refreshAll();
+      showToast('Сохранено');
+      haptic('notification','success');
+    } catch (e) {
+      showToast('Не удалось сохранить');
+      haptic('notification','error');
       console.error(e);
-      toast(`Не удалось сохранить: ${e.message || ""}`.trim());
     } finally {
-      $("#saveTaskBtn").disabled = false;
+      saveTaskBtn.disabled = false;
+      saveTaskBtn.textContent = 'Сохранить';
     }
   }
 
-  async function deleteTask() {
-    if (!state.editingId) return;
-    const id = state.editingId;
+  async function onDelete(id) {
     try {
-      await api(`/api/tasks/${id}`, { method:"DELETE" });
-      state.tasks = state.tasks.filter(t=>t.id!==id);
-      toast("Удалено");
-      closeSheet();
-      renderAll();
-    } catch(e){
+      await deleteTask(id);
+      await loadTasks();
+      refreshAll();
+      showToast('Удалено');
+    } catch (e) {
+      showToast('Не удалось удалить');
       console.error(e);
-      toast("Не удалось удалить");
     }
   }
 
-  async function toggleDoneFromSheet() {
-    if (!state.editingId) return;
-    const t = state.tasks.find(x=>x.id===state.editingId);
-    if (!t) return;
-    await toggleDone(t);
-    closeSheet();
-  }
-
-  // -------------------- drawer/sheet modal --------------------
-  function openDrawer(){
-    const dr = $("#drawer");
-    dr.classList.add("open");
-    dr.setAttribute("aria-hidden", "false");
-  }
-  function closeDrawer(){
-    const dr = $("#drawer");
-    dr.classList.remove("open");
-    dr.setAttribute("aria-hidden", "true");
-  }
-
-  function openSheet(){
-    $("#sheetBackdrop").classList.remove("hidden");
-    $("#taskSheet").classList.remove("hidden");
-    setTimeout(()=>$("#taskTitleInput").focus(), 80);
-  }
-  function closeSheet(){
-    $("#sheetBackdrop").classList.add("hidden");
-    $("#taskSheet").classList.add("hidden");
-  }
-
-  function openListModal(){
-    $("#listModalBackdrop").classList.remove("hidden");
-    $("#listModal").classList.remove("hidden");
-    $("#listNameInput").value = "";
-    $("#listColorInput").value = "#2ECC71";
-    setTimeout(()=>$("#listNameInput").focus(), 80);
-  }
-  function closeListModal(){
-    $("#listModalBackdrop").classList.add("hidden");
-    $("#listModal").classList.add("hidden");
-  }
-
-  async function createList(){
-    const name = $("#listNameInput").value.trim();
-    const color = $("#listColorInput").value;
-    if (!name) { toast("Название списка обязательно"); return; }
-    $("#createListBtn").disabled = true;
-    try{
-      const created = await api("/api/lists", { method:"POST", body: JSON.stringify({ name, color }) });
-      // reload full lists to include virtual inbox
-      state.lists = await api("/api/lists");
-      renderTaskListSelect();
-      closeListModal();
-      toast("Список создан");
-      renderAll();
-    } catch(e){
+  async function onToggleDone(id, done) {
+    try {
+      await toggleDone(id, done);
+      await loadTasks();
+      refreshAll();
+      showToast(done ? 'Готово' : 'Возвращено');
+    } catch (e) {
+      showToast('Не удалось изменить');
       console.error(e);
-      toast("Не удалось создать список");
-    } finally {
-      $("#createListBtn").disabled = false;
     }
   }
 
-  function exportJson(){
-    const data = { exported_at: new Date().toISOString(), me: state.me, lists: state.lists, tasks: state.tasks };
-    const str = JSON.stringify(data, null, 2);
-    navigator.clipboard?.writeText(str).then(()=>toast("Экспорт скопирован")).catch(()=>{
-      // fallback download
-      const blob = new Blob([str], {type:"application/json"});
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "taskflow_export.json";
-      a.click();
-      toast("Экспорт скачан");
-    });
+  async function onExport() {
+    try {
+      const data = JSON.stringify(state.tasks, null, 2);
+      await navigator.clipboard.writeText(data);
+      showToast('JSON скопирован');
+    } catch (e) {
+      showToast('Не удалось скопировать');
+    }
   }
 
-  // -------------------- events --------------------
-  function bindEvents(){
-    $("#openDrawerBtn").onclick = openDrawer;
-    $("#closeDrawerBtn").onclick = closeDrawer;
-    $("#openDrawerFromMenu").onclick = openDrawer;
+  async function onClearDone() {
+    // delete all done tasks
+    const done = state.tasks.filter(t => taskDone(t));
+    if (!done.length) {
+      showToast('Нет выполненных');
+      return;
+    }
+    try {
+      for (const t of done) {
+        const id = t.id ?? t.task_id ?? t.taskId;
+        if (id != null) {
+          await deleteTask(id);
+        }
+      }
+      await loadTasks();
+      refreshAll();
+      showToast('Очищено');
+    } catch (e) {
+      showToast('Ошибка очистки');
+      console.error(e);
+    }
+  }
 
-    // smart nav
-    $$(".navitem").forEach(btn => {
-      btn.onclick = () => {
-        state.smart = btn.dataset.smart;
-        state.listId = 0; // smart lists are inbox-based
-        setView(state.smart === "overdue" ? "overdue" : "tasks");
-        closeDrawer();
-        renderAll();
-      };
-    });
-
-    // bottom nav
-    $$(".bnav[data-nav]").forEach(btn=>{
-      btn.onclick = () => {
-        const v = btn.dataset.nav;
-        if (v==="tasks") { state.smart = "inbox"; state.listId = 0; }
-        setView(v);
-        renderAll();
-      };
-    });
-    $("#navAdd").onclick = () => openAdd({ listId: state.listId });
-
-    $("#syncBtn").onclick = loadAll;
-    $("#quickAddBtn").onclick = () => openAdd({ listId: state.listId });
-    $("#addFromCalendarBtn").onclick = () => openAdd({ date: state.cal.selected, listId: state.listId });
-
-    $("#searchInput").oninput = (e)=>{ state.search = e.target.value; renderTasks(); };
-    $("#clearSearchBtn").onclick = ()=>{ state.search=""; $("#searchInput").value=""; renderTasks(); };
-
-    $$("#filterChips .chip").forEach(ch=>{
-      ch.onclick = ()=>{ state.filter = ch.dataset.filter; renderFilterChips(); renderTasks(); };
-    });
-
-    $("#sheetBackdrop").onclick = closeSheet;
-    $("#closeSheetBtn").onclick = closeSheet;
-    $("#saveTaskBtn").onclick = saveTask;
-    $("#deleteTaskBtn").onclick = deleteTask;
-    $("#toggleDoneBtn").onclick = toggleDoneFromSheet;
-    $("#clearDueBtn").onclick = ()=>{ $("#taskDateInput").value=""; $("#taskTimeInput").value=""; toast("Срок очищен"); };
-
-    // list modal
-    $("#newListBtn").onclick = openListModal;
-    $("#listModalBackdrop").onclick = closeListModal;
-    $("#closeListModalBtn").onclick = closeListModal;
-    $("#createListBtn").onclick = createList;
-
-    // calendar nav
-    $("#calPrev").onclick = ()=> shiftMonth(-1);
-    $("#calNext").onclick = ()=> shiftMonth(1);
-
-    // settings
-    $("#themeSelect").onchange = (e)=>{
-      state.theme = e.target.value;
-      localStorage.setItem("tf_theme", state.theme);
-      applyTheme();
-      toast("Тема обновлена");
+  // ---- Navigation ----
+  function showScreen(name) {
+    state.screen = name;
+    const screens = {
+      tasks: screenTasks,
+      calendar: screenCalendar,
+      overdue: screenOverdue,
+      menu: screenMenu,
     };
-    $("#tzSelect").onchange = (e)=>{
-      state.tz = e.target.value;
-      localStorage.setItem("tf_tz", state.tz);
-      toast("Часовой пояс сохранён");
-      renderAll();
-    };
+    for (const k of Object.keys(screens)) {
+      screens[k].classList.toggle('show', k === name);
+    }
 
-    $("#exportBtn").onclick = exportJson;
+    // bottom nav state
+    for (const b of bottomNav.querySelectorAll('.navBtn')) {
+      const s = b.dataset.screen;
+      if (!s) continue;
+      b.classList.toggle('isActive', s === name);
+    }
 
-    // close drawer on escape
-    document.addEventListener("keydown", (e)=>{
-      if (e.key==="Escape"){
-        closeDrawer();
-        closeSheet();
-        closeListModal();
+    // segmented state aligns: calendar screen corresponds to seg calendar
+    if (name === 'calendar') setSeg('calendar', true);
+    if (name === 'tasks' && (state.seg === 'calendar')) setSeg('inbox', true);
+    if (name === 'overdue') {
+      // keep tasks segmented but show overdue screen
+      setSeg('today', true); // doesn't matter; keep thumb stable
+    }
+
+    refreshAll();
+  }
+
+  function setSeg(segName, silent=false) {
+    state.seg = segName;
+    const btns = seg.querySelectorAll('.segBtn');
+    btns.forEach((b, idx) => {
+      const active = b.dataset.seg === segName;
+      b.classList.toggle('isActive', active);
+      if (active) {
+        const dx = idx * 100;
+        segThumb.style.transform = `translateX(${dx}%)`;
       }
     });
+
+    if (!silent) haptic('selection');
+
+    if (segName === 'calendar') {
+      showScreen('calendar');
+      return;
+    }
+
+    // map seg to filter
+    if (segName === 'inbox') {
+      state.filter = 'inbox';
+      showScreen('tasks');
+    }
+    if (segName === 'today') {
+      state.filter = 'today';
+      showScreen('tasks');
+    }
+
+    // update chips selection accordingly
+    for (const c of smartChips.querySelectorAll('.chip')) {
+      c.classList.toggle('isActive', c.dataset.filter === state.filter);
+    }
+    refreshAll();
   }
 
-  function shiftMonth(delta){
-    const [yy,mm] = state.cal.ym.split("-").map(n=>parseInt(n,10));
-    const d = new Date(yy, mm-1 + delta, 1);
-    state.cal.ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-    renderCalendar();
+  function refreshAll() {
+    if (state.screen === 'tasks') renderTasksScreen();
+    if (state.screen === 'calendar') renderCalendar();
+    if (state.screen === 'overdue') renderOverdueScreen();
+    // menu has no heavy render; only ensure counts/labels
   }
 
-  
-  // -------------------- Telegram helpers --------------------
-  function applyTelegramParams(){
-    try{
-      const tg = window.Telegram && window.Telegram.WebApp;
-      if (!tg) return;
+  // ---- Events ----
+  function bindEvents() {
+    syncBtn.addEventListener('click', onSync);
+    topAddBtn.addEventListener('click', () => openAddModal(null));
 
-      // viewport
-      const setVh = () => {
-        const h = tg.viewportStableHeight || window.innerHeight;
-        document.documentElement.style.setProperty("--tg-vh", `${h}px`);
-        const inset = tg.safeAreaInset || {};
-        const b = (inset.bottom ?? 0);
-        const t = (inset.top ?? 0);
-        document.documentElement.style.setProperty("--safe-bottom", `${b}px`);
-        document.documentElement.style.setProperty("--safe-top", `${t}px`);
-      };
-      setVh();
-      tg.onEvent?.("viewportChanged", setVh);
+    navAddBtn.addEventListener('click', () => openAddModal(null));
+    fabAdd.addEventListener('click', () => openAddModal(null));
 
-      // theme params -> CSS variables
-      const setTheme = () => {
-        const p = tg.themeParams || {};
-        const root = document.documentElement.style;
-        if (p.bg_color) root.setProperty("--tg-bg", p.bg_color);
-        if (p.text_color) root.setProperty("--tg-text", p.text_color);
-        if (p.hint_color) root.setProperty("--tg-hint", p.hint_color);
-        if (p.secondary_bg_color) root.setProperty("--tg-secondary", p.secondary_bg_color);
-        if (p.button_color) root.setProperty("--tg-button", p.button_color);
-        if (p.button_text_color) root.setProperty("--tg-button-text", p.button_text_color);
-      };
-      setTheme();
-      tg.onEvent?.("themeChanged", setTheme);
+    seg.addEventListener('click', (e) => {
+      const b = e.target.closest('.segBtn');
+      if (!b) return;
+      setSeg(b.dataset.seg);
+    });
 
-      tg.ready?.();
-      tg.expand?.();
-    }catch(_){}
+    // Chips
+    smartChips.addEventListener('click', (e) => {
+      const b = e.target.closest('.chip');
+      if (!b) return;
+      state.filter = b.dataset.filter;
+      smartChips.querySelectorAll('.chip').forEach(x => x.classList.toggle('isActive', x===b));
+      // keep segmented in sync: inbox/today only
+      if (state.filter === 'today') setSeg('today', true);
+      if (state.filter === 'inbox') setSeg('inbox', true);
+      if (state.filter === 'overdue') showScreen('overdue');
+      if (state.filter === 'done') showScreen('tasks');
+      refreshAll();
+      haptic('selection');
+    });
+
+    // Search
+    searchInput.addEventListener('input', () => {
+      state.search = searchInput.value || '';
+      clearSearch.style.display = state.search ? 'block' : 'none';
+      renderTasksScreen();
+    });
+    clearSearch.addEventListener('click', () => {
+      searchInput.value = '';
+      state.search = '';
+      clearSearch.style.display = 'none';
+      renderTasksScreen();
+    });
+
+    exportBtn.addEventListener('click', onExport);
+
+    // Calendar nav
+    calPrev.addEventListener('click', () => {
+      const d = new Date(state.calCursor);
+      d.setMonth(d.getMonth()-1);
+      state.calCursor = d;
+      haptic('selection');
+      renderCalendar();
+    });
+    calNext.addEventListener('click', () => {
+      const d = new Date(state.calCursor);
+      d.setMonth(d.getMonth()+1);
+      state.calCursor = d;
+      haptic('selection');
+      renderCalendar();
+    });
+
+    addTaskForDayBtn.addEventListener('click', () => {
+      openAddModal(state.selectedDayISO || isoDate(new Date()));
+    });
+
+    // Bottom nav
+    bottomNav.addEventListener('click', (e) => {
+      const b = e.target.closest('.navBtn');
+      if (!b) return;
+      const s = b.dataset.screen;
+      if (!s) return;
+      if (s === 'tasks') showScreen('tasks');
+      if (s === 'calendar') showScreen('calendar');
+      if (s === 'overdue') showScreen('overdue');
+      if (s === 'menu') showScreen('menu');
+      haptic('selection');
+    });
+
+    // Menu
+    menuSync.addEventListener('click', onSync);
+    menuExport.addEventListener('click', onExport);
+    menuClearDone.addEventListener('click', onClearDone);
+
+    themeSelect.addEventListener('change', () => {
+      setTheme(themeSelect.value);
+      savePrefs();
+      haptic('selection');
+    });
+
+    tzSelect.addEventListener('change', () => {
+      state.tz = tzSelect.value;
+      savePrefs();
+      refreshAll();
+      showToast('Часовой пояс обновлён');
+      haptic('selection');
+    });
+
+    // Modal
+    closeTaskModal.addEventListener('click', closeModal);
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) closeModal();
+    });
+    saveTaskBtn.addEventListener('click', onSaveTask);
+
+    // ESC for desktop
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
   }
 
-// -------------------- boot --------------------
-  function boot(){
-    ensureIdentity();
-    applyTelegramParams();
-    applyTheme();
-
-    // telegram polish
-    try{
-      const tg = window.Telegram && window.Telegram.WebApp;
-      if (tg) {
-        tg.expand();
-        tg.setHeaderColor?.("secondary_bg_color");
-        tg.setBackgroundColor?.("secondary_bg_color");
-      }
-    } catch(_){}
-
+  // ---- Init ----
+  async function init() {
+    setupTelegram();
+    loadPrefs();
+    populateTimezones();
     bindEvents();
-    $("#userName").textContent = state.me.name;
 
-    // init calendar month
-    const td = strToDate(state.cal.selected);
-    state.cal.ym = `${td.getFullYear()}-${String(td.getMonth()+1).padStart(2,"0")}`;
+    // Place segmented thumb correctly on load
+    requestAnimationFrame(() => setSeg('inbox', true));
 
-    loadAll();
-    setView("tasks");
+    try {
+      await loadTasks();
+      userSubtitle.textContent = state.user ? menuUserName.textContent : 'Гость';
+      refreshAll();
+    } catch (e) {
+      userSubtitle.textContent = 'Нет связи с сервером';
+      console.error(e);
+      // still render UI without data
+      refreshAll();
+    }
   }
 
-  boot();
+  init();
 })();
