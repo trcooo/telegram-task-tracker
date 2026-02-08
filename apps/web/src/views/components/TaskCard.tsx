@@ -1,3 +1,4 @@
+import { useState } from "react";
 import dayjs from "dayjs";
 import type { List, Task } from "@pp/shared";
 
@@ -12,16 +13,14 @@ export default function TaskCard({
   task,
   lists,
   onToggleDone,
-  onScheduleToday,
-  onDelete,
-  onFocus
+  onSchedule,
+  onDelete
 }: {
   task: Task;
   lists: List[];
   onToggleDone: () => void;
-  onScheduleToday: () => void;
+  onSchedule: () => void;
   onDelete: () => void;
-  onFocus: () => void;
 }) {
   const list = lists.find((l) => l.id === task.listId);
   const when = task.startAt
@@ -30,8 +29,59 @@ export default function TaskCard({
       ? `${task.date}${task.time ? " " + task.time : ""}`
       : null;
 
+  // Swipe UX: right = done, left = schedule / delete
+  // left threshold1 => schedule, threshold2 => delete
+  const SWIPE_T1 = 80;
+  const SWIPE_T2 = 150;
+  const [dx, setDx] = useState(0);
+
   return (
-    <div className="bg-white rounded-2xl shadow-soft p-3 flex gap-3">
+    <div className="relative rounded-2xl shadow-soft overflow-hidden">
+      {/* Background actions */}
+      <div className="absolute inset-0 flex">
+        <div className="flex-1 bg-emerald-500/90 flex items-center pl-4 text-white text-sm font-semibold">Done</div>
+        <div className="flex-1 bg-sky-500/90 flex items-center justify-end pr-4 text-white text-sm font-semibold">Schedule</div>
+        <div className="w-[72px] bg-rose-500/90 flex items-center justify-center text-white text-sm font-semibold">Delete</div>
+      </div>
+
+      {/* Foreground card */}
+      <div
+        className="bg-white rounded-2xl p-3 flex gap-3 relative"
+        style={{ transform: `translateX(${dx}px)` }}
+        onPointerDown={(e) => {
+          (e.currentTarget as any).setPointerCapture?.(e.pointerId);
+          (e.currentTarget as any)._swipeStart = { x: e.clientX, dx };
+        }}
+        onPointerMove={(e) => {
+          const st = (e.currentTarget as any)._swipeStart;
+          if (!st) return;
+          const next = st.dx + (e.clientX - st.x);
+          // clamp
+          setDx(Math.max(-220, Math.min(140, next)));
+        }}
+        onPointerUp={(e) => {
+          const finalDx = dx;
+          (e.currentTarget as any)._swipeStart = null;
+          // action resolution
+          if (finalDx > SWIPE_T1) {
+            setDx(0);
+            onToggleDone();
+            return;
+          }
+          if (finalDx < -SWIPE_T2) {
+            setDx(0);
+            onDelete();
+            return;
+          }
+          if (finalDx < -SWIPE_T1) {
+            setDx(0);
+            onSchedule();
+            return;
+          }
+          setDx(0);
+        }}
+        onPointerCancel={() => setDx(0)}
+      >
       <button
         onClick={onToggleDone}
         className={`w-6 h-6 mt-0.5 rounded-full border flex items-center justify-center ${
@@ -59,10 +109,6 @@ export default function TaskCard({
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <button onClick={onFocus} className="text-[11px] px-2 py-1 rounded-xl bg-slate-900 text-white">Focus</button>
-        <button onClick={onScheduleToday} className="text-[11px] px-2 py-1 rounded-xl bg-slate-100">Today</button>
-        <button onClick={onDelete} className="text-[11px] px-2 py-1 rounded-xl bg-slate-100">Del</button>
       </div>
     </div>
   );

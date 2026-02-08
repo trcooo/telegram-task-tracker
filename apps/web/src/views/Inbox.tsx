@@ -6,16 +6,15 @@ import { api } from "../lib/api";
 import { useFilters } from "../store/filters";
 import { useUI } from "../store/ui";
 import TaskCard from "./components/TaskCard";
-import QuickAdd from "./components/QuickAdd";
-import FocusDock from "./components/FocusDock";
+import FastInputBar from "./components/FastInputBar";
+import ScheduleSheet from "./components/ScheduleSheet";
 
 export default function Inbox({ lists }: { lists: List[] }) {
   const qc = useQueryClient();
   const filters = useFilters();
   const setTab = useUI((s) => s.setTab);
   const selectedDate = useUI((s) => s.selectedDate);
-  const startFocus = useUI((s) => s.startFocus);
-  const startPomodoro = useUI((s) => s.startPomodoro);
+  const [scheduleTask, setScheduleTask] = useState<Task | null>(null);
 
   const tasksQ = useQuery({
     queryKey: ["tasks", filters.smart, filters.listId, filters.tag],
@@ -56,8 +55,7 @@ export default function Inbox({ lists }: { lists: List[] }) {
   });
 
   return (
-    <div className="space-y-3">
-      <QuickAdd lists={lists} onCreated={() => qc.invalidateQueries({ queryKey: ["tasks"] })} />
+    <div className="space-y-3 pb-28">
 
       <div className="bg-white rounded-2xl shadow-soft p-3">
         <div className="flex items-center justify-between">
@@ -81,13 +79,8 @@ export default function Inbox({ lists }: { lists: List[] }) {
             task={t}
             lists={lists}
             onToggleDone={() => update.mutate({ id: t.id, patch: { done: !t.done } })}
-            onScheduleToday={() => update.mutate({ id: t.id, patch: { date: selectedDate, startAt: `${selectedDate}T09:00:00.000Z` } })}
+            onSchedule={() => setScheduleTask(t)}
             onDelete={() => del.mutate(t.id)}
-            onFocus={() => {
-              startFocus(t.id);
-              startPomodoro(25);
-              update.mutate({ id: t.id, patch: { focusFlag: true } });
-            }}
           />
         ))}
         {!tasks.length && (
@@ -97,7 +90,29 @@ export default function Inbox({ lists }: { lists: List[] }) {
         )}
       </div>
 
-      <FocusDock tasks={tasks} />
+      <FastInputBar
+        lists={lists}
+        existingTasks={tasks}
+        onCreated={() => qc.invalidateQueries({ queryKey: ["tasks"] })}
+      />
+
+      <ScheduleSheet
+        open={!!scheduleTask}
+        title={scheduleTask?.title || ""}
+        onClose={() => setScheduleTask(null)}
+        onPick={(iso) => {
+          if (!scheduleTask) return;
+          update.mutate({
+            id: scheduleTask.id,
+            patch: {
+              date: dayjs(iso).format("YYYY-MM-DD"),
+              startAt: iso,
+              time: dayjs(iso).format("HH:mm")
+            }
+          });
+          setScheduleTask(null);
+        }}
+      />
     </div>
   );
 }
