@@ -1,0 +1,17 @@
+{
+  "name": "tg-planner-miniapp",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm -w apps/web run build && npm -w apps/api run build",
+    "start": "npm -w apps/api run start",
+    "start:railway": "npm -w apps/api run db:migrate && npm -w apps/api run start",
+    "dev": "npm -w apps/api run dev",
+    "dev:all": "npm -w apps/api run dev & npm -w apps/web run dev"
+  }
+}
