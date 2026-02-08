@@ -48,6 +48,42 @@ def _migrate_schema() -> None:
     is_postgres = dialect.startswith("postgres")
     is_sqlite = dialect.startswith("sqlite")
 
+
+    def add_missing_columns(table: str, ddl_by_col: dict, backfill_sql: list[str] | None = None):
+        """Add missing columns to an existing table (best-effort).
+
+        This keeps deployments working without Alembic by only adding columns the app expects.
+        """
+        if not insp.has_table(table):
+            return
+        existing = {c["name"] for c in insp.get_columns(table)}
+        missing = [c for c in ddl_by_col.keys() if c not in existing]
+        if not missing and not backfill_sql:
+            return
+
+        with engine.begin() as conn:
+            # Add columns
+            for col in missing:
+                ddl = ddl_by_col[col]
+                # Postgres prefers JSONB
+                if is_postgres and col in ("tags", "subtasks"):
+                    ddl = "JSONB"
+                # SQLite doesn't support IF NOT EXISTS for ADD COLUMN in many environments
+                if is_sqlite:
+                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'))
+                else:
+                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {ddl}'))
+
+            # Backfill (optional, best-effort)
+            if backfill_sql:
+                for stmt in backfill_sql:
+                    try:
+                        conn.execute(text(stmt))
+                    except Exception:
+                        # ignore backfill errors (e.g. column doesn't exist in some legacy schemas)
+                        pass
+
+
     def _col_type(table: str, col: str) -> str | None:
         if not insp.has_table(table):
             return None
