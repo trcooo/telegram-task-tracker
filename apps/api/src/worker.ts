@@ -18,18 +18,22 @@ const w = new Worker(
 
     const r = await prisma.reminder.findUnique({
       where: { id: reminderId },
-      include: { task: true, user: true },
+      include: { task: { include: { user: true } } },
     });
 
-    if (!r || r.sentAt) return;
+    if (!r) return;
+    if (r.status === "sent") return;
 
     const title = r.task?.title || "Reminder";
-    const when = r.fireAt ? dayjs(r.fireAt).format("MMM D, HH:mm") : "";
-    await sendTelegramMessage(r.user.telegramId, `⏰ ${title}\n${when}`.trim());
+    const when = r.at ? dayjs(r.at).format("MMM D, HH:mm") : "";
+    const chatId = r.task?.user?.telegramId;
+    if (!chatId) return;
+
+    await sendTelegramMessage(chatId, `⏰ ${title}\n${when}`.trim());
 
     await prisma.reminder.update({
       where: { id: r.id },
-      data: { sentAt: new Date(), status: "SENT" },
+      data: { status: "sent" },
     });
   },
   { connection }

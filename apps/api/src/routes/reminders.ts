@@ -2,42 +2,60 @@ import { Router } from "express";
 import dayjs from "dayjs";
 import { prisma } from "../prisma.js";
 import { remindersQueue } from "../queue.js";
+import type { AuthedRequest } from "../auth.js";
 
 export const remindersRouter = Router();
 
 /**
  * Reminder Center API
- * - If REDIS_URL isn't configured, we still allow CRUD,
- *   but job scheduling returns a clear error.
+ *
+ * Prisma schema:
+ * - Reminder has { taskId, at, status }
+ * - User ownership is derived from reminder.task.userId
  */
 
-remindersRouter.get("/", async (req, res) => {
+function normalizeStatus(input: string): "scheduled" | "snoozed" | "sent" {
+  const s = input.trim().toLowerCase();
+  if (["sent", "done"].includes(s)) return "sent";
+  if (["snoozed", "snooze"].includes(s)) return "snoozed";
+  // default + legacy "open" semantics
+  return "scheduled";
+}
+
+remindersRouter.get("/", async (req: AuthedRequest, res) => {
   const userId = req.userId!;
-  const status = String(req.query.status || "OPEN").toUpperCase();
+  const status = normalizeStatus(String(req.query.status || "scheduled"));
 
   const list = await prisma.reminder.findMany({
-    where: { userId, status: status as any },
+    where: { status, task: { userId } },
     include: { task: true },
-    orderBy: { fireAt: "asc" },
+    orderBy: { at: "asc" },
     take: 200,
   });
 
   return res.json({ reminders: list });
 });
 
-remindersRouter.post("/:taskId", async (req, res) => {
+remindersRouter.post("/:taskId", async (req: AuthedRequest, res) => {
   const userId = req.userId!;
   const taskId = String(req.params.taskId);
-  const { fireAt } = req.body as { fireAt?: string };
 
-  if (!fireAt) return res.status(400).json({ error: "fireAt required" });
+  // Accept both `at` and legacy `fireAt`
+  const atRaw = (req.body?.at || req.body?.fireAt) as string | undefined;
+  if (!atRaw) return res.status(400).json({ error: "at required" });
+  const at = new Date(atRaw);
+  if (Number.isNaN(at.getTime())) return res.status(400).json({ error: "invalid at" });
+
+  // Ensure ownership
+  const task = await prisma.task.findFirst({ where: { id: taskId, userId } });
+  if (!task) return res.status(404).json({ error: "Task not found" });
 
   const r = await prisma.reminder.create({
     data: {
-      userId,
       taskId,
-      fireAt: new Date(fireAt),
-      status: "OPEN",
+      at,
+      status: "scheduled",
+      method: "bot",
     },
   });
 
@@ -49,27 +67,31 @@ remindersRouter.post("/:taskId", async (req, res) => {
   }
 
   await remindersQueue.add(
-    "fire",
+    "send",
     { reminderId: r.id },
-    { delay: Math.max(0, dayjs(fireAt).diff(dayjs())), removeOnComplete: true, removeOnFail: true }
+    {
+      jobId: r.id,
+      delay: Math.max(0, dayjs(at).diff(dayjs())),
+      removeOnComplete: true,
+      removeOnFail: 1000,
+    }
   );
 
   return res.json({ reminder: r });
 });
 
-remindersRouter.post("/:id/snooze", async (req, res) => {
+remindersRouter.post("/:id/snooze", async (req: AuthedRequest, res) => {
   const userId = req.userId!;
   const id = String(req.params.id);
   const minutes = Number(req.body?.minutes || 10);
 
-  const r = await prisma.reminder.findFirst({ where: { id, userId } });
+  const r = await prisma.reminder.findFirst({ where: { id, task: { userId } } });
   if (!r) return res.status(404).json({ error: "Not found" });
 
   const nextAt = dayjs().add(minutes, "minute").toDate();
-
   const updated = await prisma.reminder.update({
     where: { id },
-    data: { fireAt: nextAt, status: "SNOOZED", sentAt: null },
+    data: { at: nextAt, status: "snoozed" },
   });
 
   if (!remindersQueue) {
@@ -80,9 +102,14 @@ remindersRouter.post("/:id/snooze", async (req, res) => {
   }
 
   await remindersQueue.add(
-    "fire",
+    "send",
     { reminderId: updated.id },
-    { delay: Math.max(0, dayjs(nextAt).diff(dayjs())), removeOnComplete: true, removeOnFail: true }
+    {
+      jobId: updated.id,
+      delay: Math.max(0, dayjs(nextAt).diff(dayjs())),
+      removeOnComplete: true,
+      removeOnFail: 1000,
+    }
   );
 
   return res.json({ reminder: updated });

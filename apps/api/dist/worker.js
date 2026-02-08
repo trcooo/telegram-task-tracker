@@ -1,34 +1,34 @@
 import { Worker } from "bullmq";
 import dayjs from "dayjs";
-import { connection } from "./queue.js";
+import { connection, hasRedis } from "./queue.js";
 import { prisma } from "./prisma.js";
 import { sendTelegramMessage } from "./bot.js";
+if (!hasRedis) {
+    // In production you should run the worker only when REDIS_URL is set.
+    // Failing fast here makes misconfigurations obvious.
+    throw new Error("REDIS_URL is not set. Reminders worker cannot start.");
+}
 const w = new Worker("reminders", async (job) => {
     const { reminderId } = job.data;
-    const reminder = await prisma.reminder.findUnique({ where: { id: reminderId }, include: { task: { include: { user: true, list: true } } } });
-    if (!reminder || !reminder.task)
+    const r = await prisma.reminder.findUnique({
+        where: { id: reminderId },
+        include: { task: { include: { user: true } } },
+    });
+    if (!r)
         return;
-    if (reminder.status === "sent")
+    if (r.status === "sent")
         return;
-    if (dayjs(reminder.at).isAfter(dayjs().add(5, "minute"))) {
-        // job ran too early; requeue just in case
+    const title = r.task?.title || "Reminder";
+    const when = r.at ? dayjs(r.at).format("MMM D, HH:mm") : "";
+    const chatId = r.task?.user?.telegramId;
+    if (!chatId)
         return;
-    }
-    const user = reminder.task.user;
-    if (!user.telegramId) {
-        await prisma.reminderLog.create({ data: { userId: user.id, taskId: reminder.taskId, reminderId, status: "failed", message: "User has no telegramId" } });
-        return;
-    }
-    const title = reminder.task.title;
-    const when = dayjs(reminder.at).format("DD.MM HH:mm");
-    const list = reminder.task.list?.title ? `\nList: ${reminder.task.list.title}` : "";
-    const pr = ["0", "1", "2", "3"][reminder.task.priority] ?? "0";
-    const text = `⏰ Reminder (${when})\n${title}\nPriority: ${pr}${list}`;
-    await sendTelegramMessage(user.telegramId, text);
-    await prisma.reminder.update({ where: { id: reminderId }, data: { status: "sent" } });
-    await prisma.reminderLog.create({ data: { userId: user.id, taskId: reminder.taskId, reminderId, status: "sent" } });
+    await sendTelegramMessage(chatId, `⏰ ${title}\n${when}`.trim());
+    await prisma.reminder.update({
+        where: { id: r.id },
+        data: { status: "sent" },
+    });
 }, { connection });
 w.on("failed", (job, err) => {
-    console.error("Job failed", job?.id, err);
+    console.error("Reminder job failed", { id: job?.id }, err);
 });
-console.log("Reminder worker started");

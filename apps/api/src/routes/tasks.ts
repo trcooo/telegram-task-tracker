@@ -31,7 +31,9 @@ async function replaceReminders(userId: string, taskId: string, reminders: Array
   // wipe old reminders + jobs
   const old = await prisma.reminder.findMany({ where: { taskId } });
   for (const r of old) {
-    await remindersQueue.remove(r.id).catch(() => {});
+    if (remindersQueue) {
+      await remindersQueue.remove(r.id).catch(() => {});
+    }
   }
   await prisma.reminder.deleteMany({ where: { taskId } });
 
@@ -46,11 +48,13 @@ async function replaceReminders(userId: string, taskId: string, reminders: Array
 
     // schedule if future
     const delay = Math.max(0, at.getTime() - Date.now());
-    await remindersQueue.add(
-      "send",
-      { reminderId: rec.id, userId, taskId },
-      { jobId: rec.id, delay, removeOnComplete: true, removeOnFail: 1000 }
-    );
+    if (remindersQueue) {
+      await remindersQueue.add(
+        "send",
+        { reminderId: rec.id, userId, taskId },
+        { jobId: rec.id, delay, removeOnComplete: true, removeOnFail: 1000 }
+      );
+    }
   }
   return created;
 }

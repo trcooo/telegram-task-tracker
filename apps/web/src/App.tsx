@@ -12,16 +12,17 @@ import ReminderCenter from "./views/Reminders";
 import Settings from "./views/Settings";
 import SideMenu from "./views/SideMenu";
 
-function TabButton({ id, label }: { id: any; label: string }) {
+function TabButton({ id, label, icon }: { id: any; label: string; icon: string }) {
   const tab = useUI((s) => s.tab);
   const setTab = useUI((s) => s.setTab);
   const active = tab === id;
   return (
     <button
       onClick={() => setTab(id)}
-      className={`flex-1 py-2 rounded-xl text-sm font-medium ${active ? "bg-white shadow-soft" : "text-slate-500"}`}
+      className={`flex-1 py-2 rounded-xl text-[11px] font-medium flex flex-col items-center justify-center gap-0.5 ${active ? "bg-white shadow-soft" : "text-slate-500"}`}
     >
-      {label}
+      <span className={`text-base ${active ? "text-slate-900" : "text-slate-500"}`}>{icon}</span>
+      <span>{label}</span>
     </button>
   );
 }
@@ -64,30 +65,30 @@ export default function App() {
           : "Light, airy, card-based";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
-      <div className="max-w-md mx-auto px-4 pb-24">
-        <header className="pt-5 pb-3 flex items-center justify-between">
+    <div className="min-h-screen">
+      <div className="max-w-[420px] mx-auto px-4 pb-24">
+        <header className="pt-6 pb-4 flex items-center justify-between">
           <button
             onClick={() => setMenuOpen(true)}
-            className="w-10 h-10 rounded-2xl bg-white shadow-soft flex items-center justify-center"
+            className="w-10 h-10 rounded-2xl card-solid flex items-center justify-center"
             aria-label="Open menu"
           >
-            ☰
+            <span className="text-lg">☰</span>
           </button>
           <div className="text-center flex-1">
-            <div className="text-lg font-semibold">{title}</div>
-            <div className="text-xs text-slate-500">{subtitle}</div>
+            <div className="text-lg font-semibold tracking-tight">{title}</div>
+            <div className="text-xs text-slate-500 mt-0.5">{subtitle}</div>
           </div>
           <div className="w-10 h-10" />
         </header>
 
-        <div className="mb-3">
+        <div className="mb-4">
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white rounded-2xl shadow-soft p-3">
+            <div className="card p-3">
               <div className="text-xs text-slate-500">Today</div>
               <div className="text-2xl font-semibold">{statsQ.data?.todayCount ?? "—"}</div>
             </div>
-            <div className="bg-white rounded-2xl shadow-soft p-3">
+            <div className="card p-3">
               <div className="text-xs text-slate-500">Overdue</div>
               <div className="text-2xl font-semibold">{statsQ.data?.overdueCount ?? "—"}</div>
             </div>
@@ -105,16 +106,13 @@ export default function App() {
       </div>
 
       <nav className="fixed bottom-3 left-0 right-0">
-        <div className="max-w-md mx-auto px-3">
-          <div className="bg-slate-100/80 backdrop-blur rounded-2xl p-2 shadow-soft flex gap-2">
-            <TabButton id="inbox" label="Inbox" />
-            <TabButton id="calendar" label="Cal" />
-            <TabButton id="schedule" label="Day" />
-            <TabButton id="matrix" label="Matrix" />
-          </div>
-          <div className="mt-2 bg-slate-100/80 backdrop-blur rounded-2xl p-2 shadow-soft flex gap-2">
-            <TabButton id="reminders" label="Remind" />
-            <TabButton id="settings" label="Settings" />
+        <div className="max-w-[420px] mx-auto px-3">
+          <div className="tabbar p-2 flex gap-2">
+            <TabButton id="inbox" label="Inbox" icon="📥" />
+            <TabButton id="calendar" label="Calendar" icon="🗓️" />
+            <TabButton id="schedule" label="Schedule" icon="⏱️" />
+            <TabButton id="matrix" label="Matrix" icon="🧭" />
+            <TabButton id="reminders" label="Reminders" icon="⏰" />
           </div>
         </div>
       </nav>
