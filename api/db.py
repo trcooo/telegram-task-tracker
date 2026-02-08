@@ -9,6 +9,17 @@ if not DATABASE_URL:
     os.makedirs("data", exist_ok=True)
     DATABASE_URL = "sqlite:///./data/app.db"
 
+# Railway/Postgres URLs are often provided as:
+#   - postgres://user:pass@host:port/db
+#   - postgresql://user:pass@host:port/db
+# This project uses psycopg (v3). SQLAlchemy expects the driver prefix:
+#   - postgresql+psycopg://...
+# so we normalize here.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgres://"):]
+elif DATABASE_URL.startswith("postgresql://") and "+" not in DATABASE_URL.split("://", 1)[0]:
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"):]
+
 # SQLite needs special connect args
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
