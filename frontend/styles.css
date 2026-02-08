@@ -400,3 +400,38 @@ body{
 @keyframes slideUp{ from{ transform: translateY(26px); opacity:.8; } to{ transform: translateY(0); opacity:1; } }
 @keyframes fadeIn{ from{ opacity:0; } to{ opacity:1; } }
 @keyframes slideDown{ from{ transform: translateY(-8px); opacity:.6; } to{ transform: translateY(0); opacity:1; } }
+
+/* --- Mini App mobile tweaks --- */
+html{ height: 100%; }
+body{
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.app{
+  max-width: 520px;
+  margin: 0 auto;
+}
+.top{
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+.top::before{
+  content:"";
+  position:absolute;
+  inset: 0;
+  border-radius: 0 0 28px 28px;
+  background: linear-gradient(180deg, rgba(233,238,248,0.88), rgba(233,238,248,0.25));
+  pointer-events:none;
+  z-index:-1;
+}
+.top-card, .toolbar{ box-shadow: 0 14px 34px rgba(15,23,42,0.08); }
+.content{ padding-bottom: 10px; }
+.tabbar{ max-width: 520px; margin: 0 auto; }
+
+.btn, .seg-btn, .tab, .cal-day, .action-chip{ touch-action: manipulation; }
+
+@media (max-width: 360px){
+  .tab{ padding: 10px 10px; }
+  .seg-btn{ padding: 10px 10px; }
+}

@@ -96,13 +96,25 @@ function fmtDateTime(iso){
 async function ensureAuth(){
   const token = localStorage.getItem("tg_planner_token");
   if (token) return true;
+
   const wa = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-  if (!wa || !wa.initData) return false;
-  wa.ready(); wa.expand();
-  const r = await API.login(wa.initData);
-  localStorage.setItem("tg_planner_token", r.token);
-  return true;
+  const initData = wa?.initData || "";
+
+  // If opened not from Telegram, initData will be empty -> show browser instructions
+  if (!initData){
+    return false;
+  }
+
+  try{
+    const r = await API.login(initData);
+    localStorage.setItem("tg_planner_token", r.token);
+    return true;
+  }catch(e){
+    toast("Auth error", "Проверь, что Mini App открыт из Telegram и BOT_TOKEN верный.");
+    return false;
+  }
 }
+
 
 async function loadTopUser(){
   try{
@@ -865,6 +877,9 @@ async function renderSettings(root, force){
   root.appendChild(tips);
 }
 
+window.addEventListener("error", (e)=>{ try{ toast("JS error", String(e?.message||e)); }catch{} });
+window.addEventListener("unhandledrejection", (e)=>{ try{ toast("Promise error", String(e?.reason?.message||e?.reason||e)); }catch{} });
+
 async function renderRoute(force=false){
   const root = $("#app");
   const hash = (location.hash || "#/inbox").replace("#","");
@@ -889,19 +904,53 @@ async function renderRoute(force=false){
 }
 
 (async function boot(){
+  // Telegram Mini App integration (делает WebApp API доступным и “оживляет” UI)
+  const wa = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  try{
+    if (wa){
+      wa.ready();
+      wa.expand();
+      wa.setHeaderColor && wa.setHeaderColor("#E9EEF8");
+      wa.setBackgroundColor && wa.setBackgroundColor("#E9EEF8");
+      // Telegram disables selection by default; ok.
+    }
+  }catch{}
+
   wireSheet();
   wireInboxToolbar();
 
   const ok = await ensureAuth();
   if (!ok){
-    const root = $("#app");
-    root.innerHTML = "";
-    const c = document.createElement("div");
-    c.className = "card p16";
-    c.innerHTML = `<div class="h2">Нет Telegram initData</div><div class="sub">Открой mini app из Telegram.</div>`;
-    root.appendChild(c);
-    return;
-  }
+  const root = $("#app");
+  root.innerHTML = "";
+  const c = document.createElement("div");
+  c.className = "card p16";
+  c.innerHTML = `
+    <div class="h2">Открой из Telegram</div>
+    <div class="sub" style="line-height:1.5; margin-top:10px">
+      Похоже, страница открыта не как Telegram Mini App, поэтому <b>initData пустой</b> и приложение не может авторизоваться.<br/><br/>
+      ✅ Открой бота → нажми кнопку меню / WebApp → откроется приложение.<br/>
+      ✅ В BotFather WebApp URL должен быть = <b>APP_URL</b> (Railway Domain).<br/><br/>
+      Если всё равно не работает — нажми “Диагностика”.
+    </div>
+    <div class="row" style="margin-top:12px; gap:10px">
+      <button class="btn primary" id="btnReload" style="flex:1">Обновить</button>
+      <button class="btn" id="btnDiag" style="flex:1">Диагностика</button>
+    </div>
+  `;
+  root.appendChild(c);
+
+  $("#btnReload").addEventListener("click", ()=>location.reload());
+  $("#btnDiag").addEventListener("click", async ()=>{
+    try{
+      const info = await fetch("/health/info").then(r=>r.json()).catch(()=>null);
+      toast("Health", info ? JSON.stringify(info) : "no /health/info");
+    }catch(e){
+      toast("Diag error", String(e.message||e));
+    }
+  });
+  return;
+}
 
   await loadTopUser();
   window.addEventListener("hashchange", ()=>renderRoute(true));
