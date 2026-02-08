@@ -41,19 +41,45 @@ def _migrate_schema() -> None:
     """Best-effort migrations to keep Railway/Postgres deploys from breaking.
 
     We avoid Alembic for simplicity. This function only *adds missing columns*
-    that the app expects (e.g. 'note'). It is safe to run on every startup.
+    that the app expects. It is safe to run on every startup.
     """
     insp = inspect(engine)
+    dialect = engine.url.get_backend_name()
+    is_postgres = dialect.startswith("postgres")
+    is_sqlite = dialect.startswith("sqlite")
 
-    # If tables don't exist yet, nothing to migrate.
-    if not insp.has_table("tasks"):
-        return
+    def add_missing_columns(table: str, ddl_by_col: dict, backfill_sql: list[str] | None = None):
+        if not insp.has_table(table):
+            return
+        existing = {c["name"] for c in insp.get_columns(table)}
+        missing = [c for c in ddl_by_col.keys() if c not in existing]
+        if not missing and not backfill_sql:
+            return
 
-    existing = {c["name"] for c in insp.get_columns("tasks")}
+        with engine.begin() as conn:
+            # Add columns
+            for col in missing:
+                ddl = ddl_by_col[col]
+                # Postgres prefers JSONB
+                if is_postgres and col in ("tags", "subtasks"):
+                    ddl = "JSONB"
+                # SQLite doesn't support IF NOT EXISTS for ADD COLUMN in many environments
+                if is_sqlite:
+                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'))
+                else:
+                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {ddl}'))
 
-    # Columns expected by current app model.
-    # Keep DDL conservative and compatible with both Postgres and SQLite.
-    ddl_by_col = {
+            # Backfill (optional, best-effort)
+            if backfill_sql:
+                for stmt in backfill_sql:
+                    try:
+                        conn.execute(text(stmt))
+                    except Exception:
+                        # ignore backfill errors (e.g. column doesn't exist in some legacy schemas)
+                        pass
+
+    # ---- tasks ----
+    add_missing_columns("tasks", {
         "note": "TEXT",
         "priority": "INTEGER DEFAULT 0",
         "date": "VARCHAR",
@@ -70,19 +96,24 @@ def _migrate_schema() -> None:
         "done": "BOOLEAN DEFAULT FALSE",
         "created_at": "TIMESTAMP",
         "updated_at": "TIMESTAMP",
-    }
+    })
 
-    missing = [c for c in ddl_by_col.keys() if c not in existing]
-    if not missing:
-        return
+    # ---- lists ----
+    # Some older schemas used "name" instead of "title". We add title and backfill from name.
+    add_missing_columns("lists", {
+        "title": "VARCHAR",
+        "color": "VARCHAR",
+        "created_at": "TIMESTAMP",
+    }, backfill_sql=[
+        "UPDATE lists SET title = name WHERE title IS NULL AND name IS NOT NULL",
+    ])
 
-    # Postgres prefers JSONB, SQLite is fine with JSON (stored as TEXT).
-    is_postgres = engine.url.get_backend_name().startswith("postgres")
-
-    with engine.begin() as conn:
-        for col in missing:
-            ddl = ddl_by_col[col]
-            if is_postgres and col in ("tags", "subtasks"):
-                ddl = "JSONB"
-            # Add nullable columns; app can backfill later.
-            conn.execute(text(f'ALTER TABLE tasks ADD COLUMN IF NOT EXISTS {col} {ddl}'))
+    # ---- reminders ----
+    add_missing_columns("reminders", {
+        "status": "VARCHAR DEFAULT 'scheduled'",
+        "method": "VARCHAR DEFAULT 'telegram'",
+        "at": "TIMESTAMP",
+        "task_id": "INTEGER",
+        "created_at": "TIMESTAMP",
+        "updated_at": "TIMESTAMP",
+    })
