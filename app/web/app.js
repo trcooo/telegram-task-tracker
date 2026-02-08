@@ -21,7 +21,7 @@
 
   const screenTasks = el('screenTasks');
   const screenCalendar = el('screenCalendar');
-  const screenOverdue = el('screenOverdue');
+  const screenMatrix = el('screenMatrix');
   const screenMenu = el('screenMenu');
 
   const bottomNav = el('bottomNav');
@@ -38,9 +38,11 @@
   const listTitle = el('listTitle');
   const taskCount = el('taskCount');
 
-  const overdueList = el('overdueList');
-  const overdueEmpty = el('overdueEmpty');
-  const overdueCount = el('overdueCount');
+  const matrixCount = el('matrixCount');
+  const mUI = el('mUI');
+  const mUN = el('mUN');
+  const mNI = el('mNI');
+  const mNN = el('mNN');
 
   const calTitle = el('calTitle');
   const calPrev = el('calPrev');
@@ -80,7 +82,7 @@
 
   let state = {
     user: null,
-    screen: 'tasks',            // tasks | calendar | overdue | menu
+    screen: 'tasks',            // tasks | calendar | matrix | menu
     seg: 'inbox',               // inbox | today | calendar
     filter: 'inbox',            // inbox | today | upcoming | overdue | done
     search: '',
@@ -192,7 +194,7 @@
   }
 
   function taskRemind(task) {
-    return !!(task.remind ?? task.reminder ?? task.remind_enabled);
+    return !!(task.reminder_enabled ?? task.remind ?? task.reminder ?? task.remind_enabled);
   }
 
   function isOverdue(task) {
@@ -327,6 +329,27 @@
   async function apiFetch(path, opts={}) {
     const url = apiBase() + path;
     const headers = Object.assign({'Content-Type': 'application/json'}, opts.headers || {});
+
+    // --- Auth / identity ---
+    // FastAPI backend expects either:
+    //  - X-Tg-Init-Data (Telegram initData) OR
+    //  - X-User-Key (guest/dev)
+    // We always send initData when running inside Telegram.
+    try {
+      if (TG && TG.initData) headers['X-Tg-Init-Data'] = TG.initData;
+    } catch (_) {}
+
+    // Guest/dev key for non-Telegram usage (or local testing)
+    if (!headers['X-Tg-Init-Data']) {
+      const kLS = 'tf_user_key';
+      let k = localStorage.getItem(kLS);
+      if (!k) {
+        k = 'guest:' + Math.random().toString(16).slice(2) + Date.now().toString(16);
+        localStorage.setItem(kLS, k);
+      }
+      headers['X-User-Key'] = k;
+      headers['X-User-Name'] = (state.user && (state.user.first_name || state.user.username)) ? (state.user.first_name || ('@'+state.user.username)) : 'Гость';
+    }
     const res = await fetch(url, Object.assign({}, opts, { headers }));
     if (!res.ok) {
       const txt = await res.text().catch(()=> '');
@@ -609,11 +632,29 @@
     emptyState.style.display = list.length ? 'none' : 'block';
   }
 
-  function renderOverdueScreen() {
-    const list = getFilteredTasks('overdue', '');
-    overdueCount.textContent = String(list.length);
-    renderTaskList(overdueList, list);
-    overdueEmpty.style.display = list.length ? 'none' : 'block';
+  function renderMatrixScreen() {
+    // Eisenhower-ish: Urgent = overdue or due within 24h. Important = high priority.
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    const active = state.tasks.filter(t => !taskDone(t));
+
+    const buckets = { UI: [], UN: [], NI: [], NN: [] };
+    for (const t of active) {
+      const due = taskDueISO(t);
+      const urgent = !!due && (new Date(due).getTime() < now || new Date(due).getTime() < (now + day));
+      const important = taskPriority(t) === 'high';
+
+      if (urgent && important) buckets.UI.push(t);
+      else if (!urgent && important) buckets.UN.push(t);
+      else if (urgent && !important) buckets.NI.push(t);
+      else buckets.NN.push(t);
+    }
+
+    matrixCount.textContent = String(active.length);
+    renderTaskList(mUI, buckets.UI, { compact:true });
+    renderTaskList(mUN, buckets.UN, { compact:true });
+    renderTaskList(mNI, buckets.NI, { compact:true });
+    renderTaskList(mNN, buckets.NN, { compact:true });
   }
 
   function renderDaySheet() {
@@ -865,6 +906,8 @@
       title,
       description,
       priority,
+      // backend supports reminder_enabled (and keeps "remind" as legacy alias)
+      reminder_enabled: remind,
       remind,
       due_at,
     };
@@ -992,7 +1035,7 @@
     const screens = {
       tasks: screenTasks,
       calendar: screenCalendar,
-      overdue: screenOverdue,
+      matrix: screenMatrix,
       menu: screenMenu,
     };
     for (const k of Object.keys(screens)) {
@@ -1009,10 +1052,7 @@
     // segmented state aligns: calendar screen corresponds to seg calendar
     if (name === 'calendar') setSeg('calendar', true);
     if (name === 'tasks' && (state.seg === 'calendar')) setSeg('inbox', true);
-    if (name === 'overdue') {
-      // keep tasks segmented but show overdue screen
-      setSeg('today', true); // doesn't matter; keep thumb stable
-    }
+    if (name === 'matrix') setSeg('today', true);
 
     refreshAll();
   }
@@ -1056,7 +1096,7 @@
   function refreshAll() {
     if (state.screen === 'tasks') renderTasksScreen();
     if (state.screen === 'calendar') renderCalendar();
-    if (state.screen === 'overdue') renderOverdueScreen();
+    if (state.screen === 'matrix') renderMatrixScreen();
     // menu has no heavy render; only ensure counts/labels
   }
 
@@ -1083,7 +1123,7 @@
       // keep segmented in sync: inbox/today only
       if (state.filter === 'today') setSeg('today', true);
       if (state.filter === 'inbox') setSeg('inbox', true);
-      if (state.filter === 'overdue') showScreen('overdue');
+      // overdue is a filter inside Tasks screen
       if (state.filter === 'done') showScreen('tasks');
       refreshAll();
       haptic('selection');
@@ -1132,7 +1172,7 @@
       if (!s) return;
       if (s === 'tasks') showScreen('tasks');
       if (s === 'calendar') showScreen('calendar');
-      if (s === 'overdue') showScreen('overdue');
+      if (s === 'matrix') showScreen('matrix');
       if (s === 'menu') showScreen('menu');
       haptic('selection');
     });

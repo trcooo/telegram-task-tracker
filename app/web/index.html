@@ -120,16 +120,29 @@
       </section>
 
       <!-- OVERDUE SCREEN -->
-      <section class="screen" id="screenOverdue">
+      <section class="screen" id="screenMatrix">
         <div class="listHeader">
-          <div class="listTitle">Просрочено</div>
-          <div class="listCounter" id="overdueCount">0</div>
+          <div class="listTitle">Priority Matrix</div>
+          <div class="listCounter" id="matrixCount">0</div>
         </div>
-        <div class="taskList" id="overdueList"></div>
-        <div class="emptyState" id="overdueEmpty">
-          <div class="emptyIcon">⏰</div>
-          <div class="emptyTitle">Просроченных нет</div>
-          <div class="emptyDesc">Так держать 👌</div>
+
+        <div class="matrixGrid" id="matrixGrid">
+          <div class="matrixCell" data-m="ui">
+            <div class="mcHead"><span>Срочно</span><b>Важно</b></div>
+            <div class="mcList" id="mUI"></div>
+          </div>
+          <div class="matrixCell" data-m="un">
+            <div class="mcHead"><span>Не срочно</span><b>Важно</b></div>
+            <div class="mcList" id="mUN"></div>
+          </div>
+          <div class="matrixCell" data-m="ni">
+            <div class="mcHead"><span>Срочно</span><b>Не важно</b></div>
+            <div class="mcList" id="mNI"></div>
+          </div>
+          <div class="matrixCell" data-m="nn">
+            <div class="mcHead"><span>Не срочно</span><b>Не важно</b></div>
+            <div class="mcList" id="mNN"></div>
+          </div>
         </div>
       </section>
 
@@ -209,13 +222,13 @@
       <button class="navBtn navAdd" id="navAddBtn" aria-label="Добавить задачу">
         <span class="navPlus">＋</span>
       </button>
-      <button class="navBtn" data-screen="overdue">
-        <span class="navI">⏰</span>
-        <span class="navT">Просрочено</span>
+      <button class="navBtn" data-screen="matrix">
+        <span class="navI">▦</span>
+        <span class="navT">Матрица</span>
       </button>
       <button class="navBtn" data-screen="menu">
         <span class="navI">⚙️</span>
-        <span class="navT">Меню</span>
+        <span class="navT">Настройки</span>
       </button>
     </nav>
 

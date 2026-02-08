@@ -197,6 +197,7 @@ class TaskOut(BaseModel):
     due_at: Optional[str] = None
     completed: bool
     list_id: Optional[int] = None
+    reminder_enabled: bool = False
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -206,6 +207,10 @@ class TaskCreate(BaseModel):
     priority: Optional[str] = "medium"
     due_at: Optional[str] = None
     list_id: Optional[int] = None
+    # reminders
+    reminder_enabled: Optional[bool] = None
+    # backward-compat alias from older web clients
+    remind: Optional[bool] = None
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -214,6 +219,8 @@ class TaskUpdate(BaseModel):
     due_at: Optional[str] = None
     completed: Optional[bool] = None
     list_id: Optional[int] = None
+    reminder_enabled: Optional[bool] = None
+    remind: Optional[bool] = None
 
 # -------------------- APP --------------------
 app = FastAPI()
@@ -274,6 +281,7 @@ def to_task_out(t: Task) -> TaskOut:
         due_at=iso(t.due_at),
         completed=bool(t.completed),
         list_id=getattr(t, "list_id", None),
+        reminder_enabled=bool(getattr(t, "reminder_enabled", False)),
         created_at=iso(getattr(t, "created_at", None)),
         updated_at=iso(getattr(t, "updated_at", None)),
     )
@@ -321,6 +329,18 @@ async def create_task(request: Request, response: Response, payload: TaskCreate,
     if lid is not None and int(lid) <= 0:
         lid = None
 
+    remind_flag = None
+    if payload.reminder_enabled is not None:
+        remind_flag = bool(payload.reminder_enabled)
+    elif getattr(payload, "remind", None) is not None:
+        remind_flag = bool(payload.remind)
+    else:
+        remind_flag = False
+
+    # reminder only makes sense with a due date
+    if not due_utc:
+        remind_flag = False
+
     t = Task(
         user_id=uid,
         title=title,
@@ -329,7 +349,7 @@ async def create_task(request: Request, response: Response, payload: TaskCreate,
         due_at=due_utc,
         completed=False,
         list_id=lid,
-        reminder_enabled=False,
+        reminder_enabled=bool(remind_flag),
         reminder_sent=False,
     )
     db.add(t)
@@ -372,6 +392,20 @@ async def update_task(request: Request, task_id: int, payload: TaskUpdate, db: S
         if lid is not None and int(lid) <= 0:
             lid = None
         t.list_id = lid
+
+    # reminders (only valid with a due date)
+    if payload.reminder_enabled is not None or getattr(payload, "remind", None) is not None:
+        flag = payload.reminder_enabled
+        if flag is None:
+            flag = bool(getattr(payload, "remind", False))
+        if not t.due_at:
+            t.reminder_enabled = False
+        else:
+            # if user turns reminders back on, allow sending again
+            new_flag = bool(flag)
+            if new_flag and not t.reminder_enabled:
+                t.reminder_sent = False
+            t.reminder_enabled = new_flag
 
     db.commit()
     db.refresh(t)
