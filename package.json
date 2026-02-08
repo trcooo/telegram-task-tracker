@@ -1,6 +1,9 @@
 {
   "name": "productivity-partner",
   "private": true,
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"

@@ -21,3 +21,21 @@ export function readyTelegram() {
   tg.setHeaderColor?.("#f8fafc");
   tg.setBackgroundColor?.("#f8fafc");
 }
+
+export function hapticImpact(style: "light" | "medium" | "heavy" | "rigid" | "soft" = "light") {
+  const tg = getTelegram();
+  try {
+    tg?.HapticFeedback?.impactOccurred?.(style);
+  } catch {
+    // ignore
+  }
+}
+
+export function hapticSelection() {
+  const tg = getTelegram();
+  try {
+    tg?.HapticFeedback?.selectionChanged?.();
+  } catch {
+    // ignore
+  }
+}

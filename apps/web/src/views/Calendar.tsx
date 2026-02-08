@@ -5,6 +5,7 @@ import { DndContext, DragEndEvent, DragOverlay, useDraggable, useDroppable } fro
 import type { List, Task } from "@pp/shared";
 import { api } from "../lib/api";
 import { useUI } from "../store/ui";
+import DayTasksSheet from "./components/DayTasksSheet";
 
 function colorFor(listId: string | null | undefined, lists: List[]) {
   const l = lists.find((x) => x.id === listId);
@@ -40,7 +41,8 @@ function DayCell({
   tasks,
   lists,
   onSelect,
-  onActiveTask
+  onActiveTask,
+  onMore
 }: {
   date: string;
   inMonth: boolean;
@@ -49,6 +51,7 @@ function DayCell({
   lists: List[];
   onSelect: () => void;
   onActiveTask: (t: Task) => void;
+  onMore: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day-${date}` });
   const d = dayjs(date);
@@ -68,7 +71,9 @@ function DayCell({
         {pills.map((t) => (
           <TaskPill key={t.id} task={t} lists={lists} onActive={() => onActiveTask(t)} />
         ))}
-        {more > 0 ? <div className="text-[11px] text-slate-400 pl-1">+{more} more</div> : null}
+        {more > 0 ? (
+          <button onClick={onMore} className="text-[11px] text-slate-500 pl-1 underline decoration-slate-200">+{more} more</button>
+        ) : null}
       </div>
     </div>
   );
@@ -78,8 +83,12 @@ export default function CalendarView({ lists }: { lists: List[] }) {
   const qc = useQueryClient();
   const selectedDate = useUI((s) => s.selectedDate);
   const setSelectedDate = useUI((s) => s.setSelectedDate);
+  const setTab = useUI((s) => s.setTab);
   const [month, setMonth] = useState(dayjs(selectedDate).startOf("month"));
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [sheetDate, setSheetDate] = useState<string | null>(null);
+
+  const scheduleDrop = useDroppable({ id: "schedule-drop" });
 
   const tasksQ = useQuery({ queryKey: ["tasks", "all"], queryFn: () => api.tasks({ view: "all" }) });
   const update = useMutation({
@@ -115,10 +124,23 @@ export default function CalendarView({ lists }: { lists: List[] }) {
     const taskId = String(e.active.id).replace("task-", "");
     const overId = e.over?.id ? String(e.over.id) : null;
     setActiveTask(null);
-    if (!overId || !overId.startsWith("day-")) return;
-    const date = overId.replace("day-", "");
+    if (!overId) return;
+
     const t = ((tasksQ.data || []) as Task[]).find((x) => x.id === taskId);
     if (!t) return;
+
+    // Fast drag from Calendar -> Schedule: drop into the "Day plan" area.
+    if (overId === "schedule-drop") {
+      // Put the task onto the currently selected date and jump to Schedule.
+      const date = selectedDate;
+      const next = dayjs(`${date}T09:00:00`);
+      update.mutate({ id: taskId, patch: { date, startAt: next.toISOString(), time: next.format("HH:mm") } });
+      setTab("schedule");
+      return;
+    }
+
+    if (!overId.startsWith("day-")) return;
+    const date = overId.replace("day-", "");
 
     if (t.startAt) {
       const start = dayjs(t.startAt);
@@ -168,9 +190,24 @@ export default function CalendarView({ lists }: { lists: List[] }) {
                   lists={lists}
                   onSelect={() => setSelectedDate(date)}
                   onActiveTask={(t) => setActiveTask(t)}
+                  onMore={() => setSheetDate(date)}
                 />
               );
             })}
+          </div>
+
+          {/* Drag from Calendar -> Schedule */}
+          <div
+            ref={scheduleDrop.setNodeRef}
+            className={`mt-3 rounded-2xl border border-dashed px-3 py-3 text-sm flex items-center justify-between ${
+              activeTask ? "bg-slate-50" : "bg-white"
+            } ${scheduleDrop.isOver ? "ring-2 ring-slate-300" : ""}`}
+          >
+            <div>
+              <div className="font-semibold">Day plan</div>
+              <div className="text-xs text-slate-500">Drag a task here to schedule it at 09:00</div>
+            </div>
+            <div className="text-xs px-3 py-2 rounded-2xl bg-slate-100">Drop</div>
           </div>
 
           <DragOverlay>
@@ -182,6 +219,19 @@ export default function CalendarView({ lists }: { lists: List[] }) {
           </DragOverlay>
         </DndContext>
       </div>
+
+      <DayTasksSheet
+        open={!!sheetDate}
+        date={sheetDate || selectedDate}
+        tasks={((sheetDate ? byDate.get(sheetDate) : byDate.get(selectedDate)) || []) as Task[]}
+        lists={lists}
+        onClose={() => setSheetDate(null)}
+        onPick={(t) => {
+          // quick jump to schedule when picking a task
+          setSelectedDate(sheetDate || selectedDate);
+          setTab("schedule");
+        }}
+      />
 
       <div className="bg-white rounded-2xl shadow-soft p-3">
         <div className="text-sm font-semibold mb-2">{dayjs(selectedDate).format("ddd, D MMM")}</div>

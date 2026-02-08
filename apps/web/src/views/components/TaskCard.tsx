@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import dayjs from "dayjs";
 import type { List, Task } from "@pp/shared";
+import { hapticImpact } from "../../lib/telegram";
 
 function pillClass(priority: number) {
   if (priority >= 3) return "bg-rose-100 text-rose-700";
@@ -34,6 +35,8 @@ export default function TaskCard({
   const SWIPE_T1 = 80;
   const SWIPE_T2 = 150;
   const [dx, setDx] = useState(0);
+  const [spring, setSpring] = useState(false);
+  const lastHaptic = useRef<string>("");
 
   return (
     <div className="relative rounded-2xl shadow-soft overflow-hidden">
@@ -47,34 +50,51 @@ export default function TaskCard({
       {/* Foreground card */}
       <div
         className="bg-white rounded-2xl p-3 flex gap-3 relative"
-        style={{ transform: `translateX(${dx}px)` }}
+        style={{
+          transform: `translateX(${dx}px)`,
+          transition: spring ? "transform 320ms cubic-bezier(0.2, 1.2, 0.2, 1)" : "none"
+        }}
         onPointerDown={(e) => {
           (e.currentTarget as any).setPointerCapture?.(e.pointerId);
           (e.currentTarget as any)._swipeStart = { x: e.clientX, dx };
+          setSpring(false);
+          lastHaptic.current = "";
         }}
         onPointerMove={(e) => {
           const st = (e.currentTarget as any)._swipeStart;
           if (!st) return;
-          const next = st.dx + (e.clientX - st.x);
-          // clamp
-          setDx(Math.max(-220, Math.min(140, next)));
+          const raw = st.dx + (e.clientX - st.x);
+          // rubber band (feels more native)
+          const clamped = raw < -220 ? -220 + (raw + 220) * 0.2 : raw > 140 ? 140 + (raw - 140) * 0.2 : raw;
+          setDx(clamped);
+
+          // Haptic on threshold cross
+          const key = clamped > SWIPE_T1 ? "done" : clamped < -SWIPE_T2 ? "delete" : clamped < -SWIPE_T1 ? "schedule" : "";
+          if (key && lastHaptic.current !== key) {
+            hapticImpact(key === "delete" ? "heavy" : "light");
+            lastHaptic.current = key;
+          }
         }}
         onPointerUp={(e) => {
           const finalDx = dx;
           (e.currentTarget as any)._swipeStart = null;
+          setSpring(true);
           // action resolution
           if (finalDx > SWIPE_T1) {
             setDx(0);
+            hapticImpact("medium");
             onToggleDone();
             return;
           }
           if (finalDx < -SWIPE_T2) {
             setDx(0);
+            hapticImpact("heavy");
             onDelete();
             return;
           }
           if (finalDx < -SWIPE_T1) {
             setDx(0);
+            hapticImpact("medium");
             onSchedule();
             return;
           }

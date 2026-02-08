@@ -16,6 +16,16 @@ This repo is a **monorepo**:
 ### Notes
 - **Auth** uses Telegram WebApp `initData`. If `BOT_TOKEN` is missing, auth will fail.
 
+### Upstash Redis (recommended)
+If you use **Upstash**, your URL will usually start with `rediss://`.
+Example shape:
+`rediss://default:<PASSWORD>@<HOST>:<PORT>`
+
+This project enables TLS automatically when `REDIS_URL` starts with `rediss://`.
+
+If you only have Upstash REST credentials (`UPSTASH_REDIS_REST_URL`/`TOKEN`),
+create an Upstash Redis database and copy the **Redis URL** (not REST) into `REDIS_URL`.
+
 ## 2) Prisma migrations
 On Railway, run once (in the service console):
 - `npx prisma migrate dev` (for local) or

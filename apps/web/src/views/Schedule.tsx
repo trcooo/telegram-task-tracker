@@ -9,9 +9,14 @@ import { DndContext, DragEndEvent, useDraggable, useDroppable } from "@dnd-kit/c
 function Slot({ id, label, children }: { id: string; label: string; children?: any }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
-    <div ref={setNodeRef} className={`relative rounded-2xl border ${isOver ? "border-slate-900" : "border-slate-100"} bg-white shadow-soft p-3 min-h-[64px]`}>
+    <div
+      ref={setNodeRef}
+      className={`relative rounded-2xl border ${isOver ? "border-slate-900" : "border-slate-100"} bg-white shadow-soft p-3 min-h-[64px] overflow-hidden`}
+    >
+      {/* subtle grid line to reinforce time slots (mobile-friendly) */}
+      <div className="pointer-events-none absolute inset-0" style={{ background: "linear-gradient(to bottom, rgba(148,163,184,0.08) 1px, transparent 1px)", backgroundSize: "100% 24px" }} />
       <div className="absolute top-2 left-3 text-[11px] text-slate-400">{label}</div>
-      <div className="mt-4">{children}</div>
+      <div className="mt-4 relative">{children}</div>
     </div>
   );
 }
@@ -32,6 +37,7 @@ function DraggableTask({
   const list = lists.find((l) => l.id === task.listId);
   const [resizing, setResizing] = useState(false);
   const [draftMinutes, setDraftMinutes] = useState<number>(minutes);
+  const h = Math.max(78, Math.round((minutes / 15) * 12 + 58));
   return (
     <div
       ref={setNodeRef}
@@ -41,48 +47,52 @@ function DraggableTask({
       className={`rounded-2xl p-3 border border-slate-100 bg-slate-50 cursor-grab active:cursor-grabbing relative ${
         isDragging ? "opacity-60" : ""
       }`}
+      // visual block height on the timeline grid
+      data-minutes={minutes}
     >
-      <div className="text-sm font-medium truncate">{task.title}</div>
-      <div className="mt-1 flex gap-2 items-center flex-wrap">
-        <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">P{task.priority}</span>
-        {list?.title ? (
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{list.title}</span>
-        ) : null}
-        {task.kind !== "task" ? (
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{task.kind}</span>
-        ) : null}
-      </div>
+      <div style={{ height: h }} className="relative">
+        <div className="text-sm font-medium truncate">{task.title}</div>
+        <div className="mt-1 flex gap-2 items-center flex-wrap">
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">P{task.priority}</span>
+          {list?.title ? (
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{list.title}</span>
+          ) : null}
+          {task.kind !== "task" ? (
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{task.kind}</span>
+          ) : null}
+        </div>
 
-      {/* resize handle */}
-      <div className="mt-2 flex items-center justify-between">
-        <div className="text-[11px] text-slate-500">{(resizing ? draftMinutes : minutes)} min</div>
-        <div
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            (e.currentTarget as any).setPointerCapture?.(e.pointerId);
-            setResizing(true);
-            setDraftMinutes(minutes);
-            (e.currentTarget as any)._sy = e.clientY;
-          }}
-          onPointerMove={(e) => {
-            if (!resizing) return;
-            const sy = (e.currentTarget as any)._sy ?? e.clientY;
-            const dy = e.clientY - sy;
-            // 1 slot (~30px) -> 15 minutes approx
-            const delta = Math.round(dy / 18) * 15;
-            const next = Math.max(15, Math.min(240, minutes + delta));
-            setDraftMinutes(next);
-          }}
-          onPointerUp={() => {
-            if (!resizing) return;
-            setResizing(false);
-            onResize(draftMinutes);
-          }}
-          className={`w-16 h-6 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-[11px] text-slate-600 ${
-            resizing ? "ring-2 ring-slate-200" : ""
-          }`}
-        >
-          ↕ Resize
+        {/* resize handle (pinned to bottom) */}
+        <div className="absolute left-0 right-0 bottom-0 px-3 pb-3 flex items-center justify-between">
+          <div className="text-[11px] text-slate-500">{(resizing ? draftMinutes : minutes)} min</div>
+          <div
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              (e.currentTarget as any).setPointerCapture?.(e.pointerId);
+              setResizing(true);
+              setDraftMinutes(minutes);
+              (e.currentTarget as any)._sy = e.clientY;
+            }}
+            onPointerMove={(e) => {
+              if (!resizing) return;
+              const sy = (e.currentTarget as any)._sy ?? e.clientY;
+              const dy = e.clientY - sy;
+              // 1 slot (~30px) -> 15 minutes approx
+              const delta = Math.round(dy / 18) * 15;
+              const next = Math.max(15, Math.min(240, minutes + delta));
+              setDraftMinutes(next);
+            }}
+            onPointerUp={() => {
+              if (!resizing) return;
+              setResizing(false);
+              onResize(draftMinutes);
+            }}
+            className={`w-16 h-6 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-[11px] text-slate-600 ${
+              resizing ? "ring-2 ring-slate-200" : ""
+            }`}
+          >
+            ↕ Resize
+          </div>
         </div>
       </div>
     </div>

@@ -32,7 +32,17 @@ export async function ensureAuth(): Promise<AuthResponse> {
 }
 
 async function authedFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
+  let token = getToken();
+  // If user types fast right after opening the Mini App, ensureAuth may not have finished yet.
+  // This makes all write actions reliable.
+  if (!token) {
+    try {
+      const auth = await ensureAuth();
+      token = auth.token;
+    } catch {
+      // continue; backend will respond with 401 and UI can show the error
+    }
+  }
   const headers: Record<string,string> = {
     ...(init?.headers as any),
     "content-type": "application/json",

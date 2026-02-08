@@ -34,7 +34,7 @@ const w = new Worker(
     await prisma.reminder.update({ where: { id: reminderId }, data: { status: "sent" } });
     await prisma.reminderLog.create({ data: { userId: user.id, taskId: reminder.taskId, reminderId, status: "sent" } });
   },
-  { connection: connection || undefined }
+  { connection }
 );
 
 w.on("failed", (job, err) => {
