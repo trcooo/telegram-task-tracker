@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 
 from ..db import get_sessionmaker
 from ..telegram import validate_init_data
@@ -67,5 +68,7 @@ def telegram_auth(payload: TelegramAuthIn):
             db.close()
     except HTTPException:
         raise
+    except OperationalError as e:
+        raise HTTPException(status_code=503, detail=f"DB_UNAVAILABLE: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

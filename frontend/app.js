@@ -1,3 +1,13 @@
+const ICONS = {
+  check: `<svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="white" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  inbox: `<svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v10l-3 3H7l-3-3V4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M4 14h5l1 2h4l1-2h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
+  cal: `<svg viewBox="0 0 24 24" fill="none"><path d="M7 3v3M17 3v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4 7h16v14H4V7Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M4 11h16" stroke="currentColor" stroke-width="2"/></svg>`,
+  time: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 22a10 10 0 1 0-10-10 10 10 0 0 0 10 10Z" stroke="currentColor" stroke-width="2"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
+  grid: `<svg viewBox="0 0 24 24" fill="none"><path d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`,
+  bell: `<svg viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 7h18s-3 0-3-7Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
+  gear: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 15.5a3.5 3.5 0 1 0-3.5-3.5 3.5 3.5 0 0 0 3.5 3.5Z" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a7.9 7.9 0 0 0 .1-2l2-1.2-2-3.4-2.3.7a7.3 7.3 0 0 0-1.7-1l-.3-2.4H9.8l-.3 2.4a7.3 7.3 0 0 0-1.7 1l-2.3-.7-2 3.4 2 1.2a7.9 7.9 0 0 0 .1 2l-2 1.2 2 3.4 2.3-.7a7.3 7.3 0 0 0 1.7 1l.3 2.4h5.4l.3-2.4a7.3 7.3 0 0 0 1.7-1l2.3.7 2-3.4-2-1.2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`
+};
+
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
@@ -95,25 +105,24 @@ function fmtDateTime(iso){
 
 async function ensureAuth(){
   const token = localStorage.getItem("tg_planner_token");
-  if (token) return true;
+  if (token) return { ok: true, reason: "HAS_TOKEN" };
 
   const wa = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   const initData = wa?.initData || "";
 
-  // If opened not from Telegram, initData will be empty -> show browser instructions
   if (!initData){
-    return false;
+    return { ok: false, reason: "NO_INITDATA" };
   }
 
   try{
     const r = await API.login(initData);
     localStorage.setItem("tg_planner_token", r.token);
-    return true;
+    return { ok: true, reason: "LOGGED_IN" };
   }catch(e){
-    toast("Auth error", "Проверь, что Mini App открыт из Telegram и BOT_TOKEN верный.");
-    return false;
+    return { ok: false, reason: "LOGIN_FAILED", detail: String(e?.message || e) };
   }
 }
+
 
 
 async function loadTopUser(){
@@ -266,78 +275,52 @@ function wireInboxToolbar(){
 
 function taskCard(t){
   const div = document.createElement("div");
-  div.className = "card task";
-
+  div.className = "cell";
   const isDone = t.status === "DONE";
-  const dotCls = isDone ? "done" : "todo";
-  const badge = isDone ? `<span class="badge done">Done</span>` : `<span class="badge todo">Todo</span>`;
 
   const meta = [];
   if (t.startAt) meta.push(`🕒 ${fmtTime(t.startAt)}`);
   if (t.dueAt) meta.push(`📅 ${fmtDateTime(t.dueAt)}`);
   if (t.nextReminderAt) meta.push(`🔔 ${fmtTime(t.nextReminderAt)}`);
 
-  div.innerHTML = `
-    <div class="task-row">
-      <div class="task-left">
-        <div class="dot-status ${dotCls}"></div>
-        <div style="min-width:0">
-          <div class="task-title"></div>
-          ${t.description ? `<div class="task-desc"></div>` : ``}
-          <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap; justify-content:flex-start">
-            <span class="pill">P${t.priority || 3}</span>
-            ${t.quadrant ? `<span class="pill">${t.quadrant.split("_")[0]}</span>` : ``}
-            ${meta.length ? `<span class="pill">${meta.join(" • ")}</span>` : ``}
-          </div>
-        </div>
-      </div>
-      ${badge}
-    </div>
+  const pr = t.priority || 3;
+  const prCls = pr===1?"red":pr===2?"orange":pr===4?"green":"blue";
 
-    <div class="row" style="margin-top:12px; gap:8px; justify-content:flex-end; flex-wrap:wrap">
-      <button class="action-chip primary" data-act="done">${isDone ? "Undo" : "Done"}</button>
-      <button class="action-chip" data-act="snooze">Snooze</button>
-      <button class="action-chip delete" data-act="delete">Delete</button>
+  div.innerHTML = `
+    <button class="check ${isDone?"done":""}" aria-label="Done">${ICONS.check}</button>
+    <div class="cell-main">
+      <div class="cell-title"></div>
+      <div class="cell-meta"></div>
+    </div>
+    <div class="cell-right">
+      <span class="pill ${prCls}">P${pr}</span>
+      <button class="more" aria-label="More">⋯</button>
     </div>
   `;
+  div.querySelector(".cell-title").textContent = t.title;
+  div.querySelector(".cell-meta").textContent = meta.length ? meta.join(" · ") : (t.description || "");
 
-  div.querySelector(".task-title").textContent = t.title;
-  if (t.description) div.querySelector(".task-desc").textContent = t.description;
-
-  div.addEventListener("click", (e)=>{ if (e.target.closest("button")) return; Sheet.open(t); });
-
-  div.querySelector("[data-act='done']").addEventListener("click", async (e)=>{
+  const btnCheck = div.querySelector(".check");
+  btnCheck.addEventListener("click", async (e)=>{
     e.stopPropagation();
     try{
       await API.patchTask(t.id, { status: isDone ? "TODO" : "DONE" });
       toast("Ок", isDone ? "Вернул в TODO" : "Отмечено Done");
       renderRoute(true);
-    }catch(err){ toast("Ошибка", String(err.message||err)); }
-  });
-
-  div.querySelector("[data-act='snooze']").addEventListener("click", async (e)=>{
-    e.stopPropagation();
-    try{
-      await API.quickReminder(t.id);
-      toast("Напоминание", "Через 10 минут бот напомнит (если нажал /start)");
-      renderRoute(true);
     }catch(err){
-      toast("Ошибка", "Проверь /start у бота и BOT_TOKEN");
+      toast("Ошибка", String(err.message||err));
     }
   });
 
-  div.querySelector("[data-act='delete']").addEventListener("click", async (e)=>{
+  div.querySelector(".more").addEventListener("click", (e)=>{
     e.stopPropagation();
-    if (!confirm("Удалить задачу?")) return;
-    try{
-      await API.deleteTask(t.id);
-      toast("Удалено", "Задача удалена");
-      renderRoute(true);
-    }catch(err){ toast("Ошибка", String(err.message||err)); }
+    Sheet.open(t);
   });
 
+  div.addEventListener("click", ()=>Sheet.open(t));
   return div;
 }
+
 
 
 async function renderInbox(root, force){
@@ -450,8 +433,11 @@ async function renderCalendar(root, force){
   const keySel = selected.toISOString().slice(0,10);
   const items = byDay[keySel] || [];
 
+  const listCard = document.createElement("div");
+  listCard.className = "card";
   const list = document.createElement("div");
   list.className = "list";
+  listCard.appendChild(list);
   list.innerHTML = `
     <div class="card p16">
       <div class="row">
@@ -463,7 +449,7 @@ async function renderCalendar(root, force){
       </div>
     </div>
   `;
-  root.appendChild(list);
+  root.appendChild(listCard);
 
   $("#addForDay").addEventListener("click", ()=>{
     const dt = new Date(selected);
@@ -903,6 +889,14 @@ async function renderRoute(force=false){
   }
 }
 
+function decorateTabs(){
+  document.querySelectorAll(".tab[data-icon]").forEach(a=>{
+    const key = a.getAttribute("data-icon");
+    const label = a.textContent.trim();
+    a.innerHTML = `${ICONS[key]||""}<span>${label}</span>`;
+  });
+}
+
 (async function boot(){
   // Telegram Mini App integration (делает WebApp API доступным и “оживляет” UI)
   const wa = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
@@ -919,36 +913,73 @@ async function renderRoute(force=false){
   wireSheet();
   wireInboxToolbar();
 
-  const ok = await ensureAuth();
-  if (!ok){
+  
+decorateTabs();
+
+const auth = await ensureAuth();
+if (!auth.ok){
   const root = $("#app");
   root.innerHTML = "";
   const c = document.createElement("div");
   c.className = "card p16";
-  c.innerHTML = `
-    <div class="h2">Открой из Telegram</div>
-    <div class="sub" style="line-height:1.5; margin-top:10px">
-      Похоже, страница открыта не как Telegram Mini App, поэтому <b>initData пустой</b> и приложение не может авторизоваться.<br/><br/>
-      ✅ Открой бота → нажми кнопку меню / WebApp → откроется приложение.<br/>
-      ✅ В BotFather WebApp URL должен быть = <b>APP_URL</b> (Railway Domain).<br/><br/>
-      Если всё равно не работает — нажми “Диагностика”.
-    </div>
-    <div class="row" style="margin-top:12px; gap:10px">
-      <button class="btn primary" id="btnReload" style="flex:1">Обновить</button>
-      <button class="btn" id="btnDiag" style="flex:1">Диагностика</button>
-    </div>
-  `;
+
+  if (auth.reason === "NO_INITDATA"){
+    c.innerHTML = `
+      <div class="h2">Открой из Telegram</div>
+      <div class="sub" style="line-height:1.5; margin-top:10px">
+        Сейчас <b>initData пустой</b>. Это бывает если:
+        <br/>• открыли ссылку в браузере, а не Mini App
+        <br/>• в BotFather WebApp URL не равен твоему Railway домену
+        <br/>• WebApp открыт не через бота/меню
+        <br/><br/>
+        ✅ Открой бота → нажми кнопку меню / WebApp.<br/>
+        ✅ Проверь WebApp URL в BotFather.<br/><br/>
+        Нажми “Диагностика”, чтобы увидеть статус.
+      </div>
+      <div class="row" style="margin-top:12px; gap:10px">
+        <button class="btn primary" id="btnReload" style="flex:1">Обновить</button>
+        <button class="btn ghost" id="btnDiag" style="flex:1">Диагностика</button>
+      </div>
+    `;
+  } else {
+    c.innerHTML = `
+      <div class="h2">Авторизация упала</div>
+      <div class="sub" style="line-height:1.5; margin-top:10px">
+        Mini App открылся, но сервер не смог залогинить пользователя.<br/><br/>
+        Обычно причина: <b>PostgreSQL не подключён</b> к этому Railway проекту или <b>DATABASE_URL</b> неверный
+        (в логе будет “Name or service not known”).<br/><br/>
+        Ошибка: <b>${(auth.detail||"").replaceAll("<","&lt;").replaceAll(">","&gt;")}</b><br/><br/>
+        ✅ Railway → добавь PostgreSQL в этом же проекте и сделай Reference переменной DATABASE_URL.<br/>
+        ✅ Проверь BOT_TOKEN и JWT_SECRET.<br/><br/>
+        Нажми “Диагностика” — покажет db_ok и db_host.
+      </div>
+      <div class="row" style="margin-top:12px; gap:10px">
+        <button class="btn primary" id="btnRetry" style="flex:1">Повторить</button>
+        <button class="btn ghost" id="btnDiag" style="flex:1">Диагностика</button>
+      </div>
+    `;
+  }
+
   root.appendChild(c);
 
-  $("#btnReload").addEventListener("click", ()=>location.reload());
-  $("#btnDiag").addEventListener("click", async ()=>{
+  const diag = async ()=>{
     try{
-      const info = await fetch("/health/info").then(r=>r.json()).catch(()=>null);
-      toast("Health", info ? JSON.stringify(info) : "no /health/info");
+      const info = await fetch("/health/info").then(r=>r.json());
+      toast("health/info", JSON.stringify(info));
     }catch(e){
-      toast("Diag error", String(e.message||e));
+      toast("Diag error", String(e?.message||e));
     }
-  });
+  };
+
+  const btnDiag = document.querySelector("#btnDiag");
+  if (btnDiag) btnDiag.addEventListener("click", diag);
+
+  const btnReload = document.querySelector("#btnReload");
+  if (btnReload) btnReload.addEventListener("click", ()=>location.reload());
+
+  const btnRetry = document.querySelector("#btnRetry");
+  if (btnRetry) btnRetry.addEventListener("click", ()=>location.reload());
+
   return;
 }
 

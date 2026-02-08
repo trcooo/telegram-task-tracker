@@ -1,18 +1,28 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timezone
+import logging
+
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 
 from .db import get_sessionmaker
 from .models import Reminder, ReminderStatus
 from .telegram_send import send_message
-from .settings import settings
+
+log = logging.getLogger("tg_planner.scheduler")
 
 scheduler = AsyncIOScheduler()
 
 async def dispatch_reminders():
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    SessionLocal = get_sessionmaker()
-    db: Session = SessionLocal()
+
+    try:
+        SessionLocal = get_sessionmaker()
+        db: Session = SessionLocal()
+    except Exception as e:
+        log.warning("Scheduler: DB session init failed: %s", e)
+        return
+
     try:
         due = (
             db.query(Reminder)
@@ -30,8 +40,15 @@ async def dispatch_reminders():
                 db.commit()
             except Exception:
                 db.rollback()
+    except OperationalError as e:
+        log.warning("Scheduler: DB unavailable: %s", e)
+    except Exception as e:
+        log.exception("Scheduler: unexpected error: %s", e)
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
 
 def start_scheduler():
     scheduler.add_job(dispatch_reminders, "interval", seconds=30, max_instances=1, coalesce=True)
