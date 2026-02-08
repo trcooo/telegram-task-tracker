@@ -21,3 +21,7 @@ npm -w apps/web run dev
 - Добавь переменные окружения из `.env.example`
 - Railway будет использовать `railway.toml`
 - `start:railway` применит миграции и поднимет сервер
+
+
+## Примечание про конфиги
+- В `apps/web` используется `type: module`, поэтому PostCSS/Tailwind конфиги должны быть `.cjs` (CommonJS): `postcss.config.cjs`, `tailwind.config.cjs`.
