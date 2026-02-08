@@ -10,6 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 RUN python -c "import app.main; print('IMPORT_OK')"
-EXPOSE 3000 8080
+EXPOSE 8080 3000
 
 CMD ["python", "-m", "app.start"]

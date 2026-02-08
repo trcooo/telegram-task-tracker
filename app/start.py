@@ -1,36 +1,54 @@
 import os
-import threading
-import uvicorn
+import sys
+import subprocess
+import signal
+from typing import List
 
-def _run(app, port: int, main: bool):
-    config = uvicorn.Config(
-        app,
-        host="0.0.0.0",
-        port=port,
-        log_level="info",
-        proxy_headers=True,
-        forwarded_allow_ips="*",
-    )
-    server = uvicorn.Server(config)
-
-    if not main:
-        # Avoid signal handlers in background thread
-        server.install_signal_handlers = lambda: None  # type: ignore
-
-    server.run()
+def uvicorn_cmd(port: int) -> List[str]:
+    return [
+        sys.executable, "-m", "uvicorn", "app.main:app",
+        "--host", "0.0.0.0",
+        "--port", str(port),
+        "--proxy-headers",
+        "--forwarded-allow-ips", "*",
+        "--log-level", "info",
+    ]
 
 def main():
-    from .main import app  # import here to ensure env is loaded first
+    # Railway typically sets PORT. Some platforms assume 8080.
+    port_env = os.getenv("PORT", "").strip()
+    main_port = int(port_env) if port_env.isdigit() else 8080
 
-    main_port = int(os.getenv("PORT", "3000") or "3000")
-    # Railway/proxies sometimes route to EXPOSEd or default ports; keep compatibility.
-    extra_ports = {3000, 8080} - {main_port}
+    # Always also expose the common alternates, but as separate processes (reliable).
+    extra_ports = sorted({8080, 3000} - {main_port})
 
-    for p in sorted(extra_ports):
-        t = threading.Thread(target=_run, args=(app, p, False), daemon=True)
-        t.start()
+    procs: List[subprocess.Popen] = []
 
-    _run(app, main_port, True)
+    # Sidecar processes: same app, but no scheduler (to avoid duplicates)
+    for p in extra_ports:
+        env = os.environ.copy()
+        env["DISABLE_SCHEDULER"] = "1"
+        proc = subprocess.Popen(uvicorn_cmd(p), env=env)
+        procs.append(proc)
+
+    # Main process in foreground
+    main_env = os.environ.copy()
+    main_env.pop("DISABLE_SCHEDULER", None)
+    main_proc = subprocess.Popen(uvicorn_cmd(main_port), env=main_env)
+
+    def _shutdown(*_):
+        for pr in procs + [main_proc]:
+            try:
+                pr.terminate()
+            except Exception:
+                pass
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+
+    code = main_proc.wait()
+    _shutdown()
+    raise SystemExit(code)
 
 if __name__ == "__main__":
     main()

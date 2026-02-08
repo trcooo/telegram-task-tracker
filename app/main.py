@@ -52,8 +52,12 @@ def on_startup():
     except Exception as e:
         log.exception("DB init failed on startup: %s", e)
 
-    # Start scheduler only if BOT_TOKEN is present
+    # Start scheduler only if BOT_TOKEN is present AND not disabled for sidecar ports
     try:
+        import os
+        if os.getenv("DISABLE_SCHEDULER") == "1":
+            log.warning("Scheduler disabled for this process (sidecar port).")
+            return
         if (settings.BOT_TOKEN or "").strip():
             start_scheduler()
         else:
@@ -62,6 +66,7 @@ def on_startup():
         log.exception("Scheduler start failed: %s", e)
 
 # API routers
+
 app.include_router(auth_router)
 app.include_router(me_router)
 app.include_router(tasks_router)
