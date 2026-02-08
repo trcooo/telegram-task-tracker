@@ -33,3 +33,9 @@ uvicorn app.main:app --reload --port 3000
 ## Почему у тебя падал билд в Node
 Ошибка была из-за `postcss.config.js` при `"type":"module"`.
 В этой версии Node build вообще не нужен.
+
+
+## Railway: если healthcheck не проходит
+- Dockerfile запускает uvicorn на `${PORT:-3000}` (Railway требует слушать именно PORT)
+- `/health` не зависит от базы данных (для DB проверки есть `/health/db`)
+- `DATABASE_URL` формата `postgresql://...` автоматически нормализуется под psycopg3
