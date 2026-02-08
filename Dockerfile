@@ -1,23 +1,16 @@
-FROM node:20-alpine AS deps
+FROM python:3.11-slim
+
 WORKDIR /app
-COPY package.json package-lock.json* ./
-COPY apps ./apps
-RUN npm install
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-FROM deps AS build
-WORKDIR /app
-RUN npm run build
+# system deps for psycopg + ssl
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential libpq-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 
-FROM node:20-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=build /app/apps/api/dist ./apps/api/dist
-COPY --from=build /app/apps/web/dist ./apps/web/dist
-COPY --from=build /app/apps/api/prisma ./apps/api/prisma
-COPY --from=build /app/apps/api/package.json ./apps/api/package.json
-COPY package.json ./package.json
+COPY . /app
 
-EXPOSE 3000
-CMD ["npm", "run", "start:railway"]
+EXPOSE 8080
+CMD ["/app/start.sh"]
