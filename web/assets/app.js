@@ -287,6 +287,27 @@ function render(){
   document.querySelectorAll(".tab").forEach(btn=>{
     btn.classList.toggle("active", btn.dataset.tab === state.tab);
   });
+
+// Top header (matches the iOS-style design reference)
+const titleMap = {
+  inbox: "Inbox",
+  calendar: "Calendar",
+  schedule: "Schedule",
+  matrix: "Priority Matrix",
+  reminders: "Reminder Center",
+};
+const titleEl = document.getElementById("topTitle");
+const metaEl = document.getElementById("topMeta");
+if (titleEl) titleEl.textContent = titleMap[state.tab] || "Productivity";
+if (metaEl) {
+  const d = state.selectedDate || new Date();
+  const pretty = d.toLocaleDateString("ru-RU", { weekday: "short", month: "short", day: "numeric" });
+  if (state.tab === "calendar") metaEl.textContent = d.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+  else if (state.tab === "schedule") metaEl.textContent = `План на ${pretty}`;
+  else if (state.tab === "matrix") metaEl.textContent = `Eisenhower • ${pretty}`;
+  else if (state.tab === "reminders") metaEl.textContent = "Ближайшие напоминания";
+  else metaEl.textContent = `Сегодня • ${pretty}`;
+}
   if (state.tab === "inbox") renderInbox();
   if (state.tab === "calendar") renderCalendar();
   if (state.tab === "schedule") renderSchedule();
@@ -316,6 +337,7 @@ function taskRow(t){
   row.className = "task";
   row.dataset.id = t.id;
   row.draggable = true; // desktop fallback
+  const listNameSafe = t.list_id ? escapeHtml((state.lists.find(l=>l.id===t.list_id)||{}).title || "List") : "";
   row.innerHTML = `
     <div class="task__dot"></div>
     <div class="drag" title="Drag">⋮⋮</div>
@@ -324,7 +346,8 @@ function taskRow(t){
       <div class="task__meta">
         ${t.time ? `<span class="pill pill--time">${t.time}</span>` : ""}
         ${t.date ? `<span class="pill">${t.date}</span>` : ""}
-        ${t.list_id ? `<span class="pill pill--list">List</span>` : ""}
+        ${t.priority ? `<span class="pill pill--pri">P${t.priority}</span>` : ""}
+        ${t.list_id ? `<span class="pill pill--list">${listNameSafe}</span>` : ""}
         ${Array.isArray(t.tags) ? t.tags.slice(0,2).map(tag=>`<span class="pill pill--tag">#${escapeHtml(tag)}</span>`).join("") : ""}
       </div>
     </div>
