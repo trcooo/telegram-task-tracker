@@ -88,7 +88,7 @@ def on_startup():
     except Exception as e:
         log.exception("Scheduler start failed: %s", e)
 
-app.include_router(auth_router)app.include_router(auth_router)
+app.include_router(auth_router)
 app.include_router(me_router)
 app.include_router(tasks_router)
 app.include_router(reminders_router)
