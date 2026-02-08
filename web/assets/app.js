@@ -17,6 +17,107 @@ const state = {
   tags: [],
 };
 
+// Lightweight mobile drag (HTML5 drag&drop is unreliable inside Telegram WebView)
+const dragState = {
+  active: false,
+  taskId: null,
+  origin: null,
+  ghost: null,
+  offsetX: 0,
+  offsetY: 0,
+};
+
+function startMobileDrag(taskId, origin, ev){
+  dragState.active = true;
+  dragState.taskId = taskId;
+  dragState.origin = origin;
+
+  const rect = ev.currentTarget.getBoundingClientRect();
+  dragState.offsetX = ev.clientX - rect.left;
+  dragState.offsetY = ev.clientY - rect.top;
+
+  const ghost = document.createElement("div");
+  ghost.className = "task";
+  ghost.style.position = "fixed";
+  ghost.style.left = `${ev.clientX - dragState.offsetX}px`;
+  ghost.style.top = `${ev.clientY - dragState.offsetY}px`;
+  ghost.style.width = `${Math.min(320, rect.width)}px`;
+  ghost.style.zIndex = "9999";
+  ghost.style.pointerEvents = "none";
+  ghost.style.opacity = "0.92";
+  ghost.style.transform = "scale(1.02)";
+  ghost.innerHTML = `<div class="task__dot"></div><div class="task__body"><div class="task__title">Moving…</div><div class="task__meta"><span class="pill">Drop</span></div></div>`;
+  document.body.appendChild(ghost);
+  dragState.ghost = ghost;
+  haptic("selection");
+}
+
+function moveMobileDrag(ev){
+  if (!dragState.active || !dragState.ghost) return;
+  dragState.ghost.style.left = `${ev.clientX - dragState.offsetX}px`;
+  dragState.ghost.style.top = `${ev.clientY - dragState.offsetY}px`;
+}
+
+async function endMobileDrag(ev){
+  if (!dragState.active) return;
+  const taskId = dragState.taskId;
+  const el = document.elementFromPoint(ev.clientX, ev.clientY);
+  const zone = el?.closest?.("[data-dropzone]");
+
+  // cleanup
+  dragState.active = false;
+  dragState.taskId = null;
+  dragState.origin = null;
+  if (dragState.ghost) {
+    dragState.ghost.remove();
+    dragState.ghost = null;
+  }
+
+  if (!zone || !taskId) return;
+
+  const type = zone.getAttribute("data-dropzone");
+  if (type === "day") {
+    const dateStr = zone.getAttribute("data-date");
+    if (dateStr) {
+      await updateTask(Number(taskId), { date: dateStr });
+      haptic("medium");
+    }
+    return;
+  }
+
+  if (type === "schedule") {
+    const dateStr = zone.getAttribute("data-date");
+    const bounds = zone.getBoundingClientRect();
+    const y = Math.max(0, Math.min(bounds.height, ev.clientY - bounds.top));
+    // 06:00 is 0, 1px = 1 minute (see CSS)
+    const minutesFrom6 = Math.round(y);
+    const total = 6*60 + minutesFrom6;
+    const hh = String(Math.floor(total/60)).padStart(2,"0");
+    const mm = String(total%60).padStart(2,"0");
+    const start = `${hh}:${mm}`;
+    const endTotal = total + 30;
+    const eh = String(Math.floor(endTotal/60)).padStart(2,"0");
+    const em = String(endTotal%60).padStart(2,"0");
+    const end = `${eh}:${em}`;
+    await updateTask(Number(taskId), { date: dateStr || fmtDate(state.selectedDate), time: start, all_day: false });
+    // store start/end as ISO for timeline positioning
+    await updateTask(Number(taskId), { start_at: `${(dateStr||fmtDate(state.selectedDate))}T${start}:00`, end_at: `${(dateStr||fmtDate(state.selectedDate))}T${end}:00` });
+    haptic("medium");
+    return;
+  }
+
+  if (type === "quadrant") {
+    const q = zone.getAttribute("data-q");
+    if (q) {
+      await updateTask(Number(taskId), { matrix_quadrant: q });
+      haptic("medium");
+    }
+  }
+}
+
+window.addEventListener("pointermove", moveMobileDrag, {passive:true});
+window.addEventListener("pointerup", endMobileDrag);
+
 const elMain = document.getElementById("main");
 const elQuick = document.getElementById("quickInput");
 const elAdd = document.getElementById("addBtn");
@@ -214,8 +315,10 @@ function taskRow(t){
   const row = document.createElement("div");
   row.className = "task";
   row.dataset.id = t.id;
+  row.draggable = true; // desktop fallback
   row.innerHTML = `
     <div class="task__dot"></div>
+    <div class="drag" title="Drag">⋮⋮</div>
     <div class="task__body">
       <div class="task__title">${escapeHtml(t.title)}</div>
       <div class="task__meta">
@@ -226,6 +329,42 @@ function taskRow(t){
       </div>
     </div>
   `;
+
+  // Desktop drag
+  row.addEventListener("dragstart", (e)=>{
+    try {
+      e.dataTransfer.setData("text/taskId", String(t.id));
+      e.dataTransfer.setData("text/from", "inbox");
+      e.dataTransfer.effectAllowed = "move";
+    } catch {}
+  });
+
+  // Mobile drag via handle
+  const handle = row.querySelector(".drag");
+  handle.addEventListener("pointerdown", (e)=>{
+    e.preventDefault();
+    e.stopPropagation();
+    startMobileDrag(String(t.id), "task", e);
+  });
+
+  // Desktop drag
+  row.addEventListener("dragstart", (e)=>{
+    try {
+      e.dataTransfer.setData("text/taskId", String(t.id));
+      e.dataTransfer.setData("text/from", "inbox");
+    } catch {}
+  });
+
+  // Mobile drag handle
+  const dragHandle = row.querySelector(".drag");
+  if (dragHandle){
+    dragHandle.addEventListener("pointerdown", (e)=>{
+      // prevent swipe handling
+      e.stopPropagation();
+      e.preventDefault();
+      startMobileDrag(String(t.id), "inbox", e);
+    });
+  }
 
   // Swipe actions (mobile)
   let startX = 0, curX = 0, dragging = false;
@@ -290,6 +429,42 @@ function scheduleSheetContent(task){
   return wrap;
 }
 
+function taskDetailsSheet(task){
+  const wrap = document.createElement("div");
+  wrap.className = "list";
+  const head = document.createElement("div");
+  head.className = "hint";
+  head.textContent = "Quick actions";
+  wrap.appendChild(head);
+
+  const actions = [
+    {label:"Set Q1", patch:{matrix_quadrant:"Q1"}},
+    {label:"Set Q2", patch:{matrix_quadrant:"Q2"}},
+    {label:"Set Q3", patch:{matrix_quadrant:"Q3"}},
+    {label:"Set Q4", patch:{matrix_quadrant:"Q4"}},
+    {label:"Clear quadrant", patch:{matrix_quadrant:null}},
+  ];
+  actions.forEach(a=>{
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.style.textAlign = "left";
+    b.textContent = a.label;
+    b.addEventListener("click", async ()=>{
+      await updateTask(task.id, a.patch);
+      closeSheet();
+    });
+    wrap.appendChild(b);
+  });
+  const del = document.createElement("button");
+  del.className = "chip";
+  del.style.textAlign="left";
+  del.style.borderColor="rgba(239,68,68,0.25)";
+  del.textContent = "Delete";
+  del.addEventListener("click", async ()=>{ await deleteTask(task.id); closeSheet(); });
+  wrap.appendChild(del);
+  return wrap;
+}
+
 function renderCalendar(){
   const d = state.selectedDate;
   const start = startOfMonth(d);
@@ -319,6 +494,8 @@ function renderCalendar(){
     cell.className = "day";
     if (!day){ cell.style.opacity="0.35"; grid.appendChild(cell); return; }
     const dateStr = fmtDate(day);
+    cell.setAttribute("data-dropzone","day");
+    cell.setAttribute("data-date", dateStr);
     const items = state.tasks.filter(t=>t.date === dateStr && !t.done);
     cell.innerHTML = `<div class="day__num">${day.getDate()}</div>`;
     items.slice(0,2).forEach(t=>{
@@ -329,6 +506,10 @@ function renderCalendar(){
       pill.addEventListener("dragstart", (e)=>{
         e.dataTransfer.setData("text/taskId", String(t.id));
         e.dataTransfer.setData("text/from", "calendar");
+      });
+      pill.addEventListener("pointerdown", (e)=>{
+        // quick mobile drag
+        startMobileDrag(String(t.id), "calendar", e);
       });
       cell.appendChild(pill);
     });
@@ -370,38 +551,239 @@ function renderSchedule(){
   const card = document.createElement("div");
   card.className="card";
   const dateStr = fmtDate(state.selectedDate);
+
   card.innerHTML = `
     <div class="section-title">
       <div>Schedule <small>${dateStr}</small></div>
-      <small>drag from Calendar</small>
+      <small>06:00–22:00</small>
     </div>
-    <div class="hint">Tip: drop tasks here to auto-schedule at 09:00</div>
-    <div class="list" id="plan"></div>
+    <div class="hint">Drag from Inbox/Calendar into the timeline. Resize by dragging the handle at the bottom of a block.</div>
+
+    <div class="section-title" style="margin-top:10px;">
+      <div>Unscheduled <small>today</small></div>
+      <small>drop into time</small>
+    </div>
+    <div class="list" id="unscheduled"></div>
+
+    <div style="height:10px"></div>
+    <div class="timeline" id="timeline">
+      <div class="timeline__inner">
+        <div class="time-gutter" id="gutter"></div>
+        <div class="timeline-lane" id="lane" data-dropzone="schedule" data-date="${dateStr}"></div>
+      </div>
+    </div>
   `;
   elMain.innerHTML="";
   elMain.appendChild(card);
 
-  const plan = card.querySelector("#plan");
-  const dayTasks = state.tasks.filter(t=>t.date===dateStr && !t.done).sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
-  if (dayTasks.length===0){
-    const empty = document.createElement("div");
-    empty.className="task";
-    empty.innerHTML = `<div class="task__body"><div class="task__title">Drop from Calendar or add via input</div><div class="task__meta">No tasks scheduled</div></div>`;
-    plan.appendChild(empty);
+  // Unscheduled list (date==selected and no start_at)
+  const uns = card.querySelector("#unscheduled");
+  const todayUn = state.tasks
+    .filter(t=>t.date===dateStr && !t.done && !t.start_at && !t.time)
+    .sort((a,b)=> (b.priority||0)-(a.priority||0));
+  if (todayUn.length===0){
+    const e = document.createElement("div");
+    e.className="task";
+    e.innerHTML = `<div class="task__body"><div class="task__title">Nothing here</div><div class="task__meta">Add a task or drop from Calendar</div></div>`;
+    uns.appendChild(e);
   } else {
-    dayTasks.forEach(t=>plan.appendChild(taskRow(t)));
+    todayUn.forEach(t=>uns.appendChild(taskRow(t)));
   }
+
+  // Timeline hour labels
+  const gutter = card.querySelector("#gutter");
+  for (let h=6; h<=22; h++){
+    const y = (h-6)*60;
+    const lab = document.createElement("div");
+    lab.className = "time-label";
+    lab.style.top = `${y}px`;
+    lab.textContent = `${String(h).padStart(2,"0")}:00`;
+    gutter.appendChild(lab);
+  }
+
+  // Blocks
+  const lane = card.querySelector("#lane");
+  const dayTasks = state.tasks.filter(t=>t.date===dateStr && !t.done);
+
+  function taskToBlockTimes(t){
+    // Prefer start_at/end_at. Else use time + default 30min.
+    let start = t.start_at ? new Date(t.start_at) : null;
+    let end = t.end_at ? new Date(t.end_at) : null;
+    if (!start && t.time){
+      start = new Date(`${dateStr}T${t.time}:00`);
+      end = new Date(start.getTime() + 30*60*1000);
+    }
+    if (!start) return null;
+    if (!end) end = new Date(start.getTime() + 30*60*1000);
+    return {start, end};
+  }
+
+  dayTasks.forEach(t=>{
+    const times = taskToBlockTimes(t);
+    if (!times) return;
+    const sMin = times.start.getHours()*60 + times.start.getMinutes();
+    const eMin = times.end.getHours()*60 + times.end.getMinutes();
+    const top = Math.max(0, sMin - 6*60);
+    const height = Math.max(24, (eMin - sMin));
+
+    const block = document.createElement("div");
+    block.className = "block";
+    block.draggable = true;
+    block.dataset.id = t.id;
+    block.dataset.kind = t.kind || "task";
+    block.style.top = `${top}px`;
+    block.style.height = `${height}px`;
+    const rangeLabel = `${String(times.start.getHours()).padStart(2,"0")}:${String(times.start.getMinutes()).padStart(2,"0")}–${String(times.end.getHours()).padStart(2,"0")}:${String(times.end.getMinutes()).padStart(2,"0")}`;
+    block.innerHTML = `
+      <div class="block__title">${escapeHtml(t.title)}</div>
+      <div class="block__meta"><span class="pill pill--time">${rangeLabel}</span>${t.priority?`<span class="pill">P${t.priority}</span>`:""}</div>
+      <div class="resize-handle" title="Resize"></div>
+    `;
+
+    // desktop drag
+    block.addEventListener("dragstart", (e)=>{
+      try {
+        e.dataTransfer.setData("text/taskId", String(t.id));
+        e.dataTransfer.setData("text/from", "schedule");
+      } catch {}
+    });
+    // mobile drag
+    block.addEventListener("pointerdown", (e)=>{
+      // allow scroll unless user drags a bit
+      if (e.target?.classList?.contains("resize-handle")) return;
+      if (e.pointerType === "touch") {
+        startMobileDrag(String(t.id), "schedule", e);
+      }
+    });
+
+    // Resize (mobile + desktop)
+    const handle = block.querySelector(".resize-handle");
+    let resizing = false;
+    let startY = 0;
+    let startHeight = 0;
+    handle.addEventListener("pointerdown", (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      resizing = true;
+      startY = e.clientY;
+      startHeight = height;
+      handle.setPointerCapture(e.pointerId);
+      haptic("selection");
+    });
+    handle.addEventListener("pointermove", (e)=>{
+      if (!resizing) return;
+      const dy = e.clientY - startY;
+      const newH = Math.max(24, Math.round((startHeight + dy) / 15) * 15);
+      block.style.height = `${newH}px`;
+    });
+    handle.addEventListener("pointerup", async (e)=>{
+      if (!resizing) return;
+      resizing = false;
+      const newH = parseInt(block.style.height,10);
+      const newEndMinutes = (sMin + newH);
+      const eh = String(Math.floor(newEndMinutes/60)).padStart(2,"0");
+      const em = String(newEndMinutes%60).padStart(2,"0");
+      await updateTask(t.id, { end_at: `${dateStr}T${eh}:${em}:00` });
+      haptic("medium");
+    });
+
+    lane.appendChild(block);
+  });
+
+  // Drop support (desktop)
+  lane.addEventListener("dragover", (e)=> e.preventDefault());
+  lane.addEventListener("drop", async (e)=>{
+    e.preventDefault();
+    const id = Number(e.dataTransfer.getData("text/taskId"));
+    if (!id) return;
+    const bounds = lane.getBoundingClientRect();
+    const y = Math.max(0, Math.min(bounds.height, e.clientY - bounds.top));
+    const minutesFrom6 = Math.round(y/15)*15;
+    const total = 6*60 + minutesFrom6;
+    const hh = String(Math.floor(total/60)).padStart(2,"0");
+    const mm = String(total%60).padStart(2,"0");
+    const start = `${hh}:${mm}`;
+    const endTotal = total + 30;
+    const eh = String(Math.floor(endTotal/60)).padStart(2,"0");
+    const em = String(endTotal%60).padStart(2,"0");
+    const end = `${eh}:${em}`;
+    await updateTask(id, { date: dateStr, time: start, start_at: `${dateStr}T${start}:00`, end_at: `${dateStr}T${end}:00` });
+    haptic("medium");
+  });
 }
 
 function renderMatrix(){
   const card = document.createElement("div");
   card.className="card";
   card.innerHTML = `
-    <div class="section-title"><div>Priority Matrix <small>Eisenhower</small></div><small>tap to set</small></div>
-    <div class="hint">MVP: tap a task in Inbox → open sheet → set quadrant</div>
+    <div class="section-title"><div>Priority Matrix <small>Eisenhower</small></div><small>drag tasks</small></div>
+    <div class="hint">Drag tasks into quadrants. Works on phone (custom drag) + desktop (HTML5 DnD).</div>
+    <div class="matrix" id="matrix">
+      <div class="quad" data-dropzone="quadrant" data-q="Q1">
+        <div class="quad__title">Urgent + Important <span class="quad__hint">Q1</span></div>
+        <div class="quad__list" id="q1"></div>
+      </div>
+      <div class="quad" data-dropzone="quadrant" data-q="Q2">
+        <div class="quad__title">Not urgent + Important <span class="quad__hint">Q2</span></div>
+        <div class="quad__list" id="q2"></div>
+      </div>
+      <div class="quad" data-dropzone="quadrant" data-q="Q3">
+        <div class="quad__title">Urgent + Not important <span class="quad__hint">Q3</span></div>
+        <div class="quad__list" id="q3"></div>
+      </div>
+      <div class="quad" data-dropzone="quadrant" data-q="Q4">
+        <div class="quad__title">Not urgent + Not important <span class="quad__hint">Q4</span></div>
+        <div class="quad__list" id="q4"></div>
+      </div>
+    </div>
   `;
   elMain.innerHTML="";
   elMain.appendChild(card);
+
+  const items = state.tasks.filter(t=>!t.done);
+  const byQ = {
+    Q1: items.filter(t=>t.matrix_quadrant === "Q1"),
+    Q2: items.filter(t=>t.matrix_quadrant === "Q2"),
+    Q3: items.filter(t=>t.matrix_quadrant === "Q3"),
+    Q4: items.filter(t=>t.matrix_quadrant === "Q4"),
+    NONE: items.filter(t=>!t.matrix_quadrant),
+  };
+
+  const mount = (qid, arr)=>{
+    const box = card.querySelector(`#${qid}`);
+    box.innerHTML = "";
+    arr.slice(0,6).forEach(t=>{
+      const m = document.createElement("div");
+      m.className = "mini";
+      m.textContent = t.title;
+      m.draggable = true;
+      m.addEventListener("dragstart", (e)=>{
+        try { e.dataTransfer.setData("text/taskId", String(t.id)); } catch {}
+      });
+      m.addEventListener("pointerdown", (e)=>{
+        startMobileDrag(String(t.id), "matrix", e);
+      });
+      m.addEventListener("click", ()=> openSheet("Task", taskDetailsSheet(t)));
+      box.appendChild(m);
+    });
+  };
+  mount("q1", byQ.Q1);
+  mount("q2", byQ.Q2);
+  mount("q3", byQ.Q3);
+  mount("q4", byQ.Q4);
+
+  // desktop drop handling
+  card.querySelectorAll(".quad").forEach(q=>{
+    q.addEventListener("dragover", (e)=> e.preventDefault());
+    q.addEventListener("drop", async (e)=>{
+      e.preventDefault();
+      const id = Number(e.dataTransfer.getData("text/taskId"));
+      const quad = q.getAttribute("data-q");
+      if (!id || !quad) return;
+      await updateTask(id, { matrix_quadrant: quad });
+      haptic("medium");
+    });
+  });
 }
 
 async function renderReminders(){
