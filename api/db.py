@@ -48,35 +48,85 @@ def _migrate_schema() -> None:
     is_postgres = dialect.startswith("postgres")
     is_sqlite = dialect.startswith("sqlite")
 
-    def add_missing_columns(table: str, ddl_by_col: dict, backfill_sql: list[str] | None = None):
+    def _col_type(table: str, col: str) -> str | None:
         if not insp.has_table(table):
+            return None
+        for c in insp.get_columns(table):
+            if c.get("name") == col:
+                return str(c.get("type")).lower()
+        return None
+
+    def _pg_constraint_exists(conn, conname: str) -> bool:
+        try:
+            row = conn.execute(text("SELECT 1 FROM pg_constraint WHERE conname = :n LIMIT 1"), {"n": conname}).first()
+            return row is not None
+        except Exception:
+            return False
+
+    def _ensure_varchar(table: str, col: str) -> None:
+        """If an existing Postgres column is non-text, convert it to VARCHAR.
+
+        Fixes legacy Railway schemas where Telegram user_id/users.id were created as INTEGER.
+        """
+        if not is_postgres:
             return
-        existing = {c["name"] for c in insp.get_columns(table)}
-        missing = [c for c in ddl_by_col.keys() if c not in existing]
-        if not missing and not backfill_sql:
+        t = _col_type(table, col)
+        if not t:
+            return
+        # already some sort of character type -> ok
+        if ("char" in t) or ("text" in t) or ("varchar" in t):
             return
 
         with engine.begin() as conn:
-            # Add columns
-            for col in missing:
-                ddl = ddl_by_col[col]
-                # Postgres prefers JSONB
-                if is_postgres and col in ("tags", "subtasks"):
-                    ddl = "JSONB"
-                # SQLite doesn't support IF NOT EXISTS for ADD COLUMN in many environments
-                if is_sqlite:
-                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'))
-                else:
-                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {ddl}'))
+            # Drop common FK names first (best-effort) to avoid type-change failures.
+            for con in (f"{table}_{col}_fkey", f"fk_{table}_{col}"):
+                try:
+                    conn.execute(text(f'ALTER TABLE "{table}" DROP CONSTRAINT IF EXISTS "{con}"'))
+                except Exception:
+                    pass
 
-            # Backfill (optional, best-effort)
-            if backfill_sql:
-                for stmt in backfill_sql:
+            # Convert
+            try:
+                conn.execute(text(f'ALTER TABLE "{table}" ALTER COLUMN "{col}" TYPE VARCHAR USING "{col}"::VARCHAR'))
+            except Exception:
+                # Fallback cast
+                try:
+                    conn.execute(text(f'ALTER TABLE "{table}" ALTER COLUMN "{col}" TYPE VARCHAR USING "{col}"::TEXT'))
+                except Exception:
+                    pass
+
+    def _ensure_user_fks() -> None:
+        """Recreate user foreign keys (best-effort) after type fixes."""
+        if not is_postgres:
+            return
+        with engine.begin() as conn:
+            # tasks.user_id -> users.id
+            if insp.has_table("tasks") and insp.has_table("users"):
+                con = "tasks_user_id_fkey"
+                if not _pg_constraint_exists(conn, con):
                     try:
-                        conn.execute(text(stmt))
+                        conn.execute(text('ALTER TABLE "tasks" ADD CONSTRAINT "tasks_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE'))
                     except Exception:
-                        # ignore backfill errors (e.g. column doesn't exist in some legacy schemas)
                         pass
+            # lists.user_id -> users.id
+            if insp.has_table("lists") and insp.has_table("users"):
+                con = "lists_user_id_fkey"
+                if not _pg_constraint_exists(conn, con):
+                    try:
+                        conn.execute(text('ALTER TABLE "lists" ADD CONSTRAINT "lists_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE'))
+                    except Exception:
+                        pass
+
+    # ---- legacy type fixes (Railway/Postgres) ----
+    # Older releases used INTEGER for user ids; current app uses string ids everywhere.
+    _ensure_varchar("tasks", "user_id")
+    _ensure_varchar("lists", "user_id")
+    _ensure_varchar("users", "id")
+
+    # refresh inspector after any ALTER TABLE
+    insp = inspect(engine)
+    _ensure_user_fks()
+    insp = inspect(engine)
 
     # ---- tasks ----
     add_missing_columns("tasks", {
