@@ -1,5 +1,4 @@
 import re
-import dayjs_like
 from datetime import datetime, timedelta, date
 
 WEEKDAYS = {
