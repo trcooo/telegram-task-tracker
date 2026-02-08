@@ -9,10 +9,10 @@
   <!-- Telegram WebApp SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <link rel="manifest" href="/manifest.json?v=1770550367">
+  <link rel="manifest" href="/manifest.json?v=1770554238">
   <link rel="icon" href="/static/assets/icons/icon-192.png">
-  <link rel="preload" href="/style.css?v=1770550367" as="style">
-  <link rel="stylesheet" href="/style.css?v=1770550367" />
+  <link rel="preload" href="/style.css?v=1770554238" as="style">
+  <link rel="stylesheet" href="/style.css?v=1770554238" />
 </head>
 
 <body>
@@ -61,13 +61,7 @@
           <button class="pillBtn" id="exportBtn">Экспорт</button>
         </div>
 
-        <div class="chipRow" id="smartChips">
-          <button class="chip isActive" data-filter="inbox">Входящие</button>
-          <button class="chip" data-filter="today">Сегодня</button>
-          <button class="chip" data-filter="upcoming">Предстоящие</button>
-          <button class="chip" data-filter="overdue">Просрочено</button>
-          <button class="chip" data-filter="done">Завершено</button>
-        </div>
+        <div class="chipRow" id="smartChips"></div>
 
         <div class="listHeader">
           <div class="listTitle" id="listTitle">Входящие</div>
@@ -110,7 +104,8 @@
             <button class="pillBtn" id="addTaskForDayBtn">+ Задача</button>
           </div>
 
-          <div class="taskList compact" id="dayTaskList"></div>
+          <div class="timeline" id="dayTimeline"></div>
+          <div class="taskList compact" id="dayTaskList" style="display:none"></div>
           <div class="dayEmpty" id="dayEmpty">
             <div class="emptyIcon">📅</div>
             <div class="emptyTitle">Нет задач на этот день</div>
@@ -150,9 +145,17 @@
       <section class="screen" id="screenMenu">
         <div class="menuCard">
           <div class="menuTitle">Меню</div>
-          <div class="menuMeta">Build <span id="buildNum">1770550367</span></div>
+          <div class="menuMeta">Build <span id="buildNum">1770554238</span></div>
           <div class="menuUser" id="menuUserName">Гость</div>
+                <div class="menuListsCard">
+          <div class="menuSectionHeader">
+            <div class="menuSectionBig">Планировщик</div>
+            <button class="miniBtn" id="newListBtn">+ список</button>
+          </div>
+          <div id="menuLists" class="menuLists"></div>
         </div>
+
+</div>
 
         <div class="menuList">
           <button class="menuItem" id="menuSync">
@@ -265,10 +268,47 @@
               <input class="input" type="date" id="taskDateInput" />
             </label>
             <label class="field">
-              <div class="fieldName">Время</div>
+              <div class="fieldName">Начало</div>
               <input class="input" type="time" id="taskTimeInput" />
             </label>
           </div>
+
+          <div class="row2">
+            <label class="field">
+              <div class="fieldName">Окончание</div>
+              <input class="input" type="time" id="taskEndTimeInput" placeholder="—" />
+            </label>
+            <label class="field">
+              <div class="fieldName">Длительность (мин)</div>
+              <input class="input" type="number" min="5" step="5" id="taskDurationInput" placeholder="30" />
+            </label>
+          </div>
+
+          <div class="row2">
+            <label class="field">
+              <div class="fieldName">Тип</div>
+              <select class="select" id="taskKindSelect">
+                <option value="task" selected>Задача</option>
+                <option value="meeting">Встреча</option>
+                <option value="study">Учёба</option>
+                <option value="other">Другое</option>
+              </select>
+            </label>
+            <label class="field">
+              <div class="fieldName">Список</div>
+              <select class="select" id="taskListSelect"></select>
+            </label>
+          </div>
+
+          <label class="field">
+            <div class="fieldName">Теги</div>
+            <input class="input" id="taskTagsInput" placeholder="#работа #спорт" />
+          </label>
+
+          <label class="field">
+            <div class="fieldName">Место</div>
+            <input class="input" id="taskLocationInput" placeholder="Офис / Zoom / Дом" />
+          </label>
 
           <div class="row2">
             <label class="field">
@@ -299,6 +339,6 @@
     <div class="toast" id="toast" aria-live="polite"></div>
   </div>
 
-  <script src="/app.js?v=1770550367"></script>
+  <script src="/app.js?v=1770554238"></script>
 </body>
 </html>

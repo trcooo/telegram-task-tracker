@@ -36,6 +36,14 @@ class Task(Base):
     priority = Column(String(20), default="medium", nullable=False)  # high|medium|low
     due_at = Column(DateTime, nullable=True)  # UTC naive
 
+    # schedule (day planner)
+    start_at = Column(DateTime, nullable=True)  # UTC naive
+    end_at = Column(DateTime, nullable=True)    # UTC naive
+    duration_minutes = Column(Integer, nullable=True)
+    kind = Column(String(20), default='task', nullable=False)  # task|meeting|study|other
+    location = Column(String(200), default='', nullable=False)
+    tags = Column(Text, default='[]', nullable=False)  # JSON array of strings
+
     completed = Column(Boolean, default=False, nullable=False)
 
     reminder_enabled = Column(Boolean, default=True, nullable=False)
@@ -46,3 +54,5 @@ class Task(Base):
 
 Index("ix_tasks_user_due", Task.user_id, Task.due_at)
 Index("ix_tasks_user_list", Task.user_id, Task.list_id)
+
+Index("ix_tasks_user_start", Task.user_id, Task.start_at)

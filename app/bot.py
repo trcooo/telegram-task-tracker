@@ -9,6 +9,7 @@ from aiogram.utils import executor
 
 from .database import SessionLocal
 from .models import Task
+from sqlalchemy.sql import func
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("taskflow-bot")
@@ -66,14 +67,15 @@ async def reminders_loop():
                     .filter(Task.completed == False)  # noqa
                     .filter(Task.reminder_enabled == True)  # noqa
                     .filter(Task.reminder_sent == False)  # noqa
-                    .filter(Task.due_at.isnot(None))
-                    .filter(Task.due_at >= frm)
-                    .filter(Task.due_at < to)
+                    .filter(func.coalesce(getattr(Task, 'start_at', None), Task.due_at).isnot(None))
+                    .filter(func.coalesce(getattr(Task, 'start_at', None), Task.due_at) >= frm)
+                    .filter(func.coalesce(getattr(Task, 'start_at', None), Task.due_at) < to)
                     .all()
                 )
                 for t in tasks:
                     try:
-                        due_txt = t.due_at.strftime("%d.%m %H:%M") if t.due_at else ""
+                        when = getattr(t, 'start_at', None) or t.due_at
+                        due_txt = when.strftime("%d.%m %H:%M") if t.due_at else ""
                         await bot.send_message(
                             t.user_id,
                             f"⏰ <b>Напоминание</b> (15 минут)\n"

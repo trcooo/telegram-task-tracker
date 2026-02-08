@@ -1,5 +1,5 @@
 /* TaskFlow — TickTick iOS inspired (Telegram Mini App) */
-/* Build: 1770550367 */
+/* Build: 1770554238 */
 
 (() => {
   'use strict';
@@ -52,12 +52,15 @@
   const daySheet = el('daySheet');
   const dayTitle = el('dayTitle');
   const dayTaskList = el('dayTaskList');
+  const dayTimeline = el('dayTimeline');
   const dayEmpty = el('dayEmpty');
   const addTaskForDayBtn = el('addTaskForDayBtn');
 
   const menuSync = el('menuSync');
   const menuExport = el('menuExport');
   const menuClearDone = el('menuClearDone');
+  const newListBtn = el('newListBtn');
+  const menuListsHost = el('menuLists');
   const themeSelect = el('themeSelect');
   const tzSelect = el('tzSelect');
 
@@ -68,6 +71,12 @@
   const taskDescInput = el('taskDescInput');
   const taskDateInput = el('taskDateInput');
   const taskTimeInput = el('taskTimeInput');
+  const taskEndTimeInput = el('taskEndTimeInput');
+  const taskDurationInput = el('taskDurationInput');
+  const taskKindSelect = el('taskKindSelect');
+  const taskListSelect = el('taskListSelect');
+  const taskTagsInput = el('taskTagsInput');
+  const taskLocationInput = el('taskLocationInput');
   const taskPrioritySelect = el('taskPrioritySelect');
   const taskRemindSelect = el('taskRemindSelect');
   const saveTaskBtn = el('saveTaskBtn');
@@ -84,12 +93,17 @@
     user: null,
     screen: 'tasks',            // tasks | calendar | matrix | menu
     seg: 'inbox',               // inbox | today | calendar
-    filter: 'inbox',            // inbox | today | upcoming | overdue | done
+    filter: 'smart:today',      // smart:today | smart:next7 | smart:all | smart:overdue | smart:done | list:<id> | tag:<name>
     search: '',
     tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+
+    lists: [],                  // from API (includes Inbox id=0)
+    folders: [],                // client-side only: [{id,name,listIds:[]}]
     tasks: [],
+
     selectedDayISO: null,       // YYYY-MM-DD
     calCursor: new Date(),      // month cursor
+
     editingTaskId: null,
     addingForDayISO: null,
   };
@@ -177,6 +191,18 @@
     return task.due_at || task.dueAt || task.deadline || null;
   }
 
+  function taskStartISO(task) {
+    return task.start_at || task.startAt || task.start || task.scheduled_at || taskDueISO(task);
+  }
+
+  function taskEndISO(task) {
+    return task.end_at || task.endAt || task.end || null;
+  }
+
+  function taskTags(task) {
+    return Array.isArray(task.tags) ? task.tags : [];
+  }
+
   function taskDone(task) {
     return !!(task.is_done ?? task.done ?? task.completed);
   }
@@ -198,7 +224,7 @@
   }
 
   function isOverdue(task) {
-    const due = taskDueISO(task);
+    const due = taskStartISO(task);
     if (!due) return false;
     if (taskDone(task)) return false;
     const dueDate = new Date(due);
@@ -382,7 +408,106 @@
     throw lastErr || new Error('Не удалось загрузить задачи');
   }
 
-  async function createTask(payload) {
+  
+  async function loadMe() {
+    try {
+      const me = await apiFetch('/api/me', { method:'GET' });
+      state.user = me || null;
+      if (menuUserName) menuUserName.textContent = me && me.name ? me.name : 'Гость';
+      return me;
+    } catch (_) {
+      state.user = null;
+      if (menuUserName) menuUserName.textContent = 'Гость';
+      return null;
+    }
+  }
+
+  async function loadLists() {
+    try {
+      const data = await apiFetch('/api/lists', { method:'GET' });
+      if (Array.isArray(data)) {
+        state.lists = data;
+      } else {
+        state.lists = [{id:0,name:'Входящие',color:'#4A90E2'}];
+      }
+      refreshListSelectOptions();
+      refreshMenuLists();
+      return state.lists;
+    } catch (e) {
+      // fallback
+      state.lists = [{id:0,name:'Входящие',color:'#4A90E2'}];
+      refreshListSelectOptions();
+      refreshMenuLists();
+      return state.lists;
+    }
+  }
+
+  function refreshListSelectOptions() {
+    if (!taskListSelect) return;
+    const cur = taskListSelect.value || '0';
+    taskListSelect.innerHTML = '';
+    for (const l of (state.lists || [])) {
+      const opt = document.createElement('option');
+      opt.value = String(l.id);
+      opt.textContent = l.name;
+      taskListSelect.appendChild(opt);
+    }
+    // restore
+    if ([...taskListSelect.options].some(o => o.value === cur)) taskListSelect.value = cur;
+  }
+
+  function refreshMenuLists() {
+    // Menu screen is already present; we will populate its list section if it exists.
+    const host = document.getElementById('menuLists');
+    if (!host) return;
+    host.innerHTML = '';
+
+    // Smart lists
+    const smart = [
+      { id:'smart:today', name:'Сегодня', icon:'📅' },
+      { id:'smart:next7', name:'Следующие 7 дней', icon:'🗓️' },
+      { id:'smart:overdue', name:'Просрочено', icon:'⏰' },
+      { id:'smart:all', name:'Все', icon:'🗂️' },
+      { id:'smart:done', name:'Готово', icon:'✅' },
+    ];
+
+    const addSection = (title, items, isList=false) => {
+      const h = document.createElement('div');
+      h.className = 'menuSectionTitle';
+      h.textContent = title;
+      host.appendChild(h);
+      for (const it of items) {
+        const b = document.createElement('button');
+        b.className = 'menuItem';
+        b.setAttribute('type','button');
+        b.dataset.filter = it.id;
+        b.innerHTML = `<span class="menuIcon">${it.icon || '•'}</span><span class="menuName">${escapeHtml(it.name)}</span>` + (isList ? `<span class="menuDot" style="background:${it.color || '#4A90E2'}"></span>` : '');
+        b.addEventListener('click', () => {
+          state.filter = it.id;
+          setScreen('tasks');
+          refreshAll();
+          haptic('selection');
+        });
+        host.appendChild(b);
+      }
+    };
+
+    addSection('Умные списки', smart, false);
+    addSection('Списки', (state.lists || []).filter(l => l.id !== 0).map(l => ({ id:`list:${l.id}`, name:l.name, icon:'', color:l.color })), true);
+
+    // Tags section (from tasks)
+    const tagSet = new Set();
+    for (const t of (state.tasks || [])) {
+      const tags = Array.isArray(t.tags) ? t.tags : [];
+      tags.forEach(x => tagSet.add(x));
+    }
+    const tags = [...tagSet].sort((a,b)=>a.localeCompare(b,'ru'));
+    if (tags.length) {
+      addSection('Теги', tags.map(t => ({ id:`tag:${t}`, name:'#'+t, icon:'#' })), false);
+    }
+  }
+
+async function createTask(payload) {
     const endpoints = ['/api/tasks', '/tasks', '/api/v1/tasks'];
     let lastErr = null;
     for (const ep of endpoints) {
@@ -394,6 +519,13 @@
       }
     }
     throw lastErr || new Error('Не удалось создать задачу');
+  }
+
+  async function createList(payload) {
+    const data = await apiFetch('/api/lists', { method:'POST', body: JSON.stringify(payload) });
+    return data;
+  }
+
   }
 
   async function updateTask(id, payload) {
@@ -462,52 +594,64 @@
   function getFilteredTasks(filter, search) {
     const q = (search || '').trim().toLowerCase();
     const tz = state.tz;
-    const today = new Date();
 
     let list = state.tasks.slice();
 
     if (q) {
       list = list.filter(t =>
         (taskTitle(t).toLowerCase().includes(q)) ||
-        (taskDesc(t).toLowerCase().includes(q))
+        (taskDesc(t).toLowerCase().includes(q)) ||
+        (taskTags(t).join(' ').toLowerCase().includes(q))
       );
     }
 
-    // Smart filters
-    if (filter === 'done') {
-      list = list.filter(t => taskDone(t));
-    } else if (filter === 'overdue') {
-      list = list.filter(t => isOverdue(t));
-    } else if (filter === 'today') {
-      list = list.filter(t => {
-        const due = taskDueISO(t);
-        if (!due) return false;
-        return sameZonedDate(new Date(due), today, tz) && !taskDone(t);
-      });
-    } else if (filter === 'upcoming') {
-      list = list.filter(t => {
-        const due = taskDueISO(t);
-        if (!due) return false;
-        if (taskDone(t)) return false;
-        const dueD = new Date(due);
-        // after today (zoned)
-        const dueISO = zonedISODateFromUTC(due, tz);
-        const todayISO = zonedISODateFromUTC(new Date().toISOString(), tz);
-        return dueISO > todayISO;
-      });
-    } else if (filter === 'inbox') {
-      // Inbox: not done; either no date or future/today (like TickTick inbox is general list)
+    const todayISO = zonedISODateFromUTC(new Date().toISOString(), tz);
+
+    const isInNextDays = (iso, days) => {
+      if (!iso) return false;
+      const dISO = zonedISODateFromUTC(iso, tz);
+      if (dISO < todayISO) return false;
+      const d0 = parseISODate(todayISO);
+      const d1 = parseISODate(dISO);
+      const diffDays = Math.floor((d1 - d0) / (24*60*60*1000));
+      return diffDays >= 0 && diffDays <= days;
+    };
+
+    // ---- Filter routing ----
+    if (filter.startsWith('list:')) {
+      const id = parseInt(filter.split(':')[1] || '0', 10);
+      list = list.filter(t => (t.list_id || 0) === id);
       list = list.filter(t => !taskDone(t));
+    } else if (filter.startsWith('tag:')) {
+      const tag = filter.slice(4);
+      list = list.filter(t => !taskDone(t) && taskTags(t).includes(tag));
+    } else if (filter === 'smart:done') {
+      list = list.filter(t => taskDone(t));
+    } else if (filter === 'smart:overdue') {
+      list = list.filter(t => !taskDone(t) && isOverdue(t));
+    } else if (filter === 'smart:today') {
+      list = list.filter(t => {
+        const s = taskStartISO(t);
+        if (!s) return false;
+        return zonedISODateFromUTC(s, tz) === todayISO && !taskDone(t);
+      });
+    } else if (filter === 'smart:next7') {
+      list = list.filter(t => !taskDone(t) && isInNextDays(taskStartISO(t), 7));
+    } else if (filter === 'smart:all') {
+      list = list.filter(t => !taskDone(t));
+    } else {
+      // fallback: inbox/list 0
+      list = list.filter(t => (t.list_id || 0) === 0 && !taskDone(t));
     }
 
-    // sort: by due date (null last) then priority
+    // sort: by start time (null last) then priority
     const prioRank = (p) => (p === 'high' ? 0 : p === 'medium' ? 1 : 2);
     list.sort((a,b) => {
-      const ad = taskDueISO(a);
-      const bd = taskDueISO(b);
-      if (ad && bd) return new Date(ad) - new Date(bd);
-      if (ad && !bd) return -1;
-      if (!ad && bd) return 1;
+      const as = taskStartISO(a);
+      const bs = taskStartISO(b);
+      if (as && bs) return new Date(as) - new Date(bs);
+      if (as && !bs) return -1;
+      if (!as && bs) return 1;
       return prioRank(taskPriority(a)) - prioRank(taskPriority(b));
     });
 
@@ -515,15 +659,58 @@
   }
 
   function updateTitles() {
+    const f = state.filter || 'smart:today';
+    if (f.startsWith('list:')) {
+      const id = parseInt(f.split(':')[1] || '0', 10);
+      const l = (state.lists || []).find(x => x.id === id);
+      listTitle.textContent = l ? l.name : 'Список';
+      return;
+    }
+    if (f.startsWith('tag:')) {
+      listTitle.textContent = '#' + f.slice(4);
+      return;
+    }
     const map = {
-      inbox: 'Входящие',
-      today: 'Сегодня',
-      upcoming: 'Предстоящие',
-      overdue: 'Просрочено',
-      done: 'Завершено',
+      'smart:today': 'Сегодня',
+      'smart:next7': 'Следующие 7 дней',
+      'smart:overdue': 'Просрочено',
+      'smart:all': 'Все',
+      'smart:done': 'Готово',
     };
-    listTitle.textContent = map[state.filter] || 'Задачи';
+    listTitle.textContent = map[f] || 'План';
   }
+
+  function renderChips() {
+    if (!smartChips) return;
+    const f = state.filter || 'smart:today';
+
+    const chips = [
+      { id:'smart:today', label:'Сегодня' },
+      { id:'smart:next7', label:'7 дней' },
+      { id:'smart:overdue', label:'Просрочено' },
+      { id:'smart:all', label:'Все' },
+      { id:'smart:done', label:'Готово' },
+    ];
+
+    // If selected list/tag, show it as first chip
+    if (f.startsWith('list:')) {
+      const id = parseInt(f.split(':')[1] || '0', 10);
+      const l = (state.lists || []).find(x => x.id === id);
+      chips.unshift({ id:f, label: l ? l.name : 'Список' });
+    } else if (f.startsWith('tag:')) {
+      chips.unshift({ id:f, label: '#' + f.slice(4) });
+    }
+
+    smartChips.innerHTML = '';
+    for (const c of chips) {
+      const b = document.createElement('button');
+      b.className = 'chip' + (c.id === f ? ' isActive' : '');
+      b.dataset.filter = c.id;
+      b.textContent = c.label;
+      smartChips.appendChild(b);
+    }
+  }
+
 
   function renderTaskList(container, list, opts={ compact:false }) {
     container.innerHTML = '';
@@ -625,6 +812,7 @@
   }
 
   function renderTasksScreen() {
+    renderChips();
     updateTitles();
     const list = getFilteredTasks(state.filter, state.search);
     taskCount.textContent = String(list.length);
@@ -660,13 +848,73 @@
   function renderDaySheet() {
     const iso = state.selectedDayISO || isoDate(new Date());
     dayTitle.textContent = fmtDayTitle(iso);
+
     const list = state.tasks.filter(t => {
-      const due = taskDueISO(t);
-      if (!due) return false;
-      return zonedISODateFromUTC(due, state.tz) === iso && !taskDone(t);
-    });
-    renderTaskList(dayTaskList, list, { compact:true });
+      const s = taskStartISO(t);
+      if (!s) return false;
+      return zonedISODateFromUTC(s, state.tz) === iso && !taskDone(t);
+    }).sort((a,b) => new Date(taskStartISO(a)) - new Date(taskStartISO(b)));
+
+    renderTimeline(dayTimeline, list, iso);
     dayEmpty.style.display = list.length ? 'none' : 'block';
+  }
+
+  function renderTimeline(container, list, iso) {
+    if (!container) return;
+    container.innerHTML = '';
+
+    // Timeline range
+    const startHour = 6;
+    const endHour = 22;
+    const totalMin = (endHour - startHour) * 60;
+
+    // Build rows
+    for (let h = startHour; h <= endHour; h++) {
+      const row = document.createElement('div');
+      row.className = 'tlRow';
+      row.innerHTML = `<div class="tlTime">${pad2(h)}:00</div><div class="tlLine"></div>`;
+      container.appendChild(row);
+    }
+
+    // Add blocks
+    for (const t of list) {
+      const sISO = taskStartISO(t);
+      if (!sISO) continue;
+
+      const s = new Date(sISO);
+      const parts = toZonedParts(s, state.tz);
+      const minutesFromStart = (parts.hour - startHour) * 60 + parts.minute;
+
+      // determine duration
+      let dur = t.duration_minutes ?? t.durationMinutes ?? null;
+      if (!dur) {
+        const eISO = taskEndISO(t);
+        if (eISO) {
+          try { dur = Math.max(10, Math.round((new Date(eISO) - new Date(sISO)) / 60000)); } catch (_) {}
+        }
+      }
+      if (!dur) dur = (t.kind === 'meeting' ? 60 : 30);
+
+      const topPct = Math.max(0, Math.min(1, minutesFromStart / totalMin));
+      const hPct = Math.max(10/ (totalMin), Math.min(1, dur / totalMin));
+
+      const block = document.createElement('div');
+      block.className = 'tlBlock tlKind-' + (t.kind || 'task');
+      block.style.top = `calc(${topPct*100}% + 8px)`;
+      block.style.height = `calc(${hPct*100}% - 4px)`;
+
+      const timeLabel = fmtZonedTime(sISO, state.tz) + (taskEndISO(t) ? `–${fmtZonedTime(taskEndISO(t), state.tz)}` : '');
+      const tagLabel = taskTags(t).slice(0,3).map(x => '#' + x).join(' ');
+
+      block.innerHTML = `
+        <div class="tlBlockTime">${escapeHtml(timeLabel)}</div>
+        <div class="tlBlockTitle">${escapeHtml(taskTitle(t))}</div>
+        <div class="tlBlockMeta">${escapeHtml(tagLabel || (t.location || ''))}</div>
+      `;
+
+      block.addEventListener('click', () => openEditModal(t));
+      container.appendChild(block);
+    }
   }
 
   function renderCalendar() {
@@ -831,6 +1079,13 @@
     taskDescInput.value = '';
     taskDateInput.value = '';
     taskTimeInput.value = '';
+    if (taskEndTimeInput) taskEndTimeInput.value = '';
+    if (taskDurationInput) taskDurationInput.value = '';
+    if (taskKindSelect) taskKindSelect.value = 'task';
+    if (taskLocationInput) taskLocationInput.value = '';
+    if (taskTagsInput) taskTagsInput.value = '';
+    if (taskListSelect) taskListSelect.value = '0';
+
     taskPrioritySelect.value = 'medium';
     taskRemindSelect.value = 'on';
   }
@@ -852,21 +1107,43 @@
     const id = task.id ?? task.task_id ?? task.taskId;
     state.editingTaskId = id;
 
-    taskModalTitle.textContent = 'Изменить задачу';
-
+    taskModalTitle.textContent = 'Изменить';
     taskTitleInput.value = taskTitle(task);
     taskDescInput.value = taskDesc(task);
 
-    const due = taskDueISO(task);
-    if (due) {
-      const dISO = zonedISODateFromUTC(due, state.tz);
-      const tStr = fmtZonedTime(due, state.tz);
+    // Prefer schedule start/end, fallback to due_at
+    const startISO = task.start_at || task.startAt || taskDueISO(task);
+    const endISO = task.end_at || task.endAt || null;
+
+    if (startISO) {
+      const dISO = zonedISODateFromUTC(startISO, state.tz);
+      const tStr = fmtZonedTime(startISO, state.tz);
       taskDateInput.value = dISO;
       taskTimeInput.value = tStr || '';
     }
+    if (endISO && taskEndTimeInput) {
+      taskEndTimeInput.value = fmtZonedTime(endISO, state.tz) || '';
+    }
+    if (taskDurationInput) {
+      const dur = task.duration_minutes ?? task.durationMinutes ?? null;
+      taskDurationInput.value = dur ? String(dur) : '';
+    }
+
+    if (taskKindSelect) taskKindSelect.value = (task.kind || 'task');
+    if (taskLocationInput) taskLocationInput.value = (task.location || '');
+
+    if (taskTagsInput) {
+      const tags = Array.isArray(task.tags) ? task.tags : [];
+      taskTagsInput.value = tags.length ? tags.map(t => '#' + t).join(' ') : '';
+    }
+
+    if (taskListSelect) {
+      const lid = task.list_id ?? task.listId ?? 0;
+      taskListSelect.value = String(lid || 0);
+    }
 
     taskPrioritySelect.value = taskPriority(task) || 'medium';
-    taskRemindSelect.value = taskRemind(task) ? 'on' : 'off';
+    taskRemindSelect.value = task.reminder_enabled ? 'on' : (taskRemind(task) ? 'on' : 'off');
 
     openModal();
   }
@@ -874,51 +1151,83 @@
   function payloadFromModal() {
     const title = taskTitleInput.value.trim();
     const description = taskDescInput.value.trim();
+
     const dateVal = taskDateInput.value;
-    const timeVal = taskTimeInput.value;
+    const startTimeVal = taskTimeInput.value;
+    const endTimeVal = taskEndTimeInput ? taskEndTimeInput.value : '';
+    const durVal = taskDurationInput ? taskDurationInput.value : '';
 
     const priority = taskPrioritySelect.value || 'medium';
     const remind = taskRemindSelect.value === 'on';
 
-    // Backend expects UTC ISO datetime maybe.
-    // We'll interpret date+time as in selected TZ, then convert to UTC ISO.
-    let due_at = null;
-    if (dateVal) {
-      const t = timeVal || '12:00';
-      const [y,m,dd] = dateVal.split('-').map(Number);
+    const kind = (taskKindSelect && taskKindSelect.value) ? taskKindSelect.value : 'task';
+    const location = (taskLocationInput && taskLocationInput.value) ? taskLocationInput.value.trim() : '';
+
+    const listIdRaw = taskListSelect ? taskListSelect.value : '0';
+    const list_id = listIdRaw ? parseInt(listIdRaw, 10) : 0;
+
+    // tags input: "#work #спорт, #учёба"
+    let tags = [];
+    if (taskTagsInput && taskTagsInput.value.trim()) {
+      tags = taskTagsInput.value
+        .replace(/[,;]/g, ' ')
+        .split(/\s+/)
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(s => s.startsWith('#') ? s.slice(1) : s)
+        .filter(Boolean);
+    }
+
+    function zonedISO(dateStr, timeStr) {
+      if (!dateStr) return null;
+      const t = timeStr || '12:00';
+      const [y,m,dd] = dateStr.split('-').map(Number);
       const [hh,mm] = t.split(':').map(Number);
-
-      // Create a Date object for that local time in selected timezone by using Intl trick:
-      // We'll build a UTC date based on components in TZ.
-      // Approx approach: use Date.UTC then adjust offset by comparing formatted parts.
       const tentativeUTC = new Date(Date.UTC(y, m-1, dd, hh, mm, 0, 0));
-
-      // Find what date/time that UTC looks like in TZ, and shift difference.
       const p = toZonedParts(tentativeUTC, state.tz);
-      // difference (in minutes) between intended components and shown components
       const diffMin = (p.year - y) * 525600 + (p.month - m) * 43200 + (p.day - dd) * 1440 + (p.hour - hh) * 60 + (p.minute - mm);
       const corrected = new Date(tentativeUTC.getTime() - diffMin * 60 * 1000);
-
-      due_at = corrected.toISOString();
+      return corrected.toISOString();
     }
+
+    let start_at = null;
+    let end_at = null;
+    let duration_minutes = null;
+
+    if (dateVal) {
+      if (startTimeVal) start_at = zonedISO(dateVal, startTimeVal);
+
+      if (endTimeVal) {
+        end_at = zonedISO(dateVal, endTimeVal);
+      }
+
+      if (durVal) {
+        const n = parseInt(durVal, 10);
+        if (!Number.isNaN(n) && n > 0) duration_minutes = n;
+      }
+
+      // if we have start + duration but no end -> backend will compute end_at
+      // if we have start but no end/duration -> default duration in UI views
+    }
+
+    // For compatibility: keep due_at as schedule start (TickTick-like "scheduled time")
+    const due_at = start_at;
 
     const payload = {
       title,
       description,
       priority,
-      // backend supports reminder_enabled (and keeps "remind" as legacy alias)
+      kind,
+      location,
+      tags,
+      list_id: (list_id && list_id > 0) ? list_id : null,
+      start_at,
+      end_at,
+      duration_minutes,
       reminder_enabled: remind,
       remind,
       due_at,
     };
-
-    // pass Telegram identity if backend supports
-    if (state.user) {
-      payload.tg_user_id = state.user.id;
-      payload.tg_username = state.user.username || null;
-      payload.tg_first_name = state.user.first_name || null;
-      payload.tg_last_name = state.user.last_name || null;
-    }
 
     return payload;
   }
@@ -927,8 +1236,11 @@
   async function onSync() {
     try {
       userSubtitle.textContent = 'Синхронизируем…';
+      await loadMe();
+      await loadLists();
       await loadTasks();
-      userSubtitle.textContent = state.user ? menuUserName.textContent : 'Гость';
+      refreshMenuLists();
+      userSubtitle.textContent = state.user ? (menuUserName ? menuUserName.textContent : (state.user.name || '')) : 'Гость';
       refreshAll();
       showToast('Синхронизировано');
       haptic('notification', 'success');
@@ -1114,16 +1426,17 @@
       setSeg(b.dataset.seg);
     });
 
-    // Chips
+    // Chips (smart lists / lists / tags)
     smartChips.addEventListener('click', (e) => {
       const b = e.target.closest('.chip');
       if (!b) return;
       state.filter = b.dataset.filter;
-      smartChips.querySelectorAll('.chip').forEach(x => x.classList.toggle('isActive', x===b));
-      // keep segmented in sync: inbox/today only
-      if (state.filter === 'today') setSeg('today', true);
-      if (state.filter === 'inbox') setSeg('inbox', true);
-      // overdue is a filter inside Tasks screen
+      renderChips();
+      refreshAll();
+      haptic('selection');
+    });
+
+    // overdue is a filter inside Tasks screen
       if (state.filter === 'done') showScreen('tasks');
       refreshAll();
       haptic('selection');
@@ -1181,6 +1494,18 @@
     menuSync.addEventListener('click', onSync);
     menuExport.addEventListener('click', onExport);
     menuClearDone.addEventListener('click', onClearDone);
+    if (newListBtn) newListBtn.addEventListener('click', async () => {
+      const name = prompt('Название списка');
+      if (!name) return;
+      try {
+        await createList({ name, color: '#4A90E2' });
+        await loadLists();
+        showToast('Список создан');
+      } catch (e) {
+        showToast('Не удалось создать список');
+        console.error(e);
+      }
+    });
 
     themeSelect.addEventListener('change', () => {
       setTheme(themeSelect.value);
@@ -1220,8 +1545,11 @@
     requestAnimationFrame(() => setSeg('inbox', true));
 
     try {
+      await loadMe();
+      await loadLists();
       await loadTasks();
-      userSubtitle.textContent = state.user ? menuUserName.textContent : 'Гость';
+      refreshMenuLists();
+      userSubtitle.textContent = state.user ? (menuUserName ? menuUserName.textContent : (state.user.name || '')) : 'Гость';
       refreshAll();
     } catch (e) {
       userSubtitle.textContent = 'Нет связи с сервером';

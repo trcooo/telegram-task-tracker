@@ -94,6 +94,12 @@ def ensure_schema():
         "description": "VARCHAR(1000)",
         "priority": "VARCHAR(20)",
         "due_at": "TIMESTAMP",
+        "start_at": "TIMESTAMP",
+        "end_at": "TIMESTAMP",
+        "duration_minutes": "INTEGER",
+        "kind": "VARCHAR(20)",
+        "location": "VARCHAR(200)",
+        "tags": "TEXT",
         "completed": "BOOLEAN",
         "reminder_enabled": "BOOLEAN",
         "reminder_sent": "BOOLEAN",
@@ -120,6 +126,9 @@ def ensure_schema():
         # reasonable defaults to keep inserts working on existing rows
         defaults = {
             "description": "DEFAULT ''",
+            "location": "DEFAULT ''",
+            "tags": "DEFAULT '[]'",
+            "kind": "DEFAULT 'task'",
             "priority": "DEFAULT 'medium'",
             "completed": "DEFAULT FALSE",
             "reminder_enabled": "DEFAULT TRUE",
@@ -194,10 +203,25 @@ class TaskOut(BaseModel):
     title: str
     description: str
     priority: str
+
+    # task deadline (optional)
     due_at: Optional[str] = None
+
+    # schedule (day planner)
+    start_at: Optional[str] = None
+    end_at: Optional[str] = None
+    duration_minutes: Optional[int] = None
+
+    kind: str = "task"  # task|meeting|study|other
+    location: str = ""
+    tags: List[str] = []
+
     completed: bool
     list_id: Optional[int] = None
+
+    # reminders
     reminder_enabled: bool = False
+
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -205,8 +229,21 @@ class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = ""
     priority: Optional[str] = "medium"
+
+    # task deadline (optional)
     due_at: Optional[str] = None
+
+    # schedule (day planner)
+    start_at: Optional[str] = None
+    end_at: Optional[str] = None
+    duration_minutes: Optional[int] = None
+
+    kind: Optional[str] = None  # task|meeting|study|other
+    location: Optional[str] = ""
+    tags: Optional[List[str]] = None
+
     list_id: Optional[int] = None
+
     # reminders
     reminder_enabled: Optional[bool] = None
     # backward-compat alias from older web clients
@@ -216,9 +253,20 @@ class TaskUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     priority: Optional[str] = None
+
     due_at: Optional[str] = None
+
+    start_at: Optional[str] = None
+    end_at: Optional[str] = None
+    duration_minutes: Optional[int] = None
+
+    kind: Optional[str] = None
+    location: Optional[str] = None
+    tags: Optional[List[str]] = None
+
     completed: Optional[bool] = None
     list_id: Optional[int] = None
+
     reminder_enabled: Optional[bool] = None
     remind: Optional[bool] = None
 
@@ -273,13 +321,28 @@ async def create_list(request: Request, payload: ListCreate, db: Session = Depen
 
 # ---- Tasks ----
 def to_task_out(t: Task) -> TaskOut:
+    # tags are stored as JSON text
+    try:
+        tags = json.loads(getattr(t, "tags", "[]") or "[]")
+        if not isinstance(tags, list):
+            tags = []
+        tags = [str(x).strip() for x in tags if str(x).strip()]
+    except Exception:
+        tags = []
+
     return TaskOut(
         id=t.id,
         title=t.title,
         description=t.description or "",
         priority=t.priority or "medium",
-        due_at=iso(t.due_at),
-        completed=bool(t.completed),
+        due_at=iso(getattr(t, "due_at", None)),
+        start_at=iso(getattr(t, "start_at", None)),
+        end_at=iso(getattr(t, "end_at", None)),
+        duration_minutes=getattr(t, "duration_minutes", None),
+        kind=getattr(t, "kind", None) or "task",
+        location=getattr(t, "location", "") or "",
+        tags=tags,
+        completed=bool(getattr(t, "completed", False)),
         list_id=getattr(t, "list_id", None),
         reminder_enabled=bool(getattr(t, "reminder_enabled", False)),
         created_at=iso(getattr(t, "created_at", None)),
@@ -325,9 +388,53 @@ async def create_task(request: Request, response: Response, payload: TaskCreate,
         pr = "medium"
 
     due_utc = parse_iso_datetime(payload.due_at) if payload.due_at else None
+    start_utc = parse_iso_datetime(payload.start_at) if payload.start_at else None
+    end_utc = parse_iso_datetime(payload.end_at) if payload.end_at else None
+
+    # If user only provided due_at with a time, treat it as start_at for schedule view
+    if start_utc is None and due_utc is not None:
+        start_utc = due_utc
+
+    dur = payload.duration_minutes
+    try:
+        dur = int(dur) if dur is not None else None
+    except Exception:
+        dur = None
+    if dur is not None and dur <= 0:
+        dur = None
+
+    # If end_at missing but duration provided, compute end_at
+    if start_utc is not None and end_utc is None and dur is not None:
+        end_utc = start_utc + timedelta(minutes=dur)
+
+    # If both start and end exist but duration missing -> derive
+    if start_utc is not None and end_utc is not None and dur is None:
+        try:
+            delta = end_utc - start_utc
+            dur = max(0, int(delta.total_seconds() // 60))
+        except Exception:
+            dur = None
+
     lid = payload.list_id
     if lid is not None and int(lid) <= 0:
         lid = None
+
+    kind = (payload.kind or "task").lower().strip()
+    if kind not in ("task", "meeting", "study", "other"):
+        kind = "task"
+
+    location = (payload.location or "").strip()[:200]
+
+    # tags: store as JSON array of strings
+    tags = payload.tags
+    if tags is None:
+        tags = []
+    try:
+        tags = [str(x).strip().lstrip("#") for x in tags if str(x).strip()]
+        tags = [t for t in tags if t]
+    except Exception:
+        tags = []
+    tags_json = json.dumps(tags, ensure_ascii=False)
 
     remind_flag = None
     if payload.reminder_enabled is not None:
@@ -337,8 +444,8 @@ async def create_task(request: Request, response: Response, payload: TaskCreate,
     else:
         remind_flag = False
 
-    # reminder only makes sense with a due date
-    if not due_utc:
+    # Reminder makes sense if there is any schedule/deadline date
+    if not (start_utc or due_utc):
         remind_flag = False
 
     t = Task(
@@ -347,6 +454,12 @@ async def create_task(request: Request, response: Response, payload: TaskCreate,
         description=(payload.description or "").strip(),
         priority=pr,
         due_at=due_utc,
+        start_at=start_utc,
+        end_at=end_utc,
+        duration_minutes=dur,
+        kind=kind,
+        location=location,
+        tags=tags_json,
         completed=False,
         list_id=lid,
         reminder_enabled=bool(remind_flag),
@@ -357,6 +470,7 @@ async def create_task(request: Request, response: Response, payload: TaskCreate,
     db.refresh(t)
     response.headers["X-Created-Count"] = "1"
     return to_task_out(t)
+
 
 @app.put("/api/tasks/{task_id}", response_model=TaskOut)
 async def update_task(request: Request, task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
@@ -384,6 +498,51 @@ async def update_task(request: Request, task_id: int, payload: TaskUpdate, db: S
     if payload.due_at is not None:
         t.due_at = parse_iso_datetime(payload.due_at) if payload.due_at else None
 
+    # schedule
+    if payload.start_at is not None:
+        t.start_at = parse_iso_datetime(payload.start_at) if payload.start_at else None
+
+    if payload.end_at is not None:
+        t.end_at = parse_iso_datetime(payload.end_at) if payload.end_at else None
+
+    if payload.duration_minutes is not None:
+        try:
+            dur = int(payload.duration_minutes)
+            if dur <= 0:
+                dur = None
+        except Exception:
+            dur = None
+        t.duration_minutes = dur
+
+    # auto-derive end/duration when possible
+    if getattr(t, "start_at", None) is not None and getattr(t, "duration_minutes", None) and not getattr(t, "end_at", None):
+        try:
+            t.end_at = t.start_at + timedelta(minutes=int(t.duration_minutes))
+        except Exception:
+            pass
+    if getattr(t, "start_at", None) is not None and getattr(t, "end_at", None) is not None and not getattr(t, "duration_minutes", None):
+        try:
+            t.duration_minutes = max(0, int((t.end_at - t.start_at).total_seconds() // 60))
+        except Exception:
+            pass
+
+    if payload.kind is not None:
+        kind = (payload.kind or "task").lower().strip()
+        if kind not in ("task", "meeting", "study", "other"):
+            kind = "task"
+        t.kind = kind
+
+    if payload.location is not None:
+        t.location = (payload.location or "").strip()[:200]
+
+    if payload.tags is not None:
+        try:
+            tags = [str(x).strip().lstrip("#") for x in (payload.tags or []) if str(x).strip()]
+            tags = [x for x in tags if x]
+        except Exception:
+            tags = []
+        t.tags = json.dumps(tags, ensure_ascii=False)
+
     if payload.completed is not None:
         t.completed = bool(payload.completed)
 
@@ -393,15 +552,15 @@ async def update_task(request: Request, task_id: int, payload: TaskUpdate, db: S
             lid = None
         t.list_id = lid
 
-    # reminders (only valid with a due date)
+    # reminders: valid if there is a schedule/deadline
     if payload.reminder_enabled is not None or getattr(payload, "remind", None) is not None:
         flag = payload.reminder_enabled
         if flag is None:
             flag = bool(getattr(payload, "remind", False))
-        if not t.due_at:
+
+        if not (getattr(t, "start_at", None) or getattr(t, "due_at", None)):
             t.reminder_enabled = False
         else:
-            # if user turns reminders back on, allow sending again
             new_flag = bool(flag)
             if new_flag and not t.reminder_enabled:
                 t.reminder_sent = False
@@ -410,6 +569,7 @@ async def update_task(request: Request, task_id: int, payload: TaskUpdate, db: S
     db.commit()
     db.refresh(t)
     return to_task_out(t)
+
 
 @app.delete("/api/tasks/{task_id}")
 async def delete_task(request: Request, task_id: int, db: Session = Depends(get_db)):
