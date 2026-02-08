@@ -10,6 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 RUN python -c "import app.main; print('IMPORT_OK')"
-EXPOSE 8080 3000
+EXPOSE 8080
 
-CMD ["python", "-m", "app.start"]
+CMD ["sh","-c","uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips=* --log-level info"]

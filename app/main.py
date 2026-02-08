@@ -1,3 +1,5 @@
+import os
+print('STARTUP_ENV', {'PORT': os.getenv('PORT'), 'DATABASE_URL_set': bool(os.getenv('DATABASE_URL')), 'BOT_TOKEN_set': bool(os.getenv('BOT_TOKEN'))})
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -52,12 +54,8 @@ def on_startup():
     except Exception as e:
         log.exception("DB init failed on startup: %s", e)
 
-    # Start scheduler only if BOT_TOKEN is present AND not disabled for sidecar ports
+    # Start scheduler only if BOT_TOKEN is present
     try:
-        import os
-        if os.getenv("DISABLE_SCHEDULER") == "1":
-            log.warning("Scheduler disabled for this process (sidecar port).")
-            return
         if (settings.BOT_TOKEN or "").strip():
             start_scheduler()
         else:
@@ -66,7 +64,6 @@ def on_startup():
         log.exception("Scheduler start failed: %s", e)
 
 # API routers
-
 app.include_router(auth_router)
 app.include_router(me_router)
 app.include_router(tasks_router)
