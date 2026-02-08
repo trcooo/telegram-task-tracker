@@ -1,38 +1,16 @@
-# Railway-friendly Dockerfile for a TS monorepo (npm workspaces)
-# - Installs dev deps in build stage (Railway often sets NPM_CONFIG_PRODUCTION=true)
-# - Builds all workspaces
-# - Prunes dev deps for runtime
+FROM python:3.11-slim
 
-FROM node:20-alpine AS builder
 WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# Copy manifests first for better caching
-COPY package.json package-lock.json* ./
-COPY apps/api/package.json apps/api/package.json
-COPY apps/web/package.json apps/web/package.json
-COPY packages/shared/package.json packages/shared/package.json
+# system deps for psycopg + ssl
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential libpq-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 
-# Install all deps (including dev) for build tools (tsc, prisma)
-RUN npm install --include=dev
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Copy the rest of the repo
-COPY . .
+COPY . /app
 
-# Prisma client
-RUN npm -w apps/api run prisma:generate
-
-# Build
-RUN npm run build
-
-# Remove dev deps for smaller runtime image
-RUN npm prune --omit=dev
-
-
-FROM node:20-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-
-COPY --from=builder /app /app
-
-# Default to API server. Railway worker service should override CMD to `npm run worker`.
-CMD ["npm", "run", "start"]
+EXPOSE 8080
+CMD ["sh","-c","uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
