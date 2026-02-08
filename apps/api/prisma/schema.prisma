@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String   @id @default(cuid())
+  telegramId String?  @unique
+  name       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  lists      List[]
+  tasks      Task[]
+  reminders  ReminderLog[]
+}
+
+model List {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  color     String?  // hex
+  folder    String?  // folder/group label
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+}
+
+model Task {
+  id            String   @id @default(cuid())
+  userId        String
+  listId        String?
+  title         String
+  note          String?
+  priority      Int      @default(0) // 0-3
+  kind          String   @default("task") // task/meeting/study/other
+
+  date          String?  // YYYY-MM-DD
+  time          String?  // HH:mm
+  allDay        Boolean  @default(false)
+  startAt       DateTime?
+  endAt         DateTime?
+
+  tags          Json     @default("[]")
+  subtasks      Json     @default("[]")
+  matrixQuadrant String  @default("INBOX") // Q1..Q4..INBOX
+  focusFlag     Boolean  @default(false)
+  done          Boolean  @default(false)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  list          List?    @relation(fields: [listId], references: [id], onDelete: SetNull)
+  reminders     Reminder[]
+}
+
+model Reminder {
+  id        String   @id @default(cuid())
+  taskId    String
+  at        DateTime
+  method    String   @default("bot") // bot/inapp
+  status    String   @default("scheduled") // scheduled/snoozed/sent
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([at, status])
+}
+
+model ReminderLog {
+  id        String   @id @default(cuid())
+  userId    String
+  taskId    String?
+  reminderId String?
+  status    String // sent/snoozed/failed
+  message   String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}

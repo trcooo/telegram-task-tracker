@@ -1,46 +1,54 @@
-# Railway: деплой и что исправлено
+# Railway deploy (API + Web + Worker)
 
-## Что было сломано
-1) **Добавление задач не работало**: фронтенд не отправлял заголовки идентификации пользователя, а backend требовал `X-Tg-Init-Data` или `X-User-Key`, поэтому `POST /api/tasks` отвечал 401.
-2) **Напоминания не включались**: UI отправлял поле `remind`, но backend не сохранял его в `reminder_enabled`.
-3) **Матрица приоритетов** отсутствовала как экран (вместо неё был Overdue-экран).
+This repo is a **monorepo**:
+- `apps/api` — Express + Prisma + BullMQ
+- `apps/web` — Telegram Mini App (React/Vite) built and served as static by the API
 
-## Что сделано в этой версии
-- Frontend:
-  - Автоматически добавляет `X-Tg-Init-Data: Telegram.WebApp.initData` во все запросы, когда приложение открыто из Telegram.
-  - Для локального/браузерного режима (не Telegram) генерирует и хранит `X-User-Key` в `localStorage`.
-  - Отправляет `reminder_enabled` (и оставляет `remind` как legacy-алиас).
-  - Добавлен экран **Priority Matrix** (Eisenhower‑логика).
+## 1) Required env vars
 
-- Backend:
-  - `TaskCreate/TaskUpdate` теперь принимают `reminder_enabled` (и `remind` как алиас).
-  - `TaskOut` возвращает `reminder_enabled`, чтобы UI корректно показывал состояние.
+### Web/API service
+- `DATABASE_URL` — Postgres connection string
+- `REDIS_URL` — Redis connection string (`redis://` or `rediss://`)
+- `BOT_TOKEN` — Telegram bot token (needed for initData verification + notifications)
+- `JWT_SECRET` — any long random string
+- `WEB_APP_URL` — optional (for future deep links)
 
-## Переменные окружения Railway
-**Обязательно:**
-- `DATABASE_URL` — лучше Railway Postgres (иначе SQLite будет сбрасываться при перезапуске контейнера).
-- `BOT_TOKEN` — токен Telegram бота (если хотите напоминания через бота).
-- `WEB_APP_URL` — публичный URL вашего Railway веб-сервиса (для кнопки открытия Mini App).
+### Notes
+- **Auth** uses Telegram WebApp `initData`. If `BOT_TOKEN` is missing, auth will fail.
 
-## Про напоминания (бот)
-Сейчас Railway запускает только веб-процесс:
+## 2) Prisma migrations
+On Railway, run once (in the service console):
+- `npx prisma migrate dev` (for local) or
+- `npx prisma migrate deploy` (recommended on Railway)
 
-- `web: uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+This repo ships only the schema; create migrations as you prefer.
 
-Чтобы работали напоминания, нужен **второй процесс** (worker) с ботом:
+## 3) Worker service (for reminders)
 
-- команда запуска: `python -m app.bot`
+BullMQ needs a long-running worker process.
+Create a **second Railway service** from the same repo:
 
-### Как включить worker на Railway
-В Railway обычно проще сделать **второй сервис** в том же проекте:
-1) Создайте новый Service → Deploy from the same repo.
-2) В Settings этого сервиса задайте Start Command: `python -m app.bot`.
-3) Проставьте ему те же переменные окружения (минимум: `DATABASE_URL`, `BOT_TOKEN`, `WEB_APP_URL`).
+- Build command: `npm install && npm run build`
+- Start command: `npm run worker`
 
-> Важно: напоминания отправляются на `user_id`, который для Telegram должен быть **реальным Telegram ID**.
-> Поэтому Mini App должен ходить в API с `X-Tg-Init-Data` (это уже исправлено).
+Use the **same** env vars (`DATABASE_URL`, `REDIS_URL`, `BOT_TOKEN`, `JWT_SECRET`).
 
-## Быстрая проверка
-- Откройте Mini App в Telegram → нажмите «+» → создайте задачу.
-- В Network (DevTools) проверьте, что запросы к `/api/tasks` содержат `X-Tg-Init-Data`.
-- Если задача с дедлайном и включённым напоминанием — worker должен отправить сообщение за 15 минут.
+If you only run the web/API service, reminders will be stored in Postgres, but **notifications will not be sent**.
+
+## 4) Local dev
+
+1) Install deps:
+`npm install`
+
+2) Generate prisma client:
+`npm -w apps/api run prisma:generate`
+
+3) Start DB + Redis (docker recommended), set env vars.
+
+4) Start:
+- API: `npm -w apps/api run dev`
+- Web: `npm -w apps/web run dev`
+- Worker (optional): build first, then `node apps/api/dist/worker.js`
+
+## 5) Telegram settings
+- Set your bot's Mini App URL to your deployed Railway URL (web/API service).
