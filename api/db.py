@@ -39,7 +39,7 @@ def _migrate_schema() -> None:
     """Best-effort migrations to keep Railway/Postgres deploys from breaking.
 
     No Alembic here: we only add/fix columns that the app expects, and we patch
-    legacy Railway schemas (user_id types, tasks.description NOT NULL).
+    legacy Railway schemas (user_id types, tasks.description/completed NOT NULL).
     Safe to run on every startup.
     """
     dialect = engine.url.get_backend_name()
@@ -186,6 +186,51 @@ def _migrate_schema() -> None:
             except Exception:
                 pass
 
+    def _ensure_completed_default() -> None:
+        """Legacy fix: tasks.completed NOT NULL with no default -> breaks inserts.
+
+        Some older schemas used `completed` instead of (or alongside) `done`.
+        If the column exists and has no DEFAULT, inserts that omit it will fail.
+        We set a safe DEFAULT and backfill NULLs (best-effort).
+        """
+        if not is_postgres or not _has_table("tasks"):
+            return
+        if "completed" not in _cols("tasks"):
+            return
+
+        t = (_col_type("tasks", "completed") or "").lower()
+        if "int" in t:
+            default_sql = "0"
+            null_sql = "0"
+        elif ("char" in t) or ("text" in t):
+            default_sql = "'false'"
+            null_sql = "'false'"
+        else:
+            default_sql = "FALSE"
+            null_sql = "FALSE"
+
+        with engine.begin() as conn:
+            try:
+                conn.execute(text(f'UPDATE "tasks" SET "completed" = {null_sql} WHERE "completed" IS NULL'))
+            except Exception:
+                pass
+            try:
+                conn.execute(text(f'ALTER TABLE "tasks" ALTER COLUMN "completed" SET DEFAULT {default_sql}'))
+            except Exception:
+                pass
+
+        # Keep the app column `done` in sync with legacy `completed` when possible
+        if "done" in _cols("tasks"):
+            with engine.begin() as conn:
+                try:
+                    conn.execute(text('UPDATE "tasks" SET "done" = "completed" WHERE "done" IS NULL AND "completed" IS NOT NULL'))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text('UPDATE "tasks" SET "completed" = "done" WHERE "completed" IS NULL AND "done" IS NOT NULL'))
+                except Exception:
+                    pass
+
     # ---- legacy type fixes (Railway/Postgres) ----
     _ensure_varchar("users", "id")
     _ensure_varchar("tasks", "user_id")
@@ -194,49 +239,65 @@ def _migrate_schema() -> None:
     _ensure_user_fks()
 
     # ---- add missing columns (idempotent) ----
-    add_missing_columns("tasks", {
-        "note": "TEXT",
-        "description": "TEXT DEFAULT ''",
-        "priority": "INTEGER DEFAULT 0",
-        "date": "VARCHAR",
-        "time": "VARCHAR",
-        "all_day": "BOOLEAN DEFAULT FALSE",
-        "start_at": "TIMESTAMP",
-        "end_at": "TIMESTAMP",
-        "kind": "VARCHAR DEFAULT 'task'",
-        "focus_flag": "BOOLEAN DEFAULT FALSE",
-        "list_id": "INTEGER",
-        "tags": "JSON",
-        "subtasks": "JSON",
-        "matrix_quadrant": "VARCHAR",
-        "done": "BOOLEAN DEFAULT FALSE",
-        "created_at": "TIMESTAMP",
-        "updated_at": "TIMESTAMP",
-    }, backfill_sql=[
-        'UPDATE "tasks" SET "note" = "description" WHERE "note" IS NULL AND "description" IS NOT NULL',
-        'UPDATE "tasks" SET "description" = COALESCE("note", \'\') WHERE "description" IS NULL',
-    ])
+    add_missing_columns(
+        "tasks",
+        {
+            "note": "TEXT",
+            "description": "TEXT DEFAULT ''",
+            # legacy compatibility column (ok to have extra column)
+            "completed": "BOOLEAN DEFAULT FALSE",
+            "priority": "INTEGER DEFAULT 0",
+            "date": "VARCHAR",
+            "time": "VARCHAR",
+            "all_day": "BOOLEAN DEFAULT FALSE",
+            "start_at": "TIMESTAMP",
+            "end_at": "TIMESTAMP",
+            "kind": "VARCHAR DEFAULT 'task'",
+            "focus_flag": "BOOLEAN DEFAULT FALSE",
+            "list_id": "INTEGER",
+            "tags": "JSON",
+            "subtasks": "JSON",
+            "matrix_quadrant": "VARCHAR",
+            "done": "BOOLEAN DEFAULT FALSE",
+            "created_at": "TIMESTAMP",
+            "updated_at": "TIMESTAMP",
+        },
+        backfill_sql=[
+            'UPDATE "tasks" SET "note" = "description" WHERE "note" IS NULL AND "description" IS NOT NULL',
+            'UPDATE "tasks" SET "description" = COALESCE("note", \'\') WHERE "description" IS NULL',
+            # keep columns aligned if legacy schema had `completed`
+            'UPDATE "tasks" SET "done" = "completed" WHERE "done" IS NULL AND "completed" IS NOT NULL',
+        ],
+    )
 
     # If tags/subtasks exist with wrong types, try to coerce to JSONB so inserts don't mismatch
     _ensure_jsonb("tasks", "tags")
     _ensure_jsonb("tasks", "subtasks")
 
-    add_missing_columns("lists", {
-        "title": "VARCHAR",
-        "color": "VARCHAR",
-        "created_at": "TIMESTAMP",
-    }, backfill_sql=[
-        'UPDATE "lists" SET "title" = "name" WHERE "title" IS NULL AND "name" IS NOT NULL',
-    ])
+    add_missing_columns(
+        "lists",
+        {
+            "title": "VARCHAR",
+            "color": "VARCHAR",
+            "created_at": "TIMESTAMP",
+        },
+        backfill_sql=[
+            'UPDATE "lists" SET "title" = "name" WHERE "title" IS NULL AND "name" IS NOT NULL',
+        ],
+    )
 
-    add_missing_columns("reminders", {
-        "status": "VARCHAR DEFAULT 'scheduled'",
-        "method": "VARCHAR DEFAULT 'telegram'",
-        "at": "TIMESTAMP",
-        "task_id": "INTEGER",
-        "created_at": "TIMESTAMP",
-        "updated_at": "TIMESTAMP",
-    })
+    add_missing_columns(
+        "reminders",
+        {
+            "status": "VARCHAR DEFAULT 'scheduled'",
+            "method": "VARCHAR DEFAULT 'telegram'",
+            "at": "TIMESTAMP",
+            "task_id": "INTEGER",
+            "created_at": "TIMESTAMP",
+            "updated_at": "TIMESTAMP",
+        },
+    )
 
-    # Ensure description default after potential ADD COLUMN
+    # Ensure defaults/constraints after potential ADD COLUMN
     _ensure_description_default()
+    _ensure_completed_default()

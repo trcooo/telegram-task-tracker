@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from typing import List as TList, Optional
@@ -84,12 +85,27 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
     if not t or t.user_id != user.id:
         raise HTTPException(status_code=404, detail="task not found")
 
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    updated = payload.model_dump(exclude_unset=True)
+    for k, v in updated.items():
         if k in ("note", "description") and v is None:
             v = ""
         setattr(t, k, v)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"DB integrity error: {str(e.orig) if hasattr(e, 'orig') else str(e)}")
+
+    # Legacy DB compatibility: some schemas keep a NOT NULL `completed` column.
+    # If the column exists, mirror `done` into it so status stays consistent.
+    if "done" in updated:
+        try:
+            db.execute(text('UPDATE "tasks" SET "completed" = :v WHERE "id" = :id'), {"v": bool(t.done), "id": t.id})
+            db.commit()
+        except Exception:
+            db.rollback()
+
     db.refresh(t)
     return t
 
