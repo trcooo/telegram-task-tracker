@@ -1,7 +1,8 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from .db import SessionLocal
+
+from .db import get_sessionmaker
 from .models import Reminder, ReminderStatus
 from .telegram_send import send_message
 
@@ -9,6 +10,8 @@ scheduler = AsyncIOScheduler()
 
 async def dispatch_reminders():
     now = datetime.now(timezone.utc).replace(tzinfo=None)  # store naive UTC in DB
+
+    SessionLocal = get_sessionmaker()
     db: Session = SessionLocal()
     try:
         due = (

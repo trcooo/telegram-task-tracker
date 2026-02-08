@@ -45,3 +45,9 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Backward-compatible alias (callable) for old imports:
+def SessionLocal():
+    """Legacy helper. Prefer get_sessionmaker()."""
+    return get_sessionmaker()()

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from ..db import SessionLocal
+from ..db import get_sessionmaker
 from ..telegram import validate_init_data
 from ..settings import settings
 from ..models import User
@@ -25,7 +25,8 @@ def telegram_auth(payload: TelegramAuthIn):
 
         tg_id = int(user["id"])
 
-        db: Session = SessionLocal()
+        SessionLocal = get_sessionmaker()
+db: Session = SessionLocal()
         try:
             existing: User | None = db.query(User).filter(User.tg_id == tg_id).first()
             if existing:
