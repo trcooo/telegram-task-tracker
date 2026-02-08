@@ -13,7 +13,7 @@ def get_db():
     finally:
         db.close()
 
-def get_current_user(request: Request, authorization: Optional[str] = Header(default=None), x_tg_init_data: Optional[str] = Header(default=None), x_user_key: Optional[str] = Header(default=None), db: Session = None) -> Tuple[User, str]:
+def get_current_user(request: Request, authorization: Optional[str] = Header(default=None), x_tg_init_data: Optional[str] = Header(default=None), x_user_key: Optional[str] = Header(default=None), db: Session = Depends(get_db)) -> Tuple[User, str]:
     """
     Returns (user, jwt). Accepts:
     - Authorization: Bearer <jwt>
