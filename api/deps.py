@@ -1,4 +1,4 @@
-from fastapi import Header, HTTPException, Request
+from fastapi import Header, HTTPException, Request, Depends
 from sqlalchemy.orm import Session
 from typing import Optional, Tuple
 
@@ -20,8 +20,6 @@ def get_current_user(request: Request, authorization: Optional[str] = Header(def
     - or X-Tg-Init-Data (Telegram WebApp initData) to mint a JWT
     - or X-User-Key for non-Telegram local/dev
     """
-    if db is None:
-        db = SessionLocal()
 
     # 1) JWT
     if authorization and authorization.lower().startswith("bearer "):
