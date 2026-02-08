@@ -2,6 +2,9 @@ import httpx
 from .settings import settings
 
 async def send_message(chat_id: str, text: str):
+    if not (settings.BOT_TOKEN or "").strip():
+        raise RuntimeError("BOT_TOKEN is not set")
+
     url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage"
     payload: dict = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
 

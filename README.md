@@ -39,3 +39,16 @@ uvicorn app.main:app --reload --port 3000
 - Dockerfile запускает uvicorn на `${PORT:-3000}` (Railway требует слушать именно PORT)
 - `/health` не зависит от базы данных (для DB проверки есть `/health/db`)
 - `DATABASE_URL` формата `postgresql://...` автоматически нормализуется под psycopg3
+
+
+## Railway: если healthcheck всё равно падает
+1) Открой **Logs** у сервиса — если приложение не стартует, там будет traceback.
+2) Проверь переменные окружения (Variables):
+- `DATABASE_URL` (Postgres plugin)
+- `BOT_TOKEN`
+- `JWT_SECRET`
+3) Для быстрой диагностики можно дернуть:
+- `/health` (должен отвечать всегда)
+- `/health/info` (показывает, какие env заданы)
+
+В этой версии приложение НЕ падает при отсутствии env (чтобы пройти healthcheck), но без `BOT_TOKEN` и `DATABASE_URL` функционал будет ограничен.

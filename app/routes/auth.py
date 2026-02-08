@@ -15,6 +15,8 @@ class TelegramAuthIn(BaseModel):
 
 @router.post("/telegram")
 def telegram_auth(payload: TelegramAuthIn):
+    if not (settings.BOT_TOKEN or "").strip():
+        raise HTTPException(status_code=500, detail="BOT_TOKEN is not set")
     try:
         parsed = validate_init_data(payload.initData, settings.BOT_TOKEN)
         user = parsed.get("user")

@@ -1,11 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
 import logging
 
 from .settings import settings
-from .db import engine, Base
+from .db import get_engine, Base
 from .scheduler import start_scheduler
 
 from .routes.auth import router as auth_router
@@ -31,27 +30,34 @@ if settings.CORS_ORIGIN:
 
 @app.get("/health")
 def health():
-    # Healthcheck must not depend on DB, иначе Railway может считать сервис "мертвым" на старте.
+    # Healthcheck must not depend on DB / external services.
     return {"ok": True}
 
-@app.get("/health/db")
-def health_db():
-    # Optional DB check endpoint
-    with engine.connect() as conn:
-        conn.execute(text("SELECT 1"))
-    return {"ok": True}
+@app.get("/health/info")
+def health_info():
+    # Helpful for debugging in Railway logs / curl
+    return {
+        "ok": True,
+        "has_DATABASE_URL": bool((settings.DATABASE_URL or "").strip()),
+        "has_BOT_TOKEN": bool((settings.BOT_TOKEN or "").strip()),
+        "has_JWT_SECRET": bool((settings.JWT_SECRET or "").strip()),
+    }
 
 @app.on_event("startup")
 def on_startup():
-    # Create tables (simple deploy). For stricter control use migrations later.
+    # Try DB init, but don't crash if env missing / DB not ready.
     try:
+        engine = get_engine()
         Base.metadata.create_all(bind=engine)
     except Exception as e:
-        # Don't crash the app: let it become healthy so you can inspect logs / env in Railway
         log.exception("DB init failed on startup: %s", e)
 
+    # Start scheduler only if BOT_TOKEN is present
     try:
-        start_scheduler()
+        if (settings.BOT_TOKEN or "").strip():
+            start_scheduler()
+        else:
+            log.warning("Scheduler not started: BOT_TOKEN is empty.")
     except Exception as e:
         log.exception("Scheduler start failed: %s", e)
 
