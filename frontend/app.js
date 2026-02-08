@@ -108,9 +108,25 @@ async function ensureAuth(){
   if (token) return { ok: true, reason: "HAS_TOKEN" };
 
   const wa = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-  const initData = wa?.initData || "";
+
+  // If Telegram WebApp exists, call ready()/expand() early
+  try{ wa?.ready?.(); }catch(_){}
+  try{ wa?.expand?.(); }catch(_){}
+
+  let initData = wa?.initData || "";
+
+  // Some clients may populate initData slightly позже: retry a couple times
+  if (!initData && wa){
+    for (let i=0;i<3;i++){
+      await new Promise(r=>setTimeout(r, 120));
+      initData = wa?.initData || "";
+      if (initData) break;
+    }
+  }
 
   if (!initData){
+    // Telegram object exists but initData empty -> opened not as WebApp button (url link), or BotFather menu not set
+    if (wa) return { ok: false, reason: "NO_INITDATA_TG" };
     return { ok: false, reason: "NO_INITDATA" };
   }
 
@@ -122,6 +138,7 @@ async function ensureAuth(){
     return { ok: false, reason: "LOGIN_FAILED", detail: String(e?.message || e) };
   }
 }
+
 
 
 
@@ -923,25 +940,39 @@ if (!auth.ok){
   const c = document.createElement("div");
   c.className = "card p16";
 
-  if (auth.reason === "NO_INITDATA"){
-    c.innerHTML = `
-      <div class="h2">Открой из Telegram</div>
-      <div class="sub" style="line-height:1.5; margin-top:10px">
-        Сейчас <b>initData пустой</b>. Это бывает если:
-        <br/>• открыли ссылку в браузере, а не Mini App
-        <br/>• в BotFather WebApp URL не равен твоему Railway домену
-        <br/>• WebApp открыт не через бота/меню
-        <br/><br/>
-        ✅ Открой бота → нажми кнопку меню / WebApp.<br/>
-        ✅ Проверь WebApp URL в BotFather.<br/><br/>
-        Нажми “Диагностика”, чтобы увидеть статус.
-      </div>
-      <div class="row" style="margin-top:12px; gap:10px">
-        <button class="btn primary" id="btnReload" style="flex:1">Обновить</button>
-        <button class="btn ghost" id="btnDiag" style="flex:1">Диагностика</button>
-      </div>
-    `;
-  } else {
+  if (auth.reason === "NO_INITDATA" || auth.reason === "NO_INITDATA_TG"){
+    c.innerHTML = (auth.reason === "NO_INITDATA_TG") ? `
+        <div class="h2">Telegram открыт, но initData пустой</div>
+        <div class="sub" style="line-height:1.5; margin-top:10px">
+          Это значит, что страница открылась <b>как обычная ссылка</b>, а не как <b>WebApp-кнопка</b>.
+          В таком режиме Telegram не передаёт подпись <b>initData</b>, и мы не можем залогинить пользователя.<br/><br/>
+          ✅ Исправление (BotFather):<br/>
+          • <b>/setmenubutton</b> → выбери бота → <b>Web App</b> → вставь URL: <b>${location.origin}/</b><br/>
+          • Потом открой бота и нажми кнопку меню / “Open App” (а не ссылку).<br/><br/>
+          Также, если ты используешь inline-кнопку — она должна быть <b>web_app</b>, а не <b>url</b>.
+        </div>
+        <div class="row" style="margin-top:12px; gap:10px">
+          <button class="btn primary" id="btnReload" style="flex:1">Обновить</button>
+          <button class="btn ghost" id="btnDiag" style="flex:1">Диагностика</button>
+        </div>
+      ` : `
+        <div class="h2">Открой из Telegram</div>
+        <div class="sub" style="line-height:1.5; margin-top:10px">
+          Сейчас <b>initData пустой</b>. Это бывает если:
+          <br/>• открыли ссылку в браузере, а не Mini App
+          <br/>• в BotFather WebApp URL не равен твоему Railway домену
+          <br/>• WebApp открыт не через бота/меню
+          <br/><br/>
+          ✅ Открой бота → нажми кнопку меню / WebApp.<br/>
+          ✅ Проверь WebApp URL в BotFather.<br/><br/>
+          Нажми “Диагностика”, чтобы увидеть статус.
+        </div>
+        <div class="row" style="margin-top:12px; gap:10px">
+          <button class="btn primary" id="btnReload" style="flex:1">Обновить</button>
+          <button class="btn ghost" id="btnDiag" style="flex:1">Диагностика</button>
+        </div>
+      `;
+    } else {
     c.innerHTML = `
       <div class="h2">Авторизация упала</div>
       <div class="sub" style="line-height:1.5; margin-top:10px">
@@ -964,7 +995,16 @@ if (!auth.ok){
 
   const diag = async ()=>{
     try{
-      const info = await fetch("/health/info").then(r=>r.json());
+      const wa = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+        const extra = {
+          hasTelegram: !!wa,
+          platform: wa?.platform,
+          version: wa?.version,
+          initDataLen: (wa?.initData||"").length,
+          url: location.href
+        };
+        const info = await fetch("/health/info").then(r=>r.json());
+        info.__client = extra;
       toast("health/info", JSON.stringify(info));
     }catch(e){
       toast("Diag error", String(e?.message||e));
