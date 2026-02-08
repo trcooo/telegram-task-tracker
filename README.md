@@ -1,58 +1,30 @@
-# Telegram Mini App: Планировщик дня (Python + Vanilla JS)
+# TG Planner Mini App (One Service)
+Backend: Python (FastAPI)
+Frontend: Vanilla JS + HTML + CSS (glass UI)
+Deploy: Railway (Nixpacks), один сервис
 
-Ты просил переписать на: **py, js, html, css, json** — тут:
-- Backend: **Python (FastAPI)** + SQLAlchemy + JWT + Telegram WebApp auth
-- Frontend: **HTML + CSS + JS** (без Vite/React/Node build)
-- Конфиг: `frontend/config.json`
+## Railway (с нуля)
+1) Railway → New Project → Deploy from GitHub
+2) New → Database → PostgreSQL
+3) Service → Variables:
+- DATABASE_URL (из Postgres)
+- BOT_TOKEN
+- JWT_SECRET (32+ символов)
+- APP_URL (домен сервиса, желательно)
 
-## 1) Env (Railway / локально)
-Скопируй `.env.example` → `.env` и заполни:
-- `DATABASE_URL` (Postgres в Railway)
-- `BOT_TOKEN` (бот)
-- `JWT_SECRET` (строка 32+ символов)
-- (опционально) `APP_URL` или `WEBAPP_DEEPLINK`
+4) Settings:
+- Start Command (если нужно):
+  uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips=*
+- Healthcheck Path: /health
+5) Networking → Generate Domain
 
-## 2) Локальный запуск
-```bash
-python -m venv .venv
-source .venv/bin/activate
+## Telegram
+В BotFather укажи WebApp URL = APP_URL.
+Пользователь должен нажать /start у бота, иначе reminders не придут.
+
+## Локальный запуск
 pip install -r requirements.txt
+export BOT_TOKEN="..."
+export JWT_SECRET="..."
+export DATABASE_URL="sqlite:///./data.db"
 uvicorn app.main:app --reload --port 3000
-```
-Открой: http://localhost:3000
-
-## 3) Railway
-- `railway.toml` уже настроен: Nixpacks + `uvicorn ...`
-- Добавь переменные окружения из `.env.example`
-- Убедись, что подключён Postgres и его URL прописан в `DATABASE_URL`
-
-## Важно про напоминания
-Для того чтобы бот мог писать пользователю, пользователь должен хотя бы раз нажать `/start` у бота.
-Напоминания отправляются фоном каждые 60 секунд (APScheduler).
-
-## Почему у тебя падал билд в Node
-Ошибка была из-за `postcss.config.js` при `"type":"module"`.
-В этой версии Node build вообще не нужен.
-
-
-## Railway: если healthcheck не проходит
-- Dockerfile запускает uvicorn на `${PORT:-3000}` (Railway требует слушать именно PORT)
-- `/health` не зависит от базы данных (для DB проверки есть `/health/db`)
-- `DATABASE_URL` формата `postgresql://...` автоматически нормализуется под psycopg3
-
-
-## Railway: если healthcheck всё равно падает
-1) Открой **Logs** у сервиса — если приложение не стартует, там будет traceback.
-2) Проверь переменные окружения (Variables):
-- `DATABASE_URL` (Postgres plugin)
-- `BOT_TOKEN`
-- `JWT_SECRET`
-3) Для быстрой диагностики можно дернуть:
-- `/health` (должен отвечать всегда)
-- `/health/info` (показывает, какие env заданы)
-
-В этой версии приложение НЕ падает при отсутствии env (чтобы пройти healthcheck), но без `BOT_TOKEN` и `DATABASE_URL` функционал будет ограничен.
-
-
-## Fixed3: портовая совместимость
-Эта версия стартует uvicorn сразу на 2-3 портах: `PORT` (Railway), а также 3000 и 8080 (частые дефолты прокси). Это убирает проблему, когда прокси Railway стучится не в тот порт.

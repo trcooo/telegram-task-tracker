@@ -5,12 +5,12 @@ from sqlalchemy.orm import Session
 from .db import get_sessionmaker
 from .models import Reminder, ReminderStatus
 from .telegram_send import send_message
+from .settings import settings
 
 scheduler = AsyncIOScheduler()
 
 async def dispatch_reminders():
-    now = datetime.now(timezone.utc).replace(tzinfo=None)  # store naive UTC in DB
-
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     SessionLocal = get_sessionmaker()
     db: Session = SessionLocal()
     try:
@@ -21,10 +21,8 @@ async def dispatch_reminders():
             .limit(50)
             .all()
         )
-
         for r in due:
             try:
-                # load related task + user via lazy relationship
                 await send_message(str(r.user.tg_id), f"⏰ Напоминание: {r.task.title}")
                 r.status = ReminderStatus.SENT
                 r.sent_at = now
@@ -36,5 +34,5 @@ async def dispatch_reminders():
         db.close()
 
 def start_scheduler():
-    scheduler.add_job(dispatch_reminders, "interval", minutes=1, max_instances=1, coalesce=True)
+    scheduler.add_job(dispatch_reminders, "interval", seconds=30, max_instances=1, coalesce=True)
     scheduler.start()

@@ -1,37 +1,42 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+
 from ..auth_dep import get_current_user
 from ..db import get_db
 from ..models import User, Reminder, ReminderStatus, Task
-from ..utils import to_iso
+from ..utils import to_iso, parse_iso_to_naive
 
 router = APIRouter(prefix="/api/reminders", tags=["reminders"])
 
 class ReminderCreate(BaseModel):
     taskId: str
-    remindAt: str  # ISO
+    remindAt: str
 
 class SnoozeIn(BaseModel):
     minutes: int = Field(ge=1, le=24*60)
 
 @router.get("")
 def list_reminders(
-    status: Optional[Literal["PENDING","SENT","CANCELED"]] = Query(default=None),
+    status: Optional[Literal["PENDING","SENT","CANCELED"]] = Query(default="PENDING"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    q = db.query(Reminder).filter(Reminder.user_id == user.id).options(joinedload(Reminder.task))
+    q = db.query(Reminder).filter(Reminder.user_id == user.id)
     if status:
         q = q.filter(Reminder.status == ReminderStatus(status))
-    items = q.order_by(Reminder.status.asc(), Reminder.remind_at.asc()).limit(200).all()
+    items = q.order_by(Reminder.remind_at.asc()).limit(300).all()
+
+    task_ids = [r.task_id for r in items]
+    tasks = {t.id: t for t in db.query(Task).filter(Task.user_id == user.id, Task.id.in_(task_ids)).all()} if task_ids else {}
+
     return {
         "items": [{
             "id": r.id,
             "taskId": r.task_id,
-            "taskTitle": r.task.title,
+            "taskTitle": (tasks.get(r.task_id).title if tasks.get(r.task_id) else "Task"),
             "remindAt": to_iso(r.remind_at),
             "status": r.status.value
         } for r in items]
@@ -43,11 +48,15 @@ def create_reminder(payload: ReminderCreate, user: User = Depends(get_current_us
     if not t:
         raise HTTPException(status_code=404, detail="TASK_NOT_FOUND")
 
-    remind_at = datetime.fromisoformat(payload.remindAt.replace("Z","+00:00")).replace(tzinfo=None)
+    remind_at = parse_iso_to_naive(payload.remindAt)
+    if not remind_at:
+        raise HTTPException(status_code=400, detail="BAD_DATE")
+
     r = Reminder(user_id=user.id, task_id=t.id, remind_at=remind_at, status=ReminderStatus.PENDING)
     db.add(r)
     db.commit()
     db.refresh(r)
+
     return {
         "item": {
             "id": r.id,
@@ -80,7 +89,7 @@ def cancel(reminder_id: str, user: User = Depends(get_current_user), db: Session
     r.status = ReminderStatus.CANCELED
     db.add(r)
     db.commit()
-    return {"ok": True, "item": {"id": r.id, "status": r.status.value}}
+    return {"ok": True}
 
 @router.post("/task/{task_id}/quick")
 def quick(task_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):

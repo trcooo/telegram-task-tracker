@@ -1,5 +1,12 @@
 {
   "name": "tg-planner-miniapp",
-  "ui": "vanilla",
-  "apiBase": "/"
+  "ui": "glass-vanilla",
+  "pages": [
+    "inbox",
+    "calendar",
+    "schedule",
+    "matrix",
+    "reminders",
+    "settings"
+  ]
 }

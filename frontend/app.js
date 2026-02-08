@@ -1,4 +1,6 @@
-/* global Telegram */
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
 const API = {
   async request(path, opts = {}) {
     const token = localStorage.getItem("tg_planner_token");
@@ -9,6 +11,7 @@ const API = {
       const t = await res.text();
       throw new Error(t || ("HTTP " + res.status));
     }
+    if (res.status === 204) return null;
     return res.json();
   },
   login(initData) {
@@ -21,695 +24,888 @@ const API = {
     const q = qs.toString();
     return API.request("/api/tasks" + (q ? "?" + q : ""));
   },
-  createTask(payload) {
-    return API.request("/api/tasks", { method:"POST", body: JSON.stringify(payload) });
-  },
-  patchTask(id, payload) {
-    return API.request(`/api/tasks/${id}`, { method:"PATCH", body: JSON.stringify(payload) });
-  },
-  deleteTask(id) {
-    return API.request(`/api/tasks/${id}`, { method:"DELETE" });
-  },
+  createTask(payload) { return API.request("/api/tasks", { method:"POST", body: JSON.stringify(payload) }); },
+  patchTask(id, payload) { return API.request(`/api/tasks/${id}`, { method:"PATCH", body: JSON.stringify(payload) }); },
+  deleteTask(id) { return API.request(`/api/tasks/${id}`, { method:"DELETE" }); },
+
   reminders(params = {}) {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k,v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
     const q = qs.toString();
     return API.request("/api/reminders" + (q ? "?" + q : ""));
   },
-  quickReminder(taskId) {
-    return API.request(`/api/reminders/task/${taskId}/quick`, { method:"POST" });
-  },
+  quickReminder(taskId) { return API.request(`/api/reminders/task/${taskId}/quick`, { method:"POST" }); },
   snooze(reminderId, minutes) {
     return API.request(`/api/reminders/${reminderId}/snooze`, { method:"POST", body: JSON.stringify({ minutes }) });
   },
-  cancelReminder(reminderId) {
-    return API.request(`/api/reminders/${reminderId}/cancel`, { method:"POST" });
-  }
+  cancelReminder(reminderId) { return API.request(`/api/reminders/${reminderId}/cancel`, { method:"POST" }); },
 };
 
-function el(tag, attrs = {}, children = []) {
-  const e = document.createElement(tag);
-  Object.entries(attrs).forEach(([k,v]) => {
-    if (k === "class") e.className = v;
-    else if (k.startsWith("on") && typeof v === "function") e.addEventListener(k.slice(2), v);
-    else if (v !== null && v !== undefined) e.setAttribute(k, v);
-  });
-  children.forEach(c => e.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
-  return e;
+function toast(title, sub, ms=2200){
+  const root = $("#toastRoot");
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.innerHTML = `<div class="t-title"></div><div class="t-sub"></div>`;
+  t.querySelector(".t-title").textContent = title;
+  t.querySelector(".t-sub").textContent = sub || "";
+  root.appendChild(t);
+  setTimeout(()=>{ t.style.opacity="0"; t.style.transform="translateY(-6px)"; }, ms);
+  setTimeout(()=>{ t.remove(); }, ms+250);
 }
 
-function fmtDate(d) {
-  return new Date(d).toLocaleString("ru-RU", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" });
+function setActiveTab(name){
+  const map = { inbox:"Inbox", schedule:"Schedule", calendar:"Calendar", matrix:"Priority Matrix", reminders:"Reminders", settings:"Settings" };
+  const t = document.querySelector("#pageTitle");
+  if (t) t.textContent = map[name] || "Inbox";
+
+  $$(".tab").forEach(a => a.classList.toggle("active", a.dataset.tab === name));
 }
 
-function setActiveTab(name) {
-  document.querySelectorAll(".tab").forEach(a => {
-    a.classList.toggle("active", a.dataset.tab === name);
-  });
+function isoFromLocal(dtLocal){
+  if (!dtLocal) return null;
+  const d = new Date(dtLocal);
+  return d.toISOString();
+}
+function localFromIso(iso){
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2,"0");
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth()+1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
 }
 
-async function ensureAuth() {
+function yyyymmdd(d){
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth()+1).padStart(2,"0");
+  const dd = String(d.getDate()).padStart(2,"0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+function fmtTime(iso){
+  const d = new Date(iso);
+  return d.toLocaleTimeString("ru-RU", {hour:"2-digit",minute:"2-digit"});
+}
+function fmtDateTime(iso){
+  const d = new Date(iso);
+  return d.toLocaleString("ru-RU", {day:"2-digit",month:"short", hour:"2-digit",minute:"2-digit"});
+}
+
+async function ensureAuth(){
   const token = localStorage.getItem("tg_planner_token");
   if (token) return true;
-
   const wa = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   if (!wa || !wa.initData) return false;
-
-  wa.ready();
-  wa.expand();
-
+  wa.ready(); wa.expand();
   const r = await API.login(wa.initData);
   localStorage.setItem("tg_planner_token", r.token);
   return true;
 }
 
-async function loadTopUser() {
-  try {
+async function loadTopUser(){
+  try{
     const r = await API.me();
-    const u = r.user || null;
-    const sub = document.getElementById("userSub");
-    const av = document.getElementById("avatar");
-    if (sub) sub.textContent = u?.username ? ("@" + u.username) : ([u?.firstName, u?.lastName].filter(Boolean).join(" ") || "Telegram Mini App");
-    if (av) {
-      av.innerHTML = "";
-      if (u?.photoUrl) av.appendChild(el("img", { src: u.photoUrl, alt:"" }));
+    const u = r.user;
+    $("#userSub").textContent = u?.username ? ("@" + u.username) : ([u?.firstName, u?.lastName].filter(Boolean).join(" ") || "Telegram Mini App");
+    const av = $("#avatar");
+    av.innerHTML = "";
+    if (u?.photoUrl){
+      const img = document.createElement("img");
+      img.src = u.photoUrl;
+      img.alt = "";
+      av.appendChild(img);
     }
-  } catch {}
+  }catch{}
 }
 
-/* Pages */
-function pageWrapper(titleRight) {
-  return el("div", {}, [
-    el("div", { class:"row" }, [
-      el("div", { class:"h1" }, [titleRight || ""]),
-      el("div", { class:"mini" }, [])
-    ])
-  ]);
-}
+const Sheet = {
+  mode: "create",
+  taskId: null,
+  open(task){
+    $("#sheet").classList.add("show");
+    if (task && task.id){
+      this.mode = "edit";
+      this.taskId = task.id;
+      $("#sheetTitle").textContent = "Редактировать";
+      $("#sheetSub").textContent = "Обнови задачу и сохрани";
+      $("#btnDelete").style.display = "inline-flex";
 
-async function renderInbox(root) {
-  setActiveTab("inbox");
-  root.innerHTML = "";
+      $("#tTitle").value = task.title || "";
+      $("#tDesc").value = task.description || "";
+      $("#tStart").value = localFromIso(task.startAt);
+      $("#tDue").value = localFromIso(task.dueAt);
+      $("#tDur").value = String(task.durationMin || 45);
+      $("#tPri").value = String(task.priority || 3);
+      $("#tQuad").value = task.quadrant || "";
+    }else{
+      this.mode = "create";
+      this.taskId = null;
+      $("#sheetTitle").textContent = "Новая задача";
+      $("#sheetSub").textContent = "Создай задачу за 10 секунд";
+      $("#btnDelete").style.display = "none";
 
-  const header = el("div", { class:"row" }, [
-    el("div", { class:"h2" }, ["Inbox"]),
-    el("button", { class:"btn primary", onclick: () => openTaskModal() }, ["+ Add"])
-  ]);
-
-  const filters = el("div", { class:"card p16" }, [
-    el("div", { class:"row gap8" }, [
-      el("button", { class:"btn", id:"fToday" }, ["Today"]),
-      el("button", { class:"btn", id:"fUpcoming" }, ["Upcoming"]),
-      el("button", { class:"btn", id:"fDone" }, ["Done"]),
-    ])
-  ]);
-
-  const list = el("div", { class:"list", id:"taskList" }, []);
-  root.appendChild(header);
-  root.appendChild(filters);
-  root.appendChild(list);
-
-  let filter = "Today";
-  function updateButtons() {
-    ["Today","Upcoming","Done"].forEach(f => {
-      const id = f === "Today" ? "fToday" : f==="Upcoming" ? "fUpcoming" : "fDone";
-      const b = document.getElementById(id);
-      if (!b) return;
-      b.classList.toggle("primary", filter === f);
-      b.classList.toggle("btn", true);
-      b.classList.toggle("primary", filter === f);
-      b.className = "btn " + (filter === f ? "primary" : "");
-    });
-  }
-
-  async function load() {
-    updateButtons();
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth()+1).padStart(2,"0");
-    const dd = String(today.getDate()).padStart(2,"0");
-    const date = `${yyyy}-${mm}-${dd}`;
-
-    const params = filter === "Done"
-      ? { status:"DONE" }
-      : filter === "Upcoming"
-        ? { status:"TODO" }
-        : { status:"TODO", date };
-
-    const r = await API.tasks(params);
-    list.innerHTML = "";
-    if (!r.items || r.items.length === 0) {
-      list.appendChild(el("div", { class:"card p16" }, [el("div",{class:"sub"},["Пока пусто. Добавь задачу."])]));
-      return;
+      $("#tTitle").value = task?.title || "";
+      $("#tDesc").value = task?.description || "";
+      $("#tStart").value = localFromIso(task?.startAt);
+      $("#tDue").value = localFromIso(task?.dueAt);
+      $("#tDur").value = String(task?.durationMin || 45);
+      $("#tPri").value = String(task?.priority || 3);
+      $("#tQuad").value = task?.quadrant || "";
     }
-    r.items.forEach(t => list.appendChild(taskCard(t, { allowDone:true })));
-  }
+  },
+  close(){ $("#sheet").classList.remove("show"); }
+};
 
-  document.getElementById("fToday").onclick = () => { filter="Today"; load(); };
-  document.getElementById("fUpcoming").onclick = () => { filter="Upcoming"; load(); };
-  document.getElementById("fDone").onclick = () => { filter="Done"; load(); };
+function wireSheet(){
+  $$("#sheet [data-close='1']").forEach(x => x.addEventListener("click", ()=>Sheet.close()));
+  $("#btnCancel").addEventListener("click", ()=>Sheet.close());
 
-  await load();
+  $("#btnSave").addEventListener("click", async ()=>{
+    const title = $("#tTitle").value.trim();
+    if (!title){ toast("Название пустое", "Введи заголовок задачи"); return; }
 
-  // modal
-  function openTaskModal() {
-    const modal = ensureModal();
-    modal.querySelector(".h2").textContent = "Новая задача";
-    modal.querySelector("#tTitle").value = "";
-    modal.querySelector("#tDesc").value = "";
-    modal.querySelector("#saveBtn").onclick = async () => {
-      const title = modal.querySelector("#tTitle").value.trim();
-      const description = modal.querySelector("#tDesc").value.trim();
-      if (!title) return;
-      modal.querySelector("#saveBtn").textContent = "...";
-      try {
-        await API.createTask({ title, description: description || undefined });
-        closeModal();
-        await load();
-      } finally {
-        modal.querySelector("#saveBtn").textContent = "Сохранить";
-      }
+    const payload = {
+      title,
+      description: ($("#tDesc").value || "").trim() || null,
+      startAt: isoFromLocal($("#tStart").value),
+      dueAt: isoFromLocal($("#tDue").value),
+      durationMin: Number($("#tDur").value || "45"),
+      priority: Number($("#tPri").value || "3"),
+      quadrant: $("#tQuad").value || null
     };
-    showModal();
+
+    $("#btnSave").textContent = "…";
+    try{
+      if (Sheet.mode === "create"){
+        await API.createTask(payload);
+        toast("Готово", "Задача создана");
+      }else{
+        await API.patchTask(Sheet.taskId, payload);
+        toast("Сохранено", "Задача обновлена");
+      }
+      Sheet.close();
+      await renderRoute(true);
+    }catch(e){
+      toast("Ошибка", String(e.message || e));
+    }finally{
+      $("#btnSave").textContent = "Сохранить";
+    }
+  });
+
+  $("#btnDelete").addEventListener("click", async ()=>{
+    if (!Sheet.taskId) return;
+    if (!confirm("Удалить задачу?")) return;
+    $("#btnDelete").textContent = "…";
+    try{
+      await API.deleteTask(Sheet.taskId);
+      toast("Удалено", "Задача удалена");
+      Sheet.close();
+      await renderRoute(true);
+    }catch(e){
+      toast("Ошибка", String(e.message || e));
+    }finally{
+      $("#btnDelete").textContent = "Удалить";
+    }
+  });
+}
+
+function renderSkeleton(root){
+  root.innerHTML = "";
+  for (let i=0;i<4;i++){
+    const c = document.createElement("div");
+    c.className = "card task";
+    c.innerHTML = `
+      <div class="skel skel-line big" style="width:60%"></div>
+      <div class="skel skel-line" style="width:92%; margin-top:10px"></div>
+      <div class="skel skel-line" style="width:70%; margin-top:8px"></div>
+      <div class="row" style="margin-top:12px; gap:8px">
+        <div class="skel skel-line" style="width:28%"></div>
+        <div class="skel skel-line" style="width:28%"></div>
+        <div class="skel skel-line" style="width:28%"></div>
+      </div>`;
+    root.appendChild(c);
   }
 }
 
-function taskCard(t, opts = {}) {
-  const pills = el("div", { class:"row wrap gap8" }, [
-    el("span", { class:"badge" + (t.status==="DONE" ? " done" : "") }, [t.status==="DONE" ? "Done" : "Todo"]),
-  ]);
-  if (t.startAt) pills.appendChild(el("span", { class:"pill" }, ["Start " + new Date(t.startAt).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})]));
-  if (t.dueAt) pills.appendChild(el("span", { class:"pill" }, ["Due " + fmtDate(t.dueAt)]));
-  if (t.nextReminderAt) pills.appendChild(el("span", { class:"pill" }, ["🔔 " + new Date(t.nextReminderAt).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})]));
+let inboxFilter = "today";
+let inboxSearch = "";
 
-  const actions = el("div", { class:"row gap8", style:"margin-top:10px" }, [
-    el("button", { class:"btn", onclick: async () => {
-      await API.patchTask(t.id, { status: t.status==="DONE" ? "TODO" : "DONE" });
-      location.reload();
-    }}, [t.status==="DONE" ? "Undo" : "Done"]),
-    el("button", { class:"btn", onclick: async () => { await API.quickReminder(t.id); alert("Напоминание через 10 минут"); } }, ["Snooze"]),
-    el("button", { class:"btn danger", onclick: async () => {
-      if (!confirm("Удалить задачу?")) return;
-      await API.deleteTask(t.id);
-      location.reload();
-    } }, ["Delete"])
-  ]);
+function wireInboxToolbar(){
+  const sbtn = document.querySelector('#btnSearchTop');
+  if (sbtn) sbtn.addEventListener('click', ()=>{ const i=document.querySelector('#searchInput'); if(i){ i.focus(); i.scrollIntoView({behavior:'smooth', block:'center'}); } });
 
-  return el("div", { class:"card task" }, [
-    el("p", { class:"task-title" }, [t.title]),
-    t.description ? el("div",{class:"task-desc"},[t.description]) : el("div"),
-    el("div",{style:"margin-top:10px"},[pills]),
-    actions
-  ]);
+  $("#segInbox").addEventListener("click", (e)=>{
+    const b = e.target.closest(".seg-btn");
+    if (!b) return;
+    $$("#segInbox .seg-btn").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    inboxFilter = b.dataset.filter;
+    renderRoute(true);
+  });
+  $("#searchInput").addEventListener("input", ()=>{
+    inboxSearch = $("#searchInput").value.trim();
+    clearTimeout(window.__qT);
+    window.__qT = setTimeout(()=>renderRoute(true), 220);
+  });
+  $("#btnAddTop").addEventListener("click", ()=>Sheet.open(null));
 }
 
-async function renderCalendar(root) {
-  setActiveTab("calendar");
+function taskCard(t){
+  const div = document.createElement("div");
+  div.className = "card task";
+
+  const isDone = t.status === "DONE";
+  const dotCls = isDone ? "done" : "todo";
+  const badge = isDone ? `<span class="badge done">Done</span>` : `<span class="badge todo">Todo</span>`;
+
+  const meta = [];
+  if (t.startAt) meta.push(`🕒 ${fmtTime(t.startAt)}`);
+  if (t.dueAt) meta.push(`📅 ${fmtDateTime(t.dueAt)}`);
+  if (t.nextReminderAt) meta.push(`🔔 ${fmtTime(t.nextReminderAt)}`);
+
+  div.innerHTML = `
+    <div class="task-row">
+      <div class="task-left">
+        <div class="dot-status ${dotCls}"></div>
+        <div style="min-width:0">
+          <div class="task-title"></div>
+          ${t.description ? `<div class="task-desc"></div>` : ``}
+          <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap; justify-content:flex-start">
+            <span class="pill">P${t.priority || 3}</span>
+            ${t.quadrant ? `<span class="pill">${t.quadrant.split("_")[0]}</span>` : ``}
+            ${meta.length ? `<span class="pill">${meta.join(" • ")}</span>` : ``}
+          </div>
+        </div>
+      </div>
+      ${badge}
+    </div>
+
+    <div class="row" style="margin-top:12px; gap:8px; justify-content:flex-end; flex-wrap:wrap">
+      <button class="action-chip primary" data-act="done">${isDone ? "Undo" : "Done"}</button>
+      <button class="action-chip" data-act="snooze">Snooze</button>
+      <button class="action-chip delete" data-act="delete">Delete</button>
+    </div>
+  `;
+
+  div.querySelector(".task-title").textContent = t.title;
+  if (t.description) div.querySelector(".task-desc").textContent = t.description;
+
+  div.addEventListener("click", (e)=>{ if (e.target.closest("button")) return; Sheet.open(t); });
+
+  div.querySelector("[data-act='done']").addEventListener("click", async (e)=>{
+    e.stopPropagation();
+    try{
+      await API.patchTask(t.id, { status: isDone ? "TODO" : "DONE" });
+      toast("Ок", isDone ? "Вернул в TODO" : "Отмечено Done");
+      renderRoute(true);
+    }catch(err){ toast("Ошибка", String(err.message||err)); }
+  });
+
+  div.querySelector("[data-act='snooze']").addEventListener("click", async (e)=>{
+    e.stopPropagation();
+    try{
+      await API.quickReminder(t.id);
+      toast("Напоминание", "Через 10 минут бот напомнит (если нажал /start)");
+      renderRoute(true);
+    }catch(err){
+      toast("Ошибка", "Проверь /start у бота и BOT_TOKEN");
+    }
+  });
+
+  div.querySelector("[data-act='delete']").addEventListener("click", async (e)=>{
+    e.stopPropagation();
+    if (!confirm("Удалить задачу?")) return;
+    try{
+      await API.deleteTask(t.id);
+      toast("Удалено", "Задача удалена");
+      renderRoute(true);
+    }catch(err){ toast("Ошибка", String(err.message||err)); }
+  });
+
+  return div;
+}
+
+
+async function renderInbox(root, force){
+  setActiveTab("inbox");
+  if (!force) renderSkeleton(root);
+
+  const today = new Date();
+  const date = yyyymmdd(today);
+
+  const params = {};
+  if (inboxFilter === "done") params.status = "DONE";
+  else params.status = "TODO";
+
+  if (inboxFilter === "today") params.date = date;
+  if (inboxSearch) params.q = inboxSearch;
+
+  const r = await API.tasks(params);
   root.innerHTML = "";
+  const items = r.items || [];
+
+  if (items.length === 0){
+    const empty = document.createElement("div");
+    empty.className = "card p16";
+    empty.innerHTML = `<div class="h2">Пусто</div><div class="sub">Добавь задачу через “＋”.</div>`;
+    root.appendChild(empty);
+    return;
+  }
+  items.forEach(t=>root.appendChild(taskCard(t)));
+}
+
+async function renderCalendar(root, force){
+  setActiveTab("calendar");
+  if (!force) renderSkeleton(root);
 
   const now = new Date();
-  let month = new Date(now.getFullYear(), now.getMonth(), 1);
-  let selected = new Date(now);
+  if (!window.__calMonth) window.__calMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  if (!window.__calSel) window.__calSel = new Date(now);
 
-  const header = el("div", { class:"row" }, [
-    el("div", { class:"h2" }, ["Calendar"]),
-    el("div", { class:"row gap8" }, [
-      el("button",{class:"btn", onclick:()=>{ month = new Date(month.getFullYear(), month.getMonth()-1, 1); render(); }},["←"]),
-      el("div",{class:"card p16", style:"padding:10px 12px"},[month.toLocaleString("ru-RU",{month:"long",year:"numeric"})]),
-      el("button",{class:"btn", onclick:()=>{ month = new Date(month.getFullYear(), month.getMonth()+1, 1); render(); }},["→"]),
-    ])
-  ]);
+  const month = window.__calMonth;
+  const selected = window.__calSel;
 
-  const grid = el("div", { class:"card p16", id:"calGrid" }, []);
-  const list = el("div", { class:"list", id:"calList" }, []);
-
-  root.appendChild(header);
-  root.appendChild(grid);
-  root.appendChild(list);
-
-  function startOfWeek(d) {
-    const x = new Date(d);
-    const day = (x.getDay()+6)%7; // mon=0
-    x.setDate(x.getDate() - day);
-    x.setHours(0,0,0,0);
-    return x;
-  }
-
-  async function render() {
-    grid.innerHTML = "";
-    list.innerHTML = "";
-
-    const start = startOfWeek(new Date(month.getFullYear(), month.getMonth(), 1));
-    const end = new Date(month.getFullYear(), month.getMonth()+1, 0);
-    const endW = new Date(end);
-    endW.setDate(endW.getDate() + (7-((endW.getDay()+6)%7)-1));
-    endW.setHours(23,59,59,999);
-
-    const r = await API.tasks({ status:"TODO", from: start.toISOString(), to: endW.toISOString() });
-
-    const byDay = {};
-    (r.items || []).forEach(t => {
-      const d = t.startAt || t.dueAt;
-      if (!d) return;
-      const key = d.slice(0,10);
-      byDay[key] = byDay[key] || [];
-      byDay[key].push(t);
-    });
-
-    const dow = el("div",{class:"row", style:"justify-content:space-between; font-size:11px; color:var(--muted); margin-bottom:8px"},[
-      el("div",{},["Mon"]), el("div",{},["Tue"]), el("div",{},["Wed"]), el("div",{},["Thu"]), el("div",{},["Fri"]), el("div",{},["Sat"]), el("div",{},["Sun"])
-    ]);
-    grid.appendChild(dow);
-
-    const table = el("div", { style:"display:grid; grid-template-columns: repeat(7, 1fr); gap:8px;" }, []);
-    grid.appendChild(table);
-
-    let d = new Date(start);
-    while (d <= endW) {
-      const key = d.toISOString().slice(0,10);
-      const count = (byDay[key] || []).length;
-      const inMonth = d.getMonth() === month.getMonth();
-      const isSel = key === selected.toISOString().slice(0,10);
-
-      const cell = el("button", {
-        class: "btn",
-        style: `
-          text-align:left; width:100%;
-          padding:10px 10px;
-          border-radius:16px;
-          background:${isSel ? "#0F172A" : "rgba(255,255,255,0.6)"};
-          color:${isSel ? "#fff" : "var(--text)"};
-          opacity:${inMonth ? 1 : 0.55};
-        `,
-        onclick: ()=>{ selected = new Date(d); renderSelected(byDay); }
-      }, [
-        el("div",{style:"display:flex; justify-content:space-between; align-items:center;"},[
-          el("div",{style:"font-weight:800;"},[String(d.getDate())]),
-          count ? el("div",{class:"pill", style:`background:${isSel ? "rgba(255,255,255,0.15)" : "rgba(15,23,42,0.08)"}; border:none; color:${isSel ? "#fff":"var(--muted)"}`},[String(count)]) : el("span")
-        ]),
-        count ? el("div",{style:`margin-top:8px; height:6px; border-radius:999px; background:${isSel ? "rgba(255,255,255,0.35)" : "rgba(15,23,42,0.10)"}`}) : el("span")
-      ]);
-
-      table.appendChild(cell);
-      d.setDate(d.getDate()+1);
-    }
-
-    renderSelected(byDay);
-  }
-
-  function renderSelected(byDay) {
-    list.innerHTML = "";
-    const key = selected.toISOString().slice(0,10);
-    const items = byDay[key] || [];
-
-    list.appendChild(el("div",{class:"row"},[
-      el("div",{class:"h2"},[selected.toLocaleDateString("ru-RU",{weekday:"short", day:"2-digit", month:"short"})]),
-      el("div",{class:"mini"},[items.length + " tasks"])
-    ]));
-
-    if (items.length === 0) {
-      list.appendChild(el("div",{class:"card p16"},[el("div",{class:"sub"},["На этот день задач нет."])]));
-      return;
-    }
-    items.forEach(t => list.appendChild(taskCard(t)));
-  }
-
-  await render();
-}
-
-async function renderSchedule(root) {
-  setActiveTab("schedule");
   root.innerHTML = "";
 
-  let day = new Date();
+  const head = document.createElement("div");
+  head.className = "card p16";
+  head.innerHTML = `
+    <div class="row">
+      <div>
+        <div class="h2">Calendar</div>
+        <div class="sub">${month.toLocaleString("ru-RU",{month:"long",year:"numeric"})}</div>
+      </div>
+      <div class="row gap8" style="gap:8px">
+        <button class="btn ghost icon" id="calPrev">←</button>
+        <button class="btn ghost icon" id="calNext">→</button>
+      </div>
+    </div>
+  `;
+  root.appendChild(head);
 
-  const header = el("div", { class:"row" }, [
-    el("div", { class:"h2" }, ["Schedule"]),
-    el("div", { class:"row gap8" }, [
-      el("button",{class:"btn", onclick:()=>{ day.setDate(day.getDate()-1); render(); }},["←"]),
-      el("div",{class:"card p16", style:"padding:10px 12px"},[day.toLocaleDateString("ru-RU",{weekday:"short", day:"2-digit", month:"short"})]),
-      el("button",{class:"btn", onclick:()=>{ day.setDate(day.getDate()+1); render(); }},["→"]),
-    ])
-  ]);
+  const start = startOfWeek(new Date(month.getFullYear(), month.getMonth(), 1));
+  const end = endOfWeek(new Date(month.getFullYear(), month.getMonth()+1, 0));
 
-  const card = el("div",{class:"card p16"},[]);
-  root.appendChild(header);
-  root.appendChild(card);
+  const r = await API.tasks({ status:"TODO", from: start.toISOString(), to: end.toISOString() });
 
-  const START = 7;
-  const END = 22;
+  const byDay = {};
+  (r.items||[]).forEach(t=>{
+    const d = t.startAt || t.dueAt;
+    if (!d) return;
+    const key = d.slice(0,10);
+    (byDay[key] = byDay[key] || []).push(t);
+  });
 
-  function yyyymmdd(d){
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth()+1).padStart(2,"0");
-    const dd = String(d.getDate()).padStart(2,"0");
-    return `${yyyy}-${mm}-${dd}`;
-  }
+  const cal = document.createElement("div");
+  cal.className = "card p16";
+  cal.innerHTML = `
+    <div class="dow">
+      <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+  `;
+  root.appendChild(cal);
 
-  function minutesFromMidnight(dt){
-    return dt.getHours()*60 + dt.getMinutes();
-  }
+  const grid = cal.querySelector("#calGrid");
 
-  async function render() {
-    card.innerHTML = "";
-    const date = yyyymmdd(day);
-    const r = await API.tasks({ status:"TODO", date });
+  let d = new Date(start);
+  while (d <= end){
+    const key = d.toISOString().slice(0,10);
+    const count = (byDay[key] || []).length;
+    const inMonth = d.getMonth() === month.getMonth();
+    const isSel = key === selected.toISOString().slice(0,10);
 
-    const scheduled = (r.items||[]).filter(t => t.startAt);
-    const unscheduled = (r.items||[]).filter(t => !t.startAt);
-
-    card.appendChild(el("div",{class:"h2"},["Timeline"]));
-    const timeline = el("div",{class:"timeline", style:"margin-top:10px"},[]);
-    card.appendChild(timeline);
-
-    const totalMinutes = (END-START)*60;
-    const pxPerMin = 600/totalMinutes;
-
-    for (let h=START; h<=END; h++){
-      const row = el("div",{class:"hour"},[
-        el("div",{class:"label"},[String(h).padStart(2,"0")+":00"])
-      ]);
-      timeline.appendChild(row);
-    }
-
-    // Blocks
-    scheduled.forEach(t => {
-      const st = new Date(t.startAt);
-      const topMin = Math.max(0, Math.min(totalMinutes, minutesFromMidnight(st) - START*60));
-      const dur = Math.max(15, Math.min(240, t.durationMin || 45));
-      const topPx = topMin*pxPerMin + 8;
-      const heightPx = Math.max(46, dur*pxPerMin);
-
-      const block = el("div", { class:"block", style:`top:${topPx}px; height:${heightPx}px;` }, [
-        el("div",{style:"font-weight:800; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"},[t.title]),
-        el("div",{class:"mini", style:"margin-top:6px"},["Start " + st.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})]),
-        el("div",{class:"row gap8", style:"margin-top:10px"},[
-          el("button",{class:"btn", onclick: async ()=>{ 
-            const n = new Date(st); n.setMinutes(n.getMinutes()-15);
-            await API.patchTask(t.id, { startAt: n.toISOString() });
-            render();
-          }},["-15m"]),
-          el("button",{class:"btn", onclick: async ()=>{ 
-            const n = new Date(st); n.setMinutes(n.getMinutes()+15);
-            await API.patchTask(t.id, { startAt: n.toISOString() });
-            render();
-          }},["+15m"]),
-          el("button",{class:"btn", onclick: async ()=>{ await API.patchTask(t.id, { startAt: null }); render(); }},["Unpin"]),
-        ])
-      ]);
-      timeline.appendChild(block);
+    const b = document.createElement("button");
+    b.className = "cal-day" + (inMonth ? "" : " muted") + (isSel ? " selected" : "");
+    b.innerHTML = `
+      <div class="row" style="justify-content:space-between; align-items:center">
+        <div style="font-weight:900">${d.getDate()}</div>
+        ${count ? `<span class="pill count-pill">${count}</span>` : ``}
+      </div>
+      ${count ? `<div class="dot"></div>` : ``}
+    `;
+    b.addEventListener("click", ()=>{
+      window.__calSel = new Date(d);
+      renderCalendar(root, true);
     });
 
-    // Unscheduled
-    card.appendChild(el("div",{class:"h2", style:"margin-top:14px"},["Unscheduled"]));
-    if (unscheduled.length === 0) {
-      card.appendChild(el("div",{class:"sub"},["Все задачи уже на таймлайне 🎉"]));
-      return;
-    }
+    grid.appendChild(b);
+    d.setDate(d.getDate()+1);
+  }
 
-    unscheduled.forEach(t => {
-      const row = el("div",{class:"card p16"},[
-        el("div",{class:"row"},[
-          el("div",{},[
-            el("div",{style:"font-weight:800"},[t.title]),
-            el("div",{class:"mini"},["Прикрепи к времени"])
-          ]),
-          el("select",{class:"select", style:"max-width:140px"},[
-            el("option",{value:""},["Set time"]),
-            ...Array.from({length: END-START+1}).map((_,i)=>{
+  const keySel = selected.toISOString().slice(0,10);
+  const items = byDay[keySel] || [];
+
+  const list = document.createElement("div");
+  list.className = "list";
+  list.innerHTML = `
+    <div class="card p16">
+      <div class="row">
+        <div>
+          <div class="h2">${selected.toLocaleDateString("ru-RU",{weekday:"short", day:"2-digit", month:"short"})}</div>
+          <div class="sub">${items.length} tasks</div>
+        </div>
+        <button class="btn primary" id="addForDay">＋</button>
+      </div>
+    </div>
+  `;
+  root.appendChild(list);
+
+  $("#addForDay").addEventListener("click", ()=>{
+    const dt = new Date(selected);
+    dt.setHours(9,0,0,0);
+    Sheet.open({ title:"", description:"", startAt: dt.toISOString(), dueAt:null, durationMin:45, priority:3, quadrant:null });
+    Sheet.mode = "create";
+    Sheet.taskId = null;
+    $("#btnDelete").style.display = "none";
+  });
+
+  if (!items.length){
+    const empty = document.createElement("div");
+    empty.className = "card p16";
+    empty.innerHTML = `<div class="sub">На этот день задач нет.</div>`;
+    list.appendChild(empty);
+  }else{
+    items.forEach(t=>list.appendChild(taskCard(t)));
+  }
+
+  head.querySelector("#calPrev").addEventListener("click", ()=>{
+    window.__calMonth = new Date(month.getFullYear(), month.getMonth()-1, 1);
+    renderCalendar(root, true);
+  });
+  head.querySelector("#calNext").addEventListener("click", ()=>{
+    window.__calMonth = new Date(month.getFullYear(), month.getMonth()+1, 1);
+    renderCalendar(root, true);
+  });
+}
+
+function startOfWeek(d){
+  const x = new Date(d);
+  const day = (x.getDay()+6)%7;
+  x.setDate(x.getDate() - day);
+  x.setHours(0,0,0,0);
+  return x;
+}
+function endOfWeek(d){
+  const x = new Date(d);
+  const day = (x.getDay()+6)%7;
+  x.setDate(x.getDate() + (6-day));
+  x.setHours(23,59,59,999);
+  return x;
+}
+
+async function renderSchedule(root, force){
+  setActiveTab("schedule");
+  if (!force) renderSkeleton(root);
+
+  if (!window.__schDay) window.__schDay = new Date();
+  const day = window.__schDay;
+
+  root.innerHTML = "";
+
+  const head = document.createElement("div");
+  head.className = "card p16";
+  head.innerHTML = `
+    <div class="row">
+      <div>
+        <div class="h2">Schedule</div>
+        <div class="sub">${day.toLocaleDateString("ru-RU",{weekday:"short", day:"2-digit", month:"short"})}</div>
+      </div>
+      <div class="row" style="gap:8px">
+        <button class="btn ghost icon" id="schPrev">←</button>
+        <button class="btn ghost icon" id="schNext">→</button>
+      </div>
+    </div>
+  `;
+  root.appendChild(head);
+
+  const date = yyyymmdd(day);
+  const r = await API.tasks({ status:"TODO", date });
+  const items = r.items || [];
+
+  const scheduled = items.filter(t=>t.startAt);
+  const unscheduled = items.filter(t=>!t.startAt);
+
+  const card = document.createElement("div");
+  card.className = "card p16";
+  card.innerHTML = `<div class="h2">Timeline</div><div class="timeline" id="tl"></div>`;
+  root.appendChild(card);
+
+  const tl = card.querySelector("#tl");
+
+  const START = 7, END = 22;
+  const totalMinutes = (END-START)*60;
+  const pxPerMin = 620/totalMinutes;
+
+  for (let h=START; h<=END; h++){
+    const row = document.createElement("div");
+    row.className = "hour";
+    row.innerHTML = `<div class="label-hour">${String(h).padStart(2,"0")}:00</div>`;
+    tl.appendChild(row);
+  }
+
+  scheduled.forEach(t=>{
+    const st = new Date(t.startAt);
+    const topMin = Math.max(0, Math.min(totalMinutes, (st.getHours()*60 + st.getMinutes()) - START*60));
+    const dur = Math.max(30, Math.min(180, t.durationMin || 45));
+
+    const topPx = topMin*pxPerMin + 8;
+    const heightPx = Math.max(54, dur*pxPerMin);
+
+    const b = document.createElement("div");
+    b.className = "block p" + String(t.priority||3);
+    b.style.top = `${topPx}px`;
+    b.style.height = `${heightPx}px`;
+    b.innerHTML = `
+      <div style="font-weight:900; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.title}</div>
+      <div class="sub" style="margin-top:6px">${fmtTime(t.startAt)} • ${dur}m</div>
+      <div class="row" style="margin-top:10px; gap:8px; justify-content:flex-start; flex-wrap:wrap">
+        <button class="btn ghost" data-act="m15">-15m</button>
+        <button class="btn ghost" data-act="p15">+15m</button>
+        <button class="btn ghost" data-act="unpin">Unpin</button>
+      </div>
+    `;
+    b.addEventListener("click", (e)=>{ if (e.target.closest("button")) return; Sheet.open(t); });
+    b.querySelector("[data-act='m15']").addEventListener("click", async (e)=>{
+      e.stopPropagation();
+      const n = new Date(st); n.setMinutes(n.getMinutes()-15);
+      await API.patchTask(t.id, { startAt: n.toISOString() });
+      toast("Ок", "Сдвинул на -15м");
+      renderSchedule(root, true);
+    });
+    b.querySelector("[data-act='p15']").addEventListener("click", async (e)=>{
+      e.stopPropagation();
+      const n = new Date(st); n.setMinutes(n.getMinutes()+15);
+      await API.patchTask(t.id, { startAt: n.toISOString() });
+      toast("Ок", "Сдвинул на +15м");
+      renderSchedule(root, true);
+    });
+    b.querySelector("[data-act='unpin']").addEventListener("click", async (e)=>{
+      e.stopPropagation();
+      await API.patchTask(t.id, { startAt: null });
+      toast("Ок", "Открепил");
+      renderSchedule(root, true);
+    });
+
+    tl.appendChild(b);
+  });
+
+  const card2 = document.createElement("div");
+  card2.className = "card p16";
+  card2.innerHTML = `<div class="h2">Unscheduled</div><div class="sub">Прикрепи задачу к времени</div>`;
+  root.appendChild(card2);
+
+  if (!unscheduled.length){
+    const ok = document.createElement("div");
+    ok.className = "card p16";
+    ok.innerHTML = `<div class="sub">Все задачи уже на таймлайне 🎉</div>`;
+    root.appendChild(ok);
+  }else{
+    unscheduled.forEach(t=>{
+      const row = document.createElement("div");
+      row.className = "card p16";
+      row.innerHTML = `
+        <div class="row">
+          <div style="min-width:0">
+            <div style="font-weight:900; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.title}</div>
+            <div class="sub">Set time</div>
+          </div>
+          <select class="select" style="max-width:150px">
+            <option value="">Select</option>
+            ${Array.from({length: END-START+1}).map((_,i)=>{
               const h = START+i;
-              const txt = String(h).padStart(2,"0")+":00";
-              return el("option",{value:String(h)},[txt]);
-            })
-          ])
-        ])
-      ]);
-
+              return `<option value="${h}">${String(h).padStart(2,"0")}:00</option>`;
+            }).join("")}
+          </select>
+        </div>
+      `;
+      row.addEventListener("click",(e)=>{ if (e.target.tagName==="SELECT") return; Sheet.open(t); });
       const sel = row.querySelector("select");
-      sel.onchange = async () => {
+      sel.addEventListener("change", async ()=>{
         const h = Number(sel.value);
         if (!h) return;
         const dt = new Date(day);
         dt.setHours(h,0,0,0);
         await API.patchTask(t.id, { startAt: dt.toISOString() });
-        render();
-      };
-
-      card.appendChild(row);
+        toast("Ок", "Прикрепил к времени");
+        renderSchedule(root, true);
+      });
+      root.appendChild(row);
     });
   }
 
-  await render();
+  head.querySelector("#schPrev").addEventListener("click", ()=>{ day.setDate(day.getDate()-1); renderSchedule(root, true); });
+  head.querySelector("#schNext").addEventListener("click", ()=>{ day.setDate(day.getDate()+1); renderSchedule(root, true); });
 }
 
-async function renderMatrix(root) {
+const QUADS = [
+  { key:"Q1_URGENT_IMPORTANT", title:"Urgent / Important", hint:"Сделать сейчас" },
+  { key:"Q2_NOT_URGENT_IMPORTANT", title:"Not urgent / Important", hint:"Планировать" },
+  { key:"Q3_URGENT_NOT_IMPORTANT", title:"Urgent / Not important", hint:"Делегировать" },
+  { key:"Q4_NOT_URGENT_NOT_IMPORTANT", title:"Not urgent / Not important", hint:"Минимизировать" },
+];
+
+async function renderMatrix(root, force){
   setActiveTab("matrix");
+  if (!force) renderSkeleton(root);
+
+  const r = await API.tasks({ status:"TODO" });
+  const items = r.items || [];
+  items.forEach(t=>{ if (!t.quadrant) t.quadrant = "Q2_NOT_URGENT_IMPORTANT"; });
+
+  const by = {};
+  QUADS.forEach(q=>by[q.key]=[]);
+  items.forEach(t=>{ (by[t.quadrant] = by[t.quadrant] || []).push(t); });
+
   root.innerHTML = "";
 
-  const header = el("div", { class:"row" }, [
-    el("div", { class:"h2" }, ["Priority Matrix"]),
-    el("div", { class:"mini" }, ["Drag & drop"])
-  ]);
+  const head = document.createElement("div");
+  head.className = "card p16";
+  head.innerHTML = `<div class="row"><div><div class="h2">Priority Matrix</div><div class="sub">Drag & drop задачи между квадрантами</div></div><div class="pill">default: Q2</div></div>`;
+  root.appendChild(head);
 
-  const grid = el("div", { class:"grid2" }, []);
-  root.appendChild(header);
+  const grid = document.createElement("div");
+  grid.className = "grid2";
   root.appendChild(grid);
 
-  const QUADS = [
-    { key:"Q1_URGENT_IMPORTANT", title:"Urgent / Important", hint:"Сделать сейчас" },
-    { key:"Q2_NOT_URGENT_IMPORTANT", title:"Not urgent / Important", hint:"Планировать" },
-    { key:"Q3_URGENT_NOT_IMPORTANT", title:"Urgent / Not important", hint:"Делегировать" },
-    { key:"Q4_NOT_URGENT_NOT_IMPORTANT", title:"Not urgent / Not important", hint:"Минимизировать" },
-  ];
+  function makeItem(t){
+    const it = document.createElement("div");
+    it.className = "card p16";
+    it.style.padding = "12px";
+    it.draggable = true;
+    it.innerHTML = `
+      <div style="font-weight:900; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.title}</div>
+      ${t.description ? `<div class="sub" style="margin-top:6px">${t.description}</div>` : ``}
+      <div class="row" style="margin-top:10px; gap:8px; justify-content:flex-start; flex-wrap:wrap">
+        <span class="pill">P${t.priority||3}</span>
+      </div>
+    `;
+    it.addEventListener("click",(e)=>{ if (e.target.closest("button")) return; Sheet.open(t); });
+    it.addEventListener("dragstart",(e)=>{
+      it.classList.add("dragging");
+      e.dataTransfer.setData("text/taskId", t.id);
+      e.dataTransfer.effectAllowed = "move";
+    });
+    it.addEventListener("dragend",()=>it.classList.remove("dragging"));
+    return it;
+  }
 
-  function makeDropZone(q, items) {
-    const box = el("div", { class:"card p16", "data-q": q.key }, [
-      el("div",{class:"row"},[
-        el("div",{},[
-          el("div",{style:"font-weight:900"},[q.title]),
-          el("div",{class:"mini", style:"margin-top:6px"},[q.hint]),
-        ]),
-        el("div",{class:"mini"},[String(items.length)]),
-      ]),
-      el("div",{class:"list", style:"margin-top:10px"}, items.length ? items.map(t => matrixItem(t)) : [
-        el("div",{class:"sub"},["Перетащи сюда задачи"])
-      ])
-    ]);
+  function makeZone(q, list){
+    const z = document.createElement("div");
+    z.className = "card p16 zone " + (q.key.startsWith("Q1")?"q1":q.key.startsWith("Q2")?"q2":q.key.startsWith("Q3")?"q3":"q4");
+    z.dataset.q = q.key;
+    z.innerHTML = `
+      <div class="row">
+        <div>
+          <div class="h2">${q.title}</div>
+          <div class="sub">${q.hint}</div>
+        </div>
+        <div class="pill">${list.length}</div>
+      </div>
+      <div class="list" style="margin-top:10px"></div>
+    `;
+    const l = z.querySelector(".list");
+    if (!list.length){
+      const e = document.createElement("div");
+      e.className = "card p16";
+      e.innerHTML = `<div class="sub">Перетащи сюда задачи</div>`;
+      l.appendChild(e);
+    }else{
+      list.forEach(t=>l.appendChild(makeItem(t)));
+    }
 
-    box.ondragover = (e) => { e.preventDefault(); };
-    box.ondrop = async (e) => {
+    z.addEventListener("dragover",(e)=>{ e.preventDefault(); });
+    z.addEventListener("drop", async (e)=>{
       e.preventDefault();
       const id = e.dataTransfer.getData("text/taskId");
       if (!id) return;
       await API.patchTask(id, { quadrant: q.key });
-      render();
-    };
-
-    return box;
-  }
-
-  function matrixItem(t) {
-    const item = el("div", { class:"card p16", draggable:"true", style:"padding:12px; cursor:grab;" }, [
-      el("div",{style:"font-weight:900; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"},[t.title]),
-      t.description ? el("div",{class:"mini", style:"margin-top:6px"},[t.description]) : el("div"),
-      el("div",{class:"row gap8", style:"margin-top:8px"},[
-        el("span",{class:"pill"},["P"+t.priority]),
-        t.startAt ? el("span",{class:"pill"},["🕒"]) : el("span"),
-        t.dueAt ? el("span",{class:"pill"},["📅"]) : el("span"),
-      ])
-    ]);
-
-    item.ondragstart = (e) => {
-      e.dataTransfer.setData("text/taskId", t.id);
-      e.dataTransfer.effectAllowed = "move";
-    };
-    return item;
-  }
-
-  async function render() {
-    grid.innerHTML = "";
-    const r = await API.tasks({ status:"TODO" });
-    const items = r.items || [];
-
-    const by = {};
-    QUADS.forEach(q => by[q.key] = []);
-    items.forEach(t => {
-      const key = t.quadrant || "Q2_NOT_URGENT_IMPORTANT";
-      (by[key] = by[key] || []).push(t);
+      toast("Ок", "Переместил");
+      renderMatrix(root, true);
     });
-
-    QUADS.forEach(q => grid.appendChild(makeDropZone(q, by[q.key] || [])));
+    return z;
   }
 
-  await render();
-  root.appendChild(el("div",{class:"card p16 mini"},["Если у задачи нет квадранта — она считается “Not urgent / Important”."]));
+  QUADS.forEach(q=>grid.appendChild(makeZone(q, by[q.key]||[])));
+
+  const foot = document.createElement("div");
+  foot.className = "card p16";
+  foot.innerHTML = `<div class="sub">Чтобы сделать “Без квадранта” — в задаче выбери Quadrant = Auto.</div>`;
+  root.appendChild(foot);
 }
 
-async function renderReminders(root) {
+async function renderReminders(root, force){
   setActiveTab("reminders");
+  if (!force) renderSkeleton(root);
+
+  const r = await API.reminders({ status:"PENDING" });
+  const items = r.items || [];
+
   root.innerHTML = "";
 
-  const header = el("div", { class:"row" }, [
-    el("div", { class:"h2" }, ["Reminder Center"]),
-    el("div", { class:"mini", id:"remCnt" }, [""])
-  ]);
-  root.appendChild(header);
+  const head = document.createElement("div");
+  head.className = "card p16";
+  head.innerHTML = `
+    <div class="row">
+      <div>
+        <div class="h2">Reminders</div>
+        <div class="sub">${items.length} active</div>
+      </div>
+      <div class="pill">Snooze</div>
+    </div>
+  `;
+  root.appendChild(head);
 
-  const list = el("div", { class:"list", id:"remList" }, []);
-  root.appendChild(list);
+  if (!items.length){
+    const empty = document.createElement("div");
+    empty.className = "card p16";
+    empty.innerHTML = `<div class="sub">Активных напоминаний нет. В Inbox нажми “Snooze”.</div>`;
+    root.appendChild(empty);
+    return;
+  }
 
-  async function load() {
-    const r = await API.reminders({ status:"PENDING" });
-    const items = r.items || [];
-    document.getElementById("remCnt").textContent = items.length + " active";
-    list.innerHTML = "";
-
-    if (items.length === 0) {
-      list.appendChild(el("div",{class:"card p16"},[
-        el("div",{class:"sub"},["Активных напоминаний нет. В Inbox нажми “Snooze” на задаче, чтобы создать напоминание на 10 минут."])
-      ]));
-      return;
-    }
-
-    items.forEach(x => {
-      const when = new Date(x.remindAt);
-      list.appendChild(el("div",{class:"card p16"},[
-        el("div",{class:"row"},[
-          el("div",{},[
-            el("div",{style:"font-weight:900"},[x.taskTitle]),
-            el("div",{class:"mini", style:"margin-top:6px"},["⏰ " + when.toLocaleString("ru-RU")])
-          ]),
-          el("button",{class:"btn", onclick: async ()=>{ await API.cancelReminder(x.id); load(); }},["Cancel"])
-        ]),
-        el("div",{class:"row gap8", style:"margin-top:12px"},[
-          el("button",{class:"btn primary", style:"flex:1", onclick: async ()=>{ await API.snooze(x.id, 10); load(); }},["+10 min"]),
-          el("button",{class:"btn", style:"flex:1", onclick: async ()=>{ await API.snooze(x.id, 60); load(); }},["+1 hour"]),
-        ])
-      ]));
+  items.forEach(x=>{
+    const c = document.createElement("div");
+    c.className = "card p16";
+    c.innerHTML = `
+      <div class="row">
+        <div style="min-width:0">
+          <div style="font-weight:900; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${x.taskTitle}</div>
+          <div class="sub">⏰ ${new Date(x.remindAt).toLocaleString("ru-RU")}</div>
+        </div>
+        <button class="btn ghost" data-act="cancel">Cancel</button>
+      </div>
+      <div class="row" style="margin-top:12px; gap:8px">
+        <button class="btn primary" data-act="m10" style="flex:1">+10m</button>
+        <button class="btn" data-act="h1" style="flex:1">+1h</button>
+      </div>
+    `;
+    c.querySelector("[data-act='cancel']").addEventListener("click", async ()=>{
+      await API.cancelReminder(x.id);
+      toast("Ок", "Отменил");
+      renderReminders(root, true);
     });
-  }
+    c.querySelector("[data-act='m10']").addEventListener("click", async ()=>{
+      await API.snooze(x.id, 10);
+      toast("Ок", "Snooze +10m");
+      renderReminders(root, true);
+    });
+    c.querySelector("[data-act='h1']").addEventListener("click", async ()=>{
+      await API.snooze(x.id, 60);
+      toast("Ок", "Snooze +1h");
+      renderReminders(root, true);
+    });
+    root.appendChild(c);
+  });
 
-  await load();
-  setInterval(load, 15000);
+  clearInterval(window.__remT);
+  window.__remT = setInterval(()=>renderReminders(root, true), 15000);
 }
 
-async function renderSettings(root) {
+async function renderSettings(root, force){
   setActiveTab("settings");
+  if (!force) renderSkeleton(root);
+
+  const u = await API.me().then(r=>r.user).catch(()=>null);
+
   root.innerHTML = "";
 
-  const u = await API.me().then(r => r.user).catch(()=>null);
+  const profile = document.createElement("div");
+  profile.className = "card p16";
+  profile.innerHTML = `
+    <div class="row">
+      <div>
+        <div class="h2">Settings</div>
+        <div class="sub">Профиль и управление</div>
+      </div>
+      <div class="avatar" id="setAvatar"></div>
+    </div>
+    <div style="margin-top:12px; font-weight:900">${u ? ((u.firstName||"") + " " + (u.lastName||"")).trim() || (u.username ? "@"+u.username : "User") : "User"}</div>
+    <div class="sub">${u?.username ? "@"+u.username : ("tgId: " + (u?.tgId || "-"))}</div>
+    <div class="row" style="margin-top:12px; gap:8px">
+      <button class="btn" id="btnExpand" style="flex:1">Expand</button>
+      <button class="btn" id="btnClose" style="flex:1">Close</button>
+    </div>
+    <div class="row" style="margin-top:10px; gap:8px">
+      <button class="btn danger" id="btnLogout" style="flex:1">Logout</button>
+    </div>
+    <div class="sub" style="margin-top:10px">
+      Напоминания работают, если пользователь нажал <b>/start</b> у бота.
+    </div>
+  `;
+  root.appendChild(profile);
 
-  const name = u ? ((u.firstName || "") + " " + (u.lastName || "")).trim() || (u.username ? "@"+u.username : "User") : "User";
-  const tgId = u ? u.tgId : "-";
-
-  root.appendChild(el("div",{class:"card p16"},[
-    el("div",{class:"row"},[
-      el("div",{},[
-        el("div",{class:"h2"},["Settings"]),
-        el("div",{class:"sub"},["Профиль и управление mini app"])
-      ]),
-      el("div",{class:"avatar", id:"setAvatar"},[])
-    ])
-  ]));
-
-  if (u?.photoUrl) {
-    const av = document.getElementById("setAvatar");
-    av.appendChild(el("img",{src:u.photoUrl, alt:""}));
+  if (u?.photoUrl){
+    const img = document.createElement("img");
+    img.src = u.photoUrl;
+    img.alt = "";
+    $("#setAvatar").appendChild(img);
   }
 
-  root.appendChild(el("div",{class:"card p16"},[
-    el("div",{class:"h2"},[name]),
-    el("div",{class:"sub"},[u?.username ? "@"+u.username : ("tgId: " + tgId)]),
-    el("div",{class:"kv"},[
-      el("div",{},["initDataUnsafe"]),
-      el("div",{},[(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe) ? "available" : "no"])
-    ]),
-    el("div",{class:"row gap8", style:"margin-top:12px"},[
-      el("button",{class:"btn", style:"flex:1", onclick: ()=> window.Telegram?.WebApp?.close?.() },["Close mini app"]),
-      el("button",{class:"btn primary", style:"flex:1", onclick: ()=> window.Telegram?.WebApp?.expand?.() },["Expand"])
-    ])
-  ]));
+  $("#btnExpand").addEventListener("click", ()=>window.Telegram?.WebApp?.expand?.());
+  $("#btnClose").addEventListener("click", ()=>window.Telegram?.WebApp?.close?.());
+  $("#btnLogout").addEventListener("click", ()=>{
+    localStorage.removeItem("tg_planner_token");
+    toast("Ок", "Токен удалён");
+    location.reload();
+  });
 
-  root.appendChild(el("div",{class:"card p16"},[
-    el("div",{class:"h2"},["Account"]),
-    el("div",{class:"row gap8", style:"margin-top:10px"},[
-      el("button",{class:"btn", style:"flex:1", onclick: ()=> { localStorage.removeItem("tg_planner_token"); location.reload(); }},["Logout"])
-    ]),
-    el("div",{class:"sub"},["Logout удаляет локальный токен. При следующем открытии mini app снова пройдёт Telegram login."])
-  ]));
-
-  root.appendChild(el("div",{class:"card p16"},[
-    el("div",{class:"h2"},["Tips"]),
-    el("ul",{class:"mini", style:"margin:10px 0 0 18px; line-height:1.5"},[
-      el("li",{},["Чтобы напоминания приходили, пользователь должен хотя бы раз нажать /start у бота."]),
-      el("li",{},["Inbox → “Snooze” создаёт reminder на +10 минут."]),
-      el("li",{},["Schedule — закрепляй задачи по времени через “Set time”."]),
-      el("li",{},["Matrix — перетаскивай задачи по квадрантам."]),
-    ])
-  ]));
+  const tips = document.createElement("div");
+  tips.className = "card p16";
+  tips.innerHTML = `
+    <div class="h2">Tips</div>
+    <div class="sub" style="margin-top:8px; line-height:1.5">
+      • Inbox → Snooze создаёт reminder на +10 минут<br/>
+      • Schedule → Set time прикрепляет задачу к времени<br/>
+      • Matrix → перетаскивай задачи по квадрантам
+    </div>
+  `;
+  root.appendChild(tips);
 }
 
-/* Simple modal */
-function ensureModal() {
-  let m = document.getElementById("modal");
-  if (m) return m;
-  m = el("div",{id:"modal", class:"modal"},[
-    el("div",{class:"card p16 sheet"},[
-      el("div",{class:"h2"},["Новая задача"]),
-      el("div",{class:"sub"},["Название"]),
-      el("input",{id:"tTitle", class:"input", placeholder:"Например: Купить продукты"}),
-      el("div",{class:"sub", style:"margin-top:10px"},["Описание"]),
-      el("textarea",{id:"tDesc", class:"textarea", placeholder:"Необязательно"}),
-      el("div",{class:"row gap8", style:"margin-top:12px"},[
-        el("button",{class:"btn", style:"flex:1", onclick: closeModal},["Отмена"]),
-        el("button",{class:"btn primary", id:"saveBtn", style:"flex:1"},["Сохранить"])
-      ])
-    ])
-  ]);
-  document.body.appendChild(m);
-  m.addEventListener("click", (e)=>{ if (e.target === m) closeModal(); });
-  return m;
-}
-function showModal(){ ensureModal().classList.add("show"); }
-function closeModal(){ const m = ensureModal(); m.classList.remove("show"); }
-
-/* Router */
-async function renderRoute() {
-  const root = document.getElementById("app");
-  const hash = (location.hash || "#/inbox").replace("#", "");
+async function renderRoute(force=false){
+  const root = $("#app");
+  const hash = (location.hash || "#/inbox").replace("#","");
   const route = hash.split("?")[0];
 
-  try {
-    if (route === "/inbox") return renderInbox(root);
-    if (route === "/calendar") return renderCalendar(root);
-    if (route === "/schedule") return renderSchedule(root);
-    if (route === "/matrix") return renderMatrix(root);
-    if (route === "/reminders") return renderReminders(root);
-    if (route === "/settings") return renderSettings(root);
+  try{
+    if (route === "/inbox") return renderInbox(root, force);
+    if (route === "/calendar") return renderCalendar(root, force);
+    if (route === "/schedule") return renderSchedule(root, force);
+    if (route === "/matrix") return renderMatrix(root, force);
+    if (route === "/reminders") return renderReminders(root, force);
+    if (route === "/settings") return renderSettings(root, force);
     location.hash = "#/inbox";
-  } catch (e) {
+  }catch(e){
     root.innerHTML = "";
-    root.appendChild(el("div",{class:"card p16"},[
-      el("div",{class:"h2"},["Ошибка"]),
-      el("div",{class:"sub"},[String(e && e.message ? e.message : e)])
-    ]));
+    const c = document.createElement("div");
+    c.className = "card p16";
+    c.innerHTML = `<div class="h2">Ошибка</div><div class="sub"></div>`;
+    c.querySelector(".sub").textContent = String(e.message || e);
+    root.appendChild(c);
   }
 }
 
 (async function boot(){
+  wireSheet();
+  wireInboxToolbar();
+
   const ok = await ensureAuth();
-  if (!ok) {
-    const root = document.getElementById("app");
+  if (!ok){
+    const root = $("#app");
     root.innerHTML = "";
-    root.appendChild(el("div",{class:"card p16"},[
-      el("div",{class:"h2"},["Нет Telegram initData"]),
-      el("div",{class:"sub"},["Открой mini app из Telegram. Если тестируешь локально — добавь WebApp в бота и открой через него."])
-    ]));
+    const c = document.createElement("div");
+    c.className = "card p16";
+    c.innerHTML = `<div class="h2">Нет Telegram initData</div><div class="sub">Открой mini app из Telegram.</div>`;
+    root.appendChild(c);
     return;
   }
 
   await loadTopUser();
+  window.addEventListener("hashchange", ()=>renderRoute(true));
+  await renderRoute(false);
 
-  window.addEventListener("hashchange", renderRoute);
-  await renderRoute();
+  toast("Привет 👋", "Планировщик готов");
 })();

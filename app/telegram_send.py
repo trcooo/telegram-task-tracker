@@ -10,8 +10,6 @@ async def send_message(chat_id: str, text: str):
 
     if settings.APP_URL:
         payload["reply_markup"] = {"inline_keyboard": [[{"text": "Открыть планировщик", "web_app": {"url": settings.APP_URL}}]]}
-    elif settings.WEBAPP_DEEPLINK:
-        payload["reply_markup"] = {"inline_keyboard": [[{"text": "Открыть планировщик", "url": settings.WEBAPP_DEEPLINK}]]}
 
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.post(url, json=payload)
