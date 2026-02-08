@@ -153,6 +153,38 @@ def _migrate_schema() -> None:
                     except Exception:
                         pass
 
+    def _ensure_description_is_optional() -> None:
+        """Fix legacy schemas where tasks.description exists and is NOT NULL.
+
+        Current app uses `note`. Some older DBs had `description` with NOT NULL and no default,
+        causing INSERT failures when the app doesn't provide it.
+        """
+        if not is_postgres:
+            return
+        if not insp.has_table("tasks"):
+            return
+
+        cols = {c.get("name"): c for c in insp.get_columns("tasks")}
+        if "description" not in cols:
+            return
+
+        # Drop NOT NULL and set a safe default for new rows (best-effort).
+        with engine.begin() as conn:
+            try:
+                conn.execute(text('ALTER TABLE "tasks" ALTER COLUMN "description" SET DEFAULT '''))
+            except Exception:
+                pass
+            try:
+                conn.execute(text('ALTER TABLE "tasks" ALTER COLUMN "description" DROP NOT NULL'))
+            except Exception:
+                pass
+            # Backfill any NULLs if constraint was already dropped elsewhere
+            try:
+                conn.execute(text('UPDATE "tasks" SET "description" = '' WHERE "description" IS NULL'))
+            except Exception:
+                pass
+
+
     # ---- legacy type fixes (Railway/Postgres) ----
     # Older releases used INTEGER for user ids; current app uses string ids everywhere.
     _ensure_varchar("tasks", "user_id")
@@ -162,6 +194,8 @@ def _migrate_schema() -> None:
     # refresh inspector after any ALTER TABLE
     insp = inspect(engine)
     _ensure_user_fks()
+    insp = inspect(engine)
+    _ensure_description_is_optional()
     insp = inspect(engine)
 
     # ---- tasks ----
@@ -182,7 +216,10 @@ def _migrate_schema() -> None:
         "done": "BOOLEAN DEFAULT FALSE",
         "created_at": "TIMESTAMP",
         "updated_at": "TIMESTAMP",
-    })
+    }, backfill_sql=[
+        # Legacy schemas used `description` instead of `note`
+        "UPDATE tasks SET note = description WHERE note IS NULL AND description IS NOT NULL",
+    ])
 
     # ---- lists ----
     # Some older schemas used "name" instead of "title". We add title and backfill from name.
