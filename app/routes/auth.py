@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
 from ..db import get_sessionmaker
 from ..telegram import validate_init_data
 from ..settings import settings
@@ -17,23 +18,24 @@ class TelegramAuthIn(BaseModel):
 def telegram_auth(payload: TelegramAuthIn):
     if not (settings.BOT_TOKEN or "").strip():
         raise HTTPException(status_code=500, detail="BOT_TOKEN is not set")
+
     try:
         parsed = validate_init_data(payload.initData, settings.BOT_TOKEN)
-        user = parsed.get("user")
-        if not user:
+        tg_user = parsed.get("user")
+        if not tg_user:
             raise HTTPException(status_code=400, detail="NO_USER_IN_INITDATA")
 
-        tg_id = int(user["id"])
+        tg_id = int(tg_user["id"])
 
         SessionLocal = get_sessionmaker()
-db: Session = SessionLocal()
+        db: Session = SessionLocal()
         try:
             existing: User | None = db.query(User).filter(User.tg_id == tg_id).first()
             if existing:
-                existing.username = user.get("username")
-                existing.first_name = user.get("first_name")
-                existing.last_name = user.get("last_name")
-                existing.photo_url = user.get("photo_url")
+                existing.username = tg_user.get("username")
+                existing.first_name = tg_user.get("first_name")
+                existing.last_name = tg_user.get("last_name")
+                existing.photo_url = tg_user.get("photo_url")
                 db.add(existing)
                 db.commit()
                 db.refresh(existing)
@@ -41,10 +43,10 @@ db: Session = SessionLocal()
             else:
                 u = User(
                     tg_id=tg_id,
-                    username=user.get("username"),
-                    first_name=user.get("first_name"),
-                    last_name=user.get("last_name"),
-                    photo_url=user.get("photo_url"),
+                    username=tg_user.get("username"),
+                    first_name=tg_user.get("first_name"),
+                    last_name=tg_user.get("last_name"),
+                    photo_url=tg_user.get("photo_url"),
                 )
                 db.add(u)
                 db.commit()
