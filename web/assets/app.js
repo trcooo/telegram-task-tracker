@@ -825,8 +825,13 @@ async function loadTasks(){
 }
 
 async function addTaskFromInput(){
-  const raw = elQuick.value.trim();
-  if (!raw) return;
+  const raw = (elQuick.value || "").trim();
+  if (!raw) { elHint.textContent = "Введите текст задачи"; haptic("light"); return; }
+  try { await ensureAuth(); } catch (e){
+    elHint.textContent = "Auth error: проверь BOT_TOKEN/JWT_SECRET в Railway";
+    haptic("heavy");
+    return;
+  }
   const parsed = parseInline(raw);
   setChips(parsed);
   elHint.textContent = "Добавляю…";
@@ -840,6 +845,7 @@ async function addTaskFromInput(){
   }
   elQuick.value = "";
   elHint.textContent = "Добавлено";
+  if (tg?.MainButton) tg.MainButton.hide();
   haptic("medium");
   await loadTasks();
 }
@@ -887,6 +893,9 @@ document.querySelectorAll(".tab").forEach(btn=>{
 // quick input events
 elQuick.addEventListener("input", ()=>{
   const parsed = parseInline(elQuick.value);
+  if (tg?.MainButton){
+    if ((elQuick.value||"").trim().length){ tg.MainButton.show(); } else { tg.MainButton.hide(); }
+  }
   setChips(parsed);
   const bits = [];
   if (parsed.date) bits.push(`📅 ${parsed.date}`);
@@ -899,12 +908,22 @@ elQuick.addEventListener("input", ()=>{
 });
 
 elAdd.addEventListener("click", addTaskFromInput);
+elAdd.addEventListener("pointerup", (e)=>{ e.preventDefault(); addTaskFromInput(); });
 elQuick.addEventListener("keydown", (e)=>{
   if (e.key === "Enter"){
     e.preventDefault();
     addTaskFromInput();
   }
 });
+
+
+function setupTelegramMainButton(){
+  if (!tg?.MainButton) return;
+  tg.MainButton.setParams({ text: "Add task", is_visible: false });
+  tg.MainButton.onClick(()=> addTaskFromInput());
+}
+
+setupTelegramMainButton();
 
 // init
 loadData().catch(()=>render());

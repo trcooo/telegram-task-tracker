@@ -53,6 +53,9 @@ def get_current_user(request: Request, authorization: Optional[str] = Header(def
             jwt_token = sign_jwt({"user_id": user.id})
             return user, jwt_token
         except Exception as e:
+            msg = str(e)
+            if "BOT_TOKEN is not configured" in msg:
+                raise HTTPException(status_code=500, detail="Server misconfigured: BOT_TOKEN env is missing")
             raise HTTPException(status_code=401, detail=f"invalid initData: {e}")
 
     # 3) Dev mode user key
