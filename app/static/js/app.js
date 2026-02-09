@@ -171,10 +171,19 @@ function escapeHtml(s){
 
 function renderTasksTo(listEl, tasks){
   listEl.innerHTML = "";
+
   for(const t of tasks){
+    const swipe = document.createElement("div");
+    swipe.className = "swipe";
+
+    const actions = document.createElement("div");
+    actions.className = "swipe-actions";
+    actions.innerHTML = `<button class="swipe-btn del" title="Delete">🗑️</button>`;
+
     const row = document.createElement("div");
-    row.className = "task" + (t.status==="done" ? " done":"");
+    row.className = "task task-inner" + (t.status==="done" ? " done":"");
     row.draggable = t.status !== "done";
+
     row.addEventListener("dragstart", (e) => {
       row.classList.add("dragging");
       e.dataTransfer.setData("text/taskId", String(t.id));
@@ -185,11 +194,12 @@ function renderTasksTo(listEl, tasks){
     const chk = document.createElement("button");
     chk.className = "chk";
     chk.textContent = t.status==="done" ? "✓" : "";
-    chk.onclick = async () => {
+    chk.onclick = async (e) => {
+      e.stopPropagation();
       if(t.status==="done") return;
       await API.completeTask(t.id);
       await refreshAll();
-      await refreshTasksScreen(); // keep tasks screen in sync
+      await refreshTasksScreen();
     };
 
     const info = document.createElement("div");
@@ -204,13 +214,25 @@ function renderTasksTo(listEl, tasks){
     const more = document.createElement("button");
     more.className = "iconbtn";
     more.textContent = "⋯";
-    more.onclick = () => openEditTask(t);
+    more.onclick = (e) => { e.stopPropagation(); openEditTask(t); };
 
     row.appendChild(chk);
     row.appendChild(info);
     row.appendChild(badge);
     row.appendChild(more);
-    listEl.appendChild(row);
+
+    swipe.appendChild(actions);
+    swipe.appendChild(row);
+
+    attachSwipeToDelete(swipe, async ()=>{
+      if(!confirm("Удалить задачу?")) return;
+      await API.deleteTask(t.id);
+      await refreshAll();
+      await refreshTasksScreen();
+      if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.notificationOccurred("success");
+    });
+
+    listEl.appendChild(swipe);
   }
 }
 
@@ -233,6 +255,8 @@ async function refreshAll(){
 }
 
 function openModal(){
+  // Always prefill date with currently selected day
+  document.getElementById("inpDate").value = toISODate(state.date);
   document.getElementById("modal").setAttribute("aria-hidden","false");
 }
 function closeModal(){
@@ -241,6 +265,7 @@ function closeModal(){
 }
 function clearModal(){
   document.getElementById("inpTitle").value = "";
+  document.getElementById("inpDate").value = toISODate(state.date);
   document.getElementById("inpTime").value = "";
   document.getElementById("inpColor").value = "#6EA8FF";
   document.getElementById("selDuration").value = "30";
@@ -300,6 +325,8 @@ async function saveFromModal(){
     }
     closeModal();
     await refreshAll();
+    if(state.tab === "tasks") await refreshTasksScreen();
+    if(state.tab === "calendar") await refreshWeekScreen();
     return;
   }
 
@@ -310,6 +337,8 @@ async function saveFromModal(){
   await API.createEvent({title, start_dt: start.toISOString(), end_dt: end.toISOString(), color, source:"manual"});
   closeModal();
   await refreshAll();
+  if(state.tab === "tasks") await refreshTasksScreen();
+  if(state.tab === "calendar") await refreshWeekScreen();
 }
 
 function openEditTask(t){
@@ -351,7 +380,15 @@ async function boot(){
   await refreshAll();
 }
 
-document.getElementById("fab").onclick = () => { setMode("task"); openModal(); };
+document.getElementById("fab").onclick = () => {
+  // On Week tab default to Event at 09:00 of selected day
+  if(state.tab === "calendar"){
+    setMode("event");
+  }else{
+    setMode("task");
+  }
+  openModal();
+};
 document.getElementById("closeModal").onclick = closeModal;
 document.getElementById("backdrop").onclick = closeModal;
 document.getElementById("segTask").onclick = () => setMode("task");
@@ -371,31 +408,73 @@ async function refreshTasksScreen(){
   const listEl = document.getElementById("taskListAll");
   const tasks = await API.listTasks(state.tasksFilter);
   renderTasksTo(listEl, tasks);
+
+  if(tasks.length === 0){
+    const msg = document.createElement("div");
+    msg.className = "hint";
+    msg.style.padding = "12px";
+    msg.textContent = "Пока пусто. Нажми + чтобы добавить задачу.";
+    listEl.appendChild(msg);
+  }
 }
 
 async function refreshWeekScreen(){
   const box = document.getElementById("weekList");
   box.innerHTML = "";
-  const base = startOfDay(new Date());
-  // next 7 days
+  const baseD = startOfDay(new Date());
+  const days = [];
   for(let i=0;i<7;i++){
-    const d = new Date(base.getTime() + i*86400000);
+    days.push(new Date(baseD.getTime() + i*86400000));
+  }
+
+  // Fetch all days in parallel
+  const results = await Promise.all(days.map(async (d)=>{
     const dateStr = toISODate(d);
-    let evs = [];
     try{
-      evs = await API.scheduleDay(dateStr);
+      const evs = await API.scheduleDay(dateStr);
+      return {d, evs};
     }catch(e){
-      evs = [];
+      return {d, evs: []};
     }
+  }));
+
+  for(const {d, evs} of results){
     const btn = document.createElement("button");
     btn.className = "week-item";
+
     const label = d.toLocaleDateString("ru-RU", {weekday:"short", month:"short", day:"numeric"});
-    btn.innerHTML = `<div><div class="wdate">${label}</div><div class="wmeta">${i===0 ? "Сегодня" : ""}</div></div><div class="wcount">${evs.length}</div>`;
+    const left = document.createElement("div");
+    left.style.minWidth = "0";
+    left.innerHTML = `<div class="wdate">${label}</div><div class="wmeta">${toISODate(d)===toISODate(new Date()) ? "Сегодня" : ""}</div>`;
+
+    // preview 0-2 events
+    const preview = document.createElement("div");
+    preview.className = "week-preview";
+    const sorted = evs.slice().sort((a,b)=> new Date(a.start_dt) - new Date(b.start_dt));
+    const top = sorted.slice(0,2);
+    if(top.length === 0){
+      preview.innerHTML = `<div class="ev"><span class="dot"></span><span class="n">Нет событий</span></div>`;
+    }else{
+      preview.innerHTML = top.map(ev=>{
+        const s = new Date(ev.start_dt);
+        const t = `${pad2(s.getHours())}:${pad2(s.getMinutes())}`;
+        return `<div class="ev"><span class="dot" style="background:${ev.color || 'rgba(16,22,42,.25)'}"></span><span class="t">${t}</span><span class="n">${escapeHtml(ev.title)}</span></div>`;
+      }).join("");
+    }
+    left.appendChild(preview);
+
+    const count = document.createElement("div");
+    count.className = "wcount";
+    count.textContent = String(evs.length);
+btn.appendChild(left);
+    btn.appendChild(count);
+
     btn.onclick = () => {
       state.date = d;
       setTab("schedule");
       refreshAll();
     };
+
     box.appendChild(btn);
   }
 }
@@ -413,10 +492,97 @@ function setTab(tab){
   // Optional: haptic
   if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.selectionChanged();
 
+  updateFabForTab();
+
   if(tab==="tasks"){
     refreshTasksScreen();
   }
   if(tab==="calendar"){
     refreshWeekScreen();
+  }
+}
+
+
+function attachSwipeToDelete(wrapperEl, onDelete){
+  // Swipe left to open delete. Tap elsewhere closes.
+  let startX = 0;
+  let curX = 0;
+  let dragging = false;
+  let opened = false;
+
+  const inner = wrapperEl.querySelector(".task-inner");
+  if(!inner) return;
+
+  const close = () => {
+    wrapperEl.classList.remove("open");
+    opened = false;
+  };
+  const open = () => {
+    wrapperEl.classList.add("open");
+    opened = true;
+  };
+
+  // Close when tapping outside
+  document.addEventListener("touchstart", (e)=>{
+    if(opened && !wrapperEl.contains(e.target)) close();
+  }, {passive:true});
+
+  inner.addEventListener("touchstart", (e)=>{
+    if(e.touches.length !== 1) return;
+    dragging = true;
+    startX = e.touches[0].clientX;
+    curX = startX;
+  }, {passive:true});
+
+  inner.addEventListener("touchmove", (e)=>{
+    if(!dragging) return;
+    curX = e.touches[0].clientX;
+    const dx = curX - startX;
+    // only allow left swipe; allow right to close
+    if(dx < -10) e.preventDefault?.();
+    // threshold preview: when more left than -30, consider open
+  }, {passive:false});
+
+  inner.addEventListener("touchend", ()=>{
+    if(!dragging) return;
+    dragging = false;
+    const dx = curX - startX;
+    // If swipe left enough -> open, if swipe right -> close
+    if(dx < -40){
+      open();
+      if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.selectionChanged();
+
+  updateFabForTab();
+    }else if(dx > 30){
+      close();
+    }else{
+      // small move = toggle close if open
+      if(opened) close();
+    }
+  }, {passive:true});
+
+  const delBtn = wrapperEl.querySelector(".swipe-btn.del");
+  if(delBtn){
+    delBtn.addEventListener("click", async (e)=>{
+      e.stopPropagation();
+      await onDelete();
+      close();
+    });
+  }
+}
+
+
+function updateFabForTab(){
+  const fab = document.getElementById("fab");
+  if(!fab) return;
+  if(state.tab === "schedule"){
+    fab.style.display = "block";
+    fab.title = "Add";
+  }else if(state.tab === "tasks"){
+    fab.style.display = "block";
+    fab.title = "Add task";
+  }else if(state.tab === "calendar"){
+    fab.style.display = "block";
+    fab.title = "Add";
   }
 }

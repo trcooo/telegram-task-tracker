@@ -407,3 +407,133 @@
   border-radius: 999px;
   font-size: 12px;
 }
+
+/* --- Swipe to delete --- */
+.swipe{
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  margin: 8px 0;
+}
+.swipe-actions{
+  position:absolute;
+  inset: 0;
+  display:flex;
+  justify-content:flex-end;
+  align-items:stretch;
+  gap: 8px;
+  padding: 0 10px;
+  background: rgba(255, 68, 68, .10);
+  border: 1px solid rgba(255, 68, 68, .20);
+}
+.swipe-btn{
+  width: 74px;
+  border: none;
+  border-radius: 16px;
+  margin: 10px 0;
+  font-weight: 900;
+  color: white;
+  background: rgba(255, 68, 68, .92);
+}
+.task-inner{
+  margin: 0 !important;
+  transform: translateX(0px);
+  transition: transform .18s ease;
+  will-change: transform;
+  touch-action: pan-y;
+}
+.swipe.open .task-inner{
+  transform: translateX(-86px);
+}
+
+
+/* --- Tasks chips + Week list --- */
+.chips{
+  display:flex;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+.chip{
+  flex:1;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(16,22,42,.10);
+  background: rgba(255,255,255,.75);
+  font-weight: 850;
+}
+.chip.active{
+  border-color: rgba(59,108,255,.35);
+  background: rgba(59,108,255,.10);
+  color: rgba(59,108,255,.95);
+}
+.week-list{
+  padding: 8px 10px 12px;
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+}
+.week-item{
+  width:100%;
+  text-align:left;
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap: 12px;
+  padding: 12px 12px;
+  border-radius: 18px;
+  background: var(--card);
+  border: 1px solid rgba(16,22,42,.08);
+  box-shadow: 0 6px 16px rgba(16,22,42,.06);
+}
+.week-item .wdate{
+  font-weight: 900;
+}
+.week-item .wmeta{
+  color: var(--muted);
+  font-size: 12px;
+}
+.week-preview{
+  margin-top: 8px;
+  display:flex;
+  flex-direction:column;
+  gap: 6px;
+}
+.week-preview .ev{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  min-width: 0;
+}
+.week-preview .dot{
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(16,22,42,.25);
+  flex: 0 0 auto;
+}
+.week-preview .t{
+  width: 44px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+.week-preview .n{
+  font-size: 12px;
+  color: rgba(16,22,42,.75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wcount{
+  min-width: 36px;
+  height: 36px;
+  border-radius: 16px;
+  background: rgba(59,108,255,.10);
+  border: 1px solid rgba(59,108,255,.18);
+  color: rgba(59,108,255,.95);
+  font-weight: 900;
+  display:grid;
+  place-items:center;
+  margin-top: 2px;
+}
+
