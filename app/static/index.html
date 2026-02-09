@@ -18,14 +18,13 @@
 
     <main class="content">
   <!-- Schedule screen -->
-  <div id="screenSchedule">
+  <div id="screenSchedule" class="screen active">
     <section class="timeline">
       <div class="timeline-head">
         <div class="pill" id="selectedDatePill">—</div>
         <div class="spacer"></div>
-        <button class="ghost" id="btnToday">Today</button>
+        <button class="ghost" id="btnToday" type="button">Today</button>
       </div>
-
       <div id="dayGrid" class="day-grid"></div>
     </section>
 
@@ -33,28 +32,31 @@
       <div class="panel-head">
         <div class="panel-title">Inbox</div>
         <div class="panel-actions">
-          <button class="ghost" id="btnRefresh">↻</button>
+          <button class="ghost" id="btnRefresh" type="button">↻</button>
         </div>
       </div>
-
       <div id="taskList" class="task-list"></div>
     </section>
   </div>
 
   <!-- Tasks screen -->
-  <div id="screenTasks" style="display:none">
+  <div id="screenTasks" class="screen">
     <section class="panel">
       <div class="panel-head">
         <div class="panel-title">Tasks</div>
         <div class="panel-actions">
-          <button class="ghost" id="btnTasksRefresh">↻</button>
+          <button class="ghost" id="btnTasksRefresh" type="button">↻</button>
         </div>
       </div>
 
+      <div class="search">
+        <input id="tasksSearch" type="search" placeholder="Поиск задач…" />
+      </div>
+
       <div class="chips">
-        <button class="chip active" data-filter="inbox">Inbox</button>
-        <button class="chip" data-filter="today">Today</button>
-        <button class="chip" data-filter="upcoming">Upcoming</button>
+        <button class="chip active" data-filter="inbox" type="button">Inbox</button>
+        <button class="chip" data-filter="today" type="button">Today</button>
+        <button class="chip" data-filter="upcoming" type="button">Upcoming</button>
       </div>
 
       <div id="taskListAll" class="task-list"></div>
@@ -62,33 +64,34 @@
   </div>
 
   <!-- Week screen -->
-  <div id="screenWeek" style="display:none">
+  <div id="screenWeek" class="screen">
     <section class="panel">
       <div class="panel-head">
         <div class="panel-title">Week</div>
         <div class="panel-actions">
-          <button class="ghost" id="btnWeekRefresh">↻</button>
+          <button class="ghost" id="btnWeekRefresh" type="button">↻</button>
         </div>
       </div>
 
-      <div id="weekList" class="week-list"></div>
-      <div class="hint" style="padding: 0 12px 12px;">
-        Нажми на день — откроется расписание этого дня.
+      <div class="week-hint">
+        Тап по дню открывает расписание. Нажми <b>+</b>, чтобы добавить событие в выбранный день.
       </div>
+
+      <div id="weekList" class="week-list"></div>
     </section>
   </div>
 </main>
 
     <nav class="bottom">
-      <button class="tab active" data-tab="schedule">
+      <button class="tab active" data-tab="schedule" id="tabSchedule" type="button">
         <span class="ico">🗓️</span>
         <span class="lbl">Schedule</span>
       </button>
-      <button class="tab" data-tab="tasks">
+      <button class="tab" data-tab="tasks" id="tabTasks" type="button">
         <span class="ico">✅</span>
         <span class="lbl">Tasks</span>
       </button>
-      <button class="tab" data-tab="calendar">
+      <button class="tab" data-tab="calendar" id="tabWeek" type="button">
         <span class="ico">📅</span>
         <span class="lbl">Week</span>
       </button>

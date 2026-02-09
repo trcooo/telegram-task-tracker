@@ -232,7 +232,9 @@
   background: rgba(244,247,255,.75);
   backdrop-filter: blur(12px);
   border-top: 1px solid rgba(16,22,42,.06);
+  z-index: 20;
 }
+
 .tab{
   width: 110px;
   border-radius: 18px;
@@ -264,6 +266,7 @@
   background: var(--blue);
   color: white;
   font-size: 26px;
+  z-index: 25;
   box-shadow: 0 18px 32px rgba(59,108,255,.28);
 }
 
@@ -537,3 +540,26 @@
   margin-top: 2px;
 }
 
+
+/* --- Screens --- */
+.screen{ display:none; }
+.screen.active{ display:block; }
+
+/* --- Search --- */
+.search{
+  padding: 10px 12px 0;
+}
+.search input{
+  width:100%;
+  padding: 12px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(16,22,42,.10);
+  background: rgba(255,255,255,.85);
+  outline:none;
+}
+
+.week-hint{
+  padding: 10px 12px 2px;
+  font-size: 12px;
+  color: rgba(16,22,42,.70);
+}

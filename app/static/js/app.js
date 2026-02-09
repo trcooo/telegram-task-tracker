@@ -3,78 +3,121 @@ const state = {
   projects: [],
   tasks: [],
   events: [],
-  mode: "task", // task | event
-  tab: "schedule",
+  mode: "task",     // task | event
+  tab: "schedule",  // schedule | tasks | calendar
   tasksFilter: "inbox",
+  tasksSearch: "",
+  weekSelected: null, // Date
 };
+
+let openSwipeEl = null;
 
 function pad2(n){ return String(n).padStart(2,'0'); }
 function toISODate(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
-function toTimeLabel(h,m){ return `${pad2(h)}:${pad2(m)}`; }
-
-function startOfDay(d){
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0,0,0,0);
+function startOfDay(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0,0,0,0); }
+function addMinutes(d, mins){ return new Date(d.getTime() + mins*60000); }
+function escapeHtml(s){
+  return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 }
-
-function addMinutes(d, mins){
-  return new Date(d.getTime() + mins*60000);
-}
-
 function fmtDayPill(d){
   const opts = {weekday:"short", month:"short", day:"numeric"};
   return d.toLocaleDateString("ru-RU", opts);
 }
-
 function weekdayShort(d){
   return d.toLocaleDateString("ru-RU", {weekday:"short"}).slice(0,2);
 }
 
+/* ---------------- UI: screens & header ---------------- */
+function setHeaderForTab(){
+  const titleEl = document.querySelector(".title");
+  const subEl = document.getElementById("subtitle");
+  if(!titleEl || !subEl) return;
+
+  if(state.tab === "schedule"){
+    titleEl.textContent = "Schedule";
+    subEl.textContent = "План дня и тайм-блоки";
+  }else if(state.tab === "tasks"){
+    titleEl.textContent = "Tasks";
+    subEl.textContent = "Список задач и фильтры";
+  }else{
+    titleEl.textContent = "Week";
+    subEl.textContent = "Обзор недели";
+  }
+}
+
+function setTab(tab){
+  state.tab = tab;
+
+  document.getElementById("screenSchedule")?.classList.toggle("active", tab==="schedule");
+  document.getElementById("screenTasks")?.classList.toggle("active", tab==="tasks");
+  document.getElementById("screenWeek")?.classList.toggle("active", tab==="calendar");
+
+  document.querySelectorAll(".bottom .tab").forEach(b=>{
+    b.classList.toggle("active", b.dataset.tab===tab);
+  });
+
+  setHeaderForTab();
+  updateFabForTab();
+
+  if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.selectionChanged();
+
+  // lazy refresh
+  if(tab==="tasks") refreshTasksScreen();
+  if(tab==="calendar") refreshWeekScreen();
+}
+
+function updateFabForTab(){
+  const fab = document.getElementById("fab");
+  if(!fab) return;
+  fab.style.display = "block";
+  fab.title = (state.tab === "calendar") ? "Add event" : "Add task";
+}
+
+/* ---------------- Schedule UI ---------------- */
 function buildWeekStrip(){
   const weekEl = document.getElementById("week");
+  if(!weekEl) return;
   weekEl.innerHTML = "";
 
-  const today = new Date();
   const base = startOfDay(state.date);
-  // show 7 days centered around selected date
   for(let i=-3;i<=3;i++){
     const d = new Date(base.getTime() + i*86400000);
     const chip = document.createElement("button");
+    chip.type = "button";
     chip.className = "daychip" + (toISODate(d)===toISODate(state.date) ? " active":"");
     chip.innerHTML = `<div class="dname">${weekdayShort(d)}</div><div class="dnum">${d.getDate()}</div>`;
     chip.onclick = () => { state.date = d; refreshAll(); };
     weekEl.appendChild(chip);
   }
 
-  document.getElementById("selectedDatePill").textContent = fmtDayPill(state.date);
+  const pill = document.getElementById("selectedDatePill");
+  if(pill) pill.textContent = fmtDayPill(state.date);
 }
 
 function buildDayGrid(){
   const grid = document.getElementById("dayGrid");
+  if(!grid) return;
   grid.innerHTML = "";
 
-  // 07:00 - 23:00 every 30 minutes (editable in code)
-  const startH = 7;
-  const endH = 23;
-  const step = 30;
+  const startH = 7, endH = 23, step = 30;
 
   for(let h=startH; h<=endH; h++){
     for(let m=0; m<60; m+=step){
       if(h===endH && m>0) continue;
+
       const slot = document.createElement("div");
       slot.className = "slot";
+
       const label = document.createElement("div");
       label.className = "stime";
-      label.textContent = toTimeLabel(h,m);
+      label.textContent = `${pad2(h)}:${pad2(m)}`;
 
       const drop = document.createElement("div");
       drop.className = "sdrop";
       drop.dataset.hour = String(h);
       drop.dataset.min = String(m);
 
-      drop.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        drop.classList.add("over");
-      });
+      drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
       drop.addEventListener("dragleave", () => drop.classList.remove("over"));
       drop.addEventListener("drop", async (e) => {
         e.preventDefault();
@@ -82,11 +125,11 @@ function buildDayGrid(){
         const taskId = e.dataTransfer.getData("text/taskId");
         if(!taskId) return;
 
-        const dur = 30;
         const d0 = startOfDay(state.date);
         const start = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate(), h, m, 0, 0);
+
         try{
-          await API.planTask(Number(taskId), start.toISOString(), dur);
+          await API.planTask(Number(taskId), start.toISOString(), 30);
           await refreshAll();
           if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.notificationOccurred("success");
         }catch(err){
@@ -101,24 +144,18 @@ function buildDayGrid(){
   }
 }
 
-function overlaps(aStart, aEnd, bStart, bEnd){
-  return aStart < bEnd && bStart < aEnd;
-}
-
 function renderEventsOnGrid(){
   const grid = document.getElementById("dayGrid");
-  // clear drops
+  if(!grid) return;
   const drops = grid.querySelectorAll(".sdrop");
   drops.forEach(d => d.innerHTML = "");
 
   const evs = state.events.slice().sort((a,b)=> new Date(a.start_dt) - new Date(b.start_dt));
-  const day0 = startOfDay(state.date);
 
   for(const ev of evs){
     const s = new Date(ev.start_dt);
     const e = new Date(ev.end_dt);
 
-    // Find nearest slot matching the start time (snap to 30 min)
     const h = s.getHours();
     const m = s.getMinutes();
     const snappedM = (m<15)?0:(m<45)?30:0;
@@ -129,6 +166,7 @@ function renderEventsOnGrid(){
 
     const card = document.createElement("div");
     card.className = "card";
+
     const bar = document.createElement("div");
     bar.className = "bar";
     bar.style.background = ev.color || "#6EA8FF";
@@ -144,31 +182,82 @@ function renderEventsOnGrid(){
 
     const actions = document.createElement("div");
     actions.className = "cactions";
-
     const btnDel = document.createElement("button");
     btnDel.className = "iconbtn";
+    btnDel.type = "button";
     btnDel.textContent = "🗑️";
     btnDel.onclick = async () => {
       if(!confirm("Удалить блок?")) return;
       await API.deleteEvent(ev.id);
       await refreshAll();
+      if(state.tab==="calendar") refreshWeekScreen();
     };
-
     actions.appendChild(btnDel);
 
     card.appendChild(bar);
     card.appendChild(body);
     card.appendChild(actions);
-
     drop.appendChild(card);
   }
 }
 
-function escapeHtml(s){
-  return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+/* ---------------- Swipe to delete ---------------- */
+function attachSwipeToDelete(wrapperEl, onDelete){
+  const inner = wrapperEl.querySelector(".task-inner");
+  if(!inner) return;
+
+  let startX=0, curX=0, dragging=false;
+
+  const close = () => wrapperEl.classList.remove("open");
+  const open = () => {
+    if(openSwipeEl && openSwipeEl !== wrapperEl){
+      openSwipeEl.classList.remove("open");
+    }
+    wrapperEl.classList.add("open");
+    openSwipeEl = wrapperEl;
+  };
+
+  inner.addEventListener("touchstart", (e)=>{
+    if(e.touches.length !== 1) return;
+    dragging = true;
+    startX = e.touches[0].clientX;
+    curX = startX;
+  }, {passive:true});
+
+  inner.addEventListener("touchmove", (e)=>{
+    if(!dragging) return;
+    curX = e.touches[0].clientX;
+    const dx = curX - startX;
+    if(dx < -10) e.preventDefault();
+  }, {passive:false});
+
+  inner.addEventListener("touchend", ()=>{
+    if(!dragging) return;
+    dragging = false;
+    const dx = curX - startX;
+    if(dx < -40) open();
+    else if(dx > 30) close();
+    else if(wrapperEl.classList.contains("open")) close();
+  }, {passive:true});
+
+  const delBtn = wrapperEl.querySelector(".swipe-btn.del");
+  if(delBtn){
+    delBtn.addEventListener("click", async (e)=>{
+      e.stopPropagation();
+      await onDelete();
+      close();
+    });
+  }
 }
 
+document.addEventListener("touchstart", (e)=>{
+  if(openSwipeEl && !openSwipeEl.contains(e.target)){
+    openSwipeEl.classList.remove("open");
+    openSwipeEl = null;
+  }
+}, {passive:true});
 
+/* ---------------- Tasks rendering ---------------- */
 function renderTasksTo(listEl, tasks){
   listEl.innerHTML = "";
 
@@ -178,7 +267,7 @@ function renderTasksTo(listEl, tasks){
 
     const actions = document.createElement("div");
     actions.className = "swipe-actions";
-    actions.innerHTML = `<button class="swipe-btn del" title="Delete">🗑️</button>`;
+    actions.innerHTML = `<button class="swipe-btn del" type="button" title="Delete">🗑️</button>`;
 
     const row = document.createElement("div");
     row.className = "task task-inner" + (t.status==="done" ? " done":"");
@@ -193,6 +282,7 @@ function renderTasksTo(listEl, tasks){
 
     const chk = document.createElement("button");
     chk.className = "chk";
+    chk.type = "button";
     chk.textContent = t.status==="done" ? "✓" : "";
     chk.onclick = async (e) => {
       e.stopPropagation();
@@ -200,6 +290,7 @@ function renderTasksTo(listEl, tasks){
       await API.completeTask(t.id);
       await refreshAll();
       await refreshTasksScreen();
+      if(state.tab==="calendar") refreshWeekScreen();
     };
 
     const info = document.createElement("div");
@@ -213,6 +304,7 @@ function renderTasksTo(listEl, tasks){
 
     const more = document.createElement("button");
     more.className = "iconbtn";
+    more.type = "button";
     more.textContent = "⋯";
     more.onclick = (e) => { e.stopPropagation(); openEditTask(t); };
 
@@ -229,6 +321,7 @@ function renderTasksTo(listEl, tasks){
       await API.deleteTask(t.id);
       await refreshAll();
       await refreshTasksScreen();
+      if(state.tab==="calendar") refreshWeekScreen();
       if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.notificationOccurred("success");
     });
 
@@ -236,28 +329,118 @@ function renderTasksTo(listEl, tasks){
   }
 }
 
-function renderTasks(){
+function renderInboxTasks(){
   const list = document.getElementById("taskList");
+  if(!list) return;
   renderTasksTo(list, state.tasks);
 }
 
+/* ---------------- Screens refresh ---------------- */
 async function refreshAll(){
   buildWeekStrip();
   buildDayGrid();
 
-  // load schedule & tasks
   const dateStr = toISODate(state.date);
   state.events = await API.scheduleDay(dateStr);
   state.tasks = await API.listTasks("inbox");
 
   renderEventsOnGrid();
-  renderTasks();
+  renderInboxTasks();
+
+  // keep title pill fresh
+  const pill = document.getElementById("selectedDatePill");
+  if(pill) pill.textContent = fmtDayPill(state.date);
 }
 
+async function refreshTasksScreen(){
+  const listEl = document.getElementById("taskListAll");
+  if(!listEl) return;
+
+  const raw = await API.listTasks(state.tasksFilter);
+
+  const q = (state.tasksSearch||"").trim().toLowerCase();
+  const tasks = q ? raw.filter(t => (t.title||"").toLowerCase().includes(q)) : raw;
+
+  renderTasksTo(listEl, tasks);
+
+  if(tasks.length === 0){
+    const msg = document.createElement("div");
+    msg.className = "hint";
+    msg.style.padding = "12px";
+    msg.textContent = "Пока пусто. Нажми + чтобы добавить задачу.";
+    listEl.appendChild(msg);
+  }
+}
+
+async function refreshWeekScreen(){
+  const box = document.getElementById("weekList");
+  if(!box) return;
+  box.innerHTML = "";
+
+  const baseD = startOfDay(new Date());
+  const days = [];
+  for(let i=0;i<7;i++) days.push(new Date(baseD.getTime() + i*86400000));
+
+  const results = await Promise.all(days.map(async (d)=>{
+    const dateStr = toISODate(d);
+    try{
+      const evs = await API.scheduleDay(dateStr);
+      return {d, evs};
+    }catch(e){
+      return {d, evs: []};
+    }
+  }));
+
+  for(const {d, evs} of results){
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "week-item";
+
+    const label = d.toLocaleDateString("ru-RU", {weekday:"short", month:"short", day:"numeric"});
+    const left = document.createElement("div");
+    left.style.minWidth = "0";
+    left.innerHTML = `<div class="wdate">${label}</div><div class="wmeta">${toISODate(d)===toISODate(new Date()) ? "Сегодня" : ""}</div>`;
+
+    const preview = document.createElement("div");
+    preview.className = "week-preview";
+    const sorted = evs.slice().sort((a,b)=> new Date(a.start_dt) - new Date(b.start_dt));
+    const top = sorted.slice(0,2);
+
+    if(top.length === 0){
+      preview.innerHTML = `<div class="ev"><span class="dot"></span><span class="n">Нет событий</span></div>`;
+    }else{
+      preview.innerHTML = top.map(ev=>{
+        const s = new Date(ev.start_dt);
+        const t = `${pad2(s.getHours())}:${pad2(s.getMinutes())}`;
+        return `<div class="ev"><span class="dot" style="background:${ev.color || 'rgba(16,22,42,.25)'}"></span><span class="t">${t}</span><span class="n">${escapeHtml(ev.title)}</span></div>`;
+      }).join("");
+    }
+    left.appendChild(preview);
+
+    const count = document.createElement("div");
+    count.className = "wcount";
+    count.textContent = String(evs.length);
+
+    btn.appendChild(left);
+    btn.appendChild(count);
+
+    btn.onclick = () => {
+      state.weekSelected = d;
+      state.date = d;
+      setTab("schedule");
+      refreshAll();
+    };
+
+    box.appendChild(btn);
+  }
+}
+
+/* ---------------- Modal ---------------- */
 function openModal(){
-  // Always prefill date with currently selected day
+  // Prefill date with current selection
   document.getElementById("inpDate").value = toISODate(state.date);
   document.getElementById("modal").setAttribute("aria-hidden","false");
+  setTimeout(()=> document.getElementById("inpTitle")?.focus(), 30);
 }
 function closeModal(){
   document.getElementById("modal").setAttribute("aria-hidden","true");
@@ -265,12 +448,12 @@ function closeModal(){
 }
 function clearModal(){
   document.getElementById("inpTitle").value = "";
-  document.getElementById("inpDate").value = toISODate(state.date);
   document.getElementById("inpTime").value = "";
   document.getElementById("inpColor").value = "#6EA8FF";
   document.getElementById("selDuration").value = "30";
   document.getElementById("selPriority").value = "2";
   document.getElementById("selEstimate").value = "30";
+  document.getElementById("inpDate").value = toISODate(state.date);
   document.getElementById("sheetTitle").textContent = state.mode==="task" ? "Добавить задачу" : "Добавить событие";
   document.getElementById("saveBtn").dataset.editTaskId = "";
 }
@@ -325,20 +508,18 @@ async function saveFromModal(){
     }
     closeModal();
     await refreshAll();
-    if(state.tab === "tasks") await refreshTasksScreen();
-    if(state.tab === "calendar") await refreshWeekScreen();
+    if(state.tab==="tasks") await refreshTasksScreen();
+    if(state.tab==="calendar") await refreshWeekScreen();
     return;
   }
 
-  // event
   const duration = Number(document.getElementById("selDuration").value);
   const color = document.getElementById("inpColor").value || "#6EA8FF";
   const end = addMinutes(start, duration);
   await API.createEvent({title, start_dt: start.toISOString(), end_dt: end.toISOString(), color, source:"manual"});
   closeModal();
   await refreshAll();
-  if(state.tab === "tasks") await refreshTasksScreen();
-  if(state.tab === "calendar") await refreshWeekScreen();
+  if(state.tab==="calendar") await refreshWeekScreen();
 }
 
 function openEditTask(t){
@@ -352,8 +533,11 @@ function openEditTask(t){
   document.getElementById("sheetTitle").textContent = "Редактировать задачу";
 }
 
+/* ---------------- Boot ---------------- */
 async function boot(){
-  // Telegram init
+  // Bind UI no matter what (so tabs respond even if auth fails)
+  bindUI();
+
   let initData = "";
   if(window.Telegram?.WebApp){
     const tg = window.Telegram.WebApp;
@@ -362,227 +546,78 @@ async function boot(){
   }
 
   if(!initData){
-    // Allow browser dev (no telegram): create a dev tokenless mode? We'll show message.
     document.getElementById("subtitle").textContent = "Open inside Telegram";
     alert("Открой Mini App внутри Telegram (через кнопку из бота), чтобы авторизация работала.");
     return;
   }
 
-  // Auth
   await API.authTelegram(initData);
   state.projects = await API.getProjects();
   fillProjects();
 
-  // init date inputs
   document.getElementById("inpDate").value = toISODate(state.date);
-  document.getElementById("selectedDatePill").textContent = fmtDayPill(state.date);
 
+  setTab("schedule");
   await refreshAll();
 }
 
-document.getElementById("fab").onclick = () => {
-  // On Week tab default to Event at 09:00 of selected day
-  if(state.tab === "calendar"){
-    setMode("event");
-  }else{
-    setMode("task");
+function bindUI(){
+  // Bottom tabs: click + touchend (Telegram webview can be picky)
+  const map = [
+    ["tabSchedule","schedule"],
+    ["tabTasks","tasks"],
+    ["tabWeek","calendar"],
+  ];
+  for(const [id, tab] of map){
+    const el = document.getElementById(id);
+    if(!el) continue;
+    const handler = (e)=>{ e.preventDefault(); setTab(tab); };
+    el.addEventListener("click", handler, {passive:false});
+    el.addEventListener("touchend", handler, {passive:false});
   }
-  openModal();
-};
-document.getElementById("closeModal").onclick = closeModal;
-document.getElementById("backdrop").onclick = closeModal;
-document.getElementById("segTask").onclick = () => setMode("task");
-document.getElementById("segEvent").onclick = () => setMode("event");
-document.getElementById("saveBtn").onclick = saveFromModal;
 
-document.getElementById("btnToday").onclick = () => { state.date = new Date(); refreshAll(); };
-document.getElementById("btnRefresh").onclick = refreshAll;
+  // Chips
+  document.querySelectorAll(".chip").forEach(ch=>{
+    ch.addEventListener("click", async ()=>{
+      document.querySelectorAll(".chip").forEach(x=>x.classList.remove("active"));
+      ch.classList.add("active");
+      state.tasksFilter = ch.dataset.filter;
+      await refreshTasksScreen();
+    });
+  });
 
-boot().catch(err => {
+  // Search
+  const s = document.getElementById("tasksSearch");
+  if(s){
+    s.addEventListener("input", async ()=>{
+      state.tasksSearch = s.value || "";
+      await refreshTasksScreen();
+    });
+  }
+
+  // Buttons
+  document.getElementById("btnToday")?.addEventListener("click", ()=>{ state.date = new Date(); refreshAll(); });
+  document.getElementById("btnRefresh")?.addEventListener("click", refreshAll);
+  document.getElementById("btnTasksRefresh")?.addEventListener("click", refreshTasksScreen);
+  document.getElementById("btnWeekRefresh")?.addEventListener("click", refreshWeekScreen);
+
+  // Modal controls
+  document.getElementById("fab")?.addEventListener("click", ()=>{
+    if(state.tab === "calendar") setMode("event");
+    else setMode("task");
+    openModal();
+  });
+  document.getElementById("closeModal")?.addEventListener("click", closeModal);
+  document.getElementById("backdrop")?.addEventListener("click", closeModal);
+  document.getElementById("segTask")?.addEventListener("click", ()=>setMode("task"));
+  document.getElementById("segEvent")?.addEventListener("click", ()=>setMode("event"));
+  document.getElementById("saveBtn")?.addEventListener("click", saveFromModal);
+
+  setHeaderForTab();
+  updateFabForTab();
+}
+
+boot().catch(err=>{
   console.error(err);
   alert("Ошибка: " + (err?.message || err));
 });
-
-
-async function refreshTasksScreen(){
-  const listEl = document.getElementById("taskListAll");
-  const tasks = await API.listTasks(state.tasksFilter);
-  renderTasksTo(listEl, tasks);
-
-  if(tasks.length === 0){
-    const msg = document.createElement("div");
-    msg.className = "hint";
-    msg.style.padding = "12px";
-    msg.textContent = "Пока пусто. Нажми + чтобы добавить задачу.";
-    listEl.appendChild(msg);
-  }
-}
-
-async function refreshWeekScreen(){
-  const box = document.getElementById("weekList");
-  box.innerHTML = "";
-  const baseD = startOfDay(new Date());
-  const days = [];
-  for(let i=0;i<7;i++){
-    days.push(new Date(baseD.getTime() + i*86400000));
-  }
-
-  // Fetch all days in parallel
-  const results = await Promise.all(days.map(async (d)=>{
-    const dateStr = toISODate(d);
-    try{
-      const evs = await API.scheduleDay(dateStr);
-      return {d, evs};
-    }catch(e){
-      return {d, evs: []};
-    }
-  }));
-
-  for(const {d, evs} of results){
-    const btn = document.createElement("button");
-    btn.className = "week-item";
-
-    const label = d.toLocaleDateString("ru-RU", {weekday:"short", month:"short", day:"numeric"});
-    const left = document.createElement("div");
-    left.style.minWidth = "0";
-    left.innerHTML = `<div class="wdate">${label}</div><div class="wmeta">${toISODate(d)===toISODate(new Date()) ? "Сегодня" : ""}</div>`;
-
-    // preview 0-2 events
-    const preview = document.createElement("div");
-    preview.className = "week-preview";
-    const sorted = evs.slice().sort((a,b)=> new Date(a.start_dt) - new Date(b.start_dt));
-    const top = sorted.slice(0,2);
-    if(top.length === 0){
-      preview.innerHTML = `<div class="ev"><span class="dot"></span><span class="n">Нет событий</span></div>`;
-    }else{
-      preview.innerHTML = top.map(ev=>{
-        const s = new Date(ev.start_dt);
-        const t = `${pad2(s.getHours())}:${pad2(s.getMinutes())}`;
-        return `<div class="ev"><span class="dot" style="background:${ev.color || 'rgba(16,22,42,.25)'}"></span><span class="t">${t}</span><span class="n">${escapeHtml(ev.title)}</span></div>`;
-      }).join("");
-    }
-    left.appendChild(preview);
-
-    const count = document.createElement("div");
-    count.className = "wcount";
-    count.textContent = String(evs.length);
-btn.appendChild(left);
-    btn.appendChild(count);
-
-    btn.onclick = () => {
-      state.date = d;
-      setTab("schedule");
-      refreshAll();
-    };
-
-    box.appendChild(btn);
-  }
-}
-
-function setTab(tab){
-  state.tab = tab;
-  document.getElementById("screenSchedule").style.display = (tab==="schedule") ? "block" : "none";
-  document.getElementById("screenTasks").style.display = (tab==="tasks") ? "block" : "none";
-  document.getElementById("screenWeek").style.display = (tab==="calendar") ? "block" : "none";
-
-  document.querySelectorAll(".bottom .tab").forEach(b=>{
-    b.classList.toggle("active", b.dataset.tab===tab);
-  });
-
-  // Optional: haptic
-  if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.selectionChanged();
-
-  updateFabForTab();
-
-  if(tab==="tasks"){
-    refreshTasksScreen();
-  }
-  if(tab==="calendar"){
-    refreshWeekScreen();
-  }
-}
-
-
-function attachSwipeToDelete(wrapperEl, onDelete){
-  // Swipe left to open delete. Tap elsewhere closes.
-  let startX = 0;
-  let curX = 0;
-  let dragging = false;
-  let opened = false;
-
-  const inner = wrapperEl.querySelector(".task-inner");
-  if(!inner) return;
-
-  const close = () => {
-    wrapperEl.classList.remove("open");
-    opened = false;
-  };
-  const open = () => {
-    wrapperEl.classList.add("open");
-    opened = true;
-  };
-
-  // Close when tapping outside
-  document.addEventListener("touchstart", (e)=>{
-    if(opened && !wrapperEl.contains(e.target)) close();
-  }, {passive:true});
-
-  inner.addEventListener("touchstart", (e)=>{
-    if(e.touches.length !== 1) return;
-    dragging = true;
-    startX = e.touches[0].clientX;
-    curX = startX;
-  }, {passive:true});
-
-  inner.addEventListener("touchmove", (e)=>{
-    if(!dragging) return;
-    curX = e.touches[0].clientX;
-    const dx = curX - startX;
-    // only allow left swipe; allow right to close
-    if(dx < -10) e.preventDefault?.();
-    // threshold preview: when more left than -30, consider open
-  }, {passive:false});
-
-  inner.addEventListener("touchend", ()=>{
-    if(!dragging) return;
-    dragging = false;
-    const dx = curX - startX;
-    // If swipe left enough -> open, if swipe right -> close
-    if(dx < -40){
-      open();
-      if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.selectionChanged();
-
-  updateFabForTab();
-    }else if(dx > 30){
-      close();
-    }else{
-      // small move = toggle close if open
-      if(opened) close();
-    }
-  }, {passive:true});
-
-  const delBtn = wrapperEl.querySelector(".swipe-btn.del");
-  if(delBtn){
-    delBtn.addEventListener("click", async (e)=>{
-      e.stopPropagation();
-      await onDelete();
-      close();
-    });
-  }
-}
-
-
-function updateFabForTab(){
-  const fab = document.getElementById("fab");
-  if(!fab) return;
-  if(state.tab === "schedule"){
-    fab.style.display = "block";
-    fab.title = "Add";
-  }else if(state.tab === "tasks"){
-    fab.style.display = "block";
-    fab.title = "Add task";
-  }else if(state.tab === "calendar"){
-    fab.style.display = "block";
-    fab.title = "Add";
-  }
-}
