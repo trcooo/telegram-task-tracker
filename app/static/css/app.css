@@ -1636,3 +1636,17 @@ html.modal-open, html.modal-open body{ overflow:hidden; }
 
 /* Avoid duplicate mic entry point */
 .micfab{ display:none !important; }
+
+/* Disable floating mic (voice button is in header) */
+.micfab{ display:none !important; }
+
+/* FAB (Add) final fix */
+.fab{
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  z-index: 30 !important;
+  bottom: calc(12px + var(--safe-bot) + 86px - var(--vv-extra)) !important;
+}

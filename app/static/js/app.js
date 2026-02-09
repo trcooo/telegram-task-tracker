@@ -152,18 +152,27 @@ function extractTimes(txt){
   // prefer explicit range "14:00-15:00" or "с 14 до 15"
   let start = null, end = null;
 
-  // Range with hyphen
-  let r = txt.match(/\b([01]?\d|2[0-3])[:. ]([0-5]\d)\s*-\s*([01]?\d|2[0-3])[:. ]([0-5]\d)\b/);
+  // Range with hyphen (minutes optional on both sides)
+  let r = txt.match(/\b([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\s*-\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\b/);
   if(r){
-    start = parseTimeToken(r[1], r[2]);
-    end = parseTimeToken(r[3], r[4]);
+    start = parseTimeToken(r[1], r[2]||"00");
+    end = parseTimeToken(r[3], r[4]||"00");
     return {start, end};
   }
+
   // Range with "с ... до ..."
   r = txt.match(/\bс\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\s*(?:до)\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\b/);
   if(r){
     start = parseTimeToken(r[1], r[2]||"00");
     end = parseTimeToken(r[3], r[4]||"00");
+    return {start, end};
+  }
+
+  // Two times present without explicit range keyword (e.g. "8:00 14:00")
+  const times = [...txt.matchAll(/\b([01]?\d|2[0-3])(?:[:. ]([0-5]\d))\b/g)].slice(0, 3);
+  if(times.length >= 2){
+    start = parseTimeToken(times[0][1], times[0][2]);
+    end = parseTimeToken(times[1][1], times[1][2]);
     return {start, end};
   }
 
@@ -727,6 +736,8 @@ function slideSwap(fromTab, toTab, dir){
   const cleanup = ()=>{
     // Clear temporary styles
     content.style.height = "";
+    fromEl.style.display = "";
+    toEl.style.display = "";
     fromEl.classList.remove("swap");
     toEl.classList.remove("swap");
     fromEl.style.position = "";
@@ -908,12 +919,10 @@ function setTab(tab, opts={}){
 
   setHeaderForTab();
   updateFabForTab();
-  moveTabIndicator(); moveTabPill(true);
-  moveTabPill();
-  updateBottomPad();
+  moveTabIndicator();
   moveTabPill(true);
-
-  if(window.Telegram?.WebApp){
+  updateBottomPad();
+if(window.Telegram?.WebApp){
     const h = window.Telegram.WebApp.HapticFeedback;
     try{ h?.selectionChanged(); }catch(e){}
     try{ h?.impactOccurred?.('light'); }catch(e){}
@@ -1850,6 +1859,7 @@ function initTabSwipe(){
       el.style.width = "";
       el.style.transform = "";
       el.style.opacity = "";
+      el.style.display = "";
     }
 
     // ensure only active screen visible
