@@ -1,0 +1,25 @@
+:root{
+  --bg: #f4f7ff;
+  --card: #ffffff;
+  --muted: rgba(20,25,38,.55);
+  --text: #10162a;
+  --blue: #3b6cff;
+  --shadow: 0 8px 24px rgba(16,22,42,.10);
+  --radius: 18px;
+  --radius2: 22px;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bot: env(safe-area-inset-bottom, 0px);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji";
+  color:var(--text);
+  background: radial-gradient(1200px 600px at 50% 0%, #e6eeff 0%, var(--bg) 55%);
+}
+button, input, select{
+  font: inherit;
+}
