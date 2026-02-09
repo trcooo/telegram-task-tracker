@@ -86,3 +86,8 @@ https://api.telegram.org/bot<BOT_TOKEN>/getWebhookInfo
 ## 6) Примечания
 - Таблицы создаются автоматически при старте (MVP). Для продакшена лучше Alembic миграции.
 - Сейчас week/month экран — заглушка (таб-навигация есть), ядро MVP — Schedule + Inbox.
+
+
+## Ошибка libpq.so.5 на Railway (Python 3.13)
+Если видишь `ImportError: libpq.so.5`, значит `psycopg2` поставился из исходников и не нашёл системный libpq.
+В этом фикс-пакете используется `psycopg[binary]` (psycopg v3), а `DATABASE_URL` автоматически переводится в `postgresql+psycopg://`.

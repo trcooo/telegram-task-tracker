@@ -3,9 +3,18 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 def _normalize_db_url(url: str) -> str:
-    # Railway sometimes uses postgres:// which SQLAlchemy 2 wants as postgresql://
+    """
+    Normalize Railway/Heroku Postgres URLs and select a driver that works on Python 3.13+.
+    - postgres:// -> postgresql://
+    - postgresql:// -> postgresql+psycopg:// (psycopg v3)
+    """
     if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql://", 1)
+        url = url.replace("postgres://", "postgresql://", 1)
+
+    # Force psycopg (v3) driver for Postgres to avoid libpq issues with psycopg2 on Py3.13
+    if url.startswith("postgresql://") and "+psycopg" not in url and "+psycopg2" not in url:
+        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+
     return url
 
 DATABASE_URL = _normalize_db_url(os.getenv("DATABASE_URL", "sqlite:///./dev.db"))
