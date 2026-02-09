@@ -145,6 +145,35 @@ function weekdayShort(dateStr, tz){
 
 /* ---------------- UI: header + tabs ---------------- */
 
+
+function spring({from, to, onUpdate, onComplete, stiffness=420, damping=34, mass=1, threshold=0.35}){
+  let x = from;
+  let v = 0;
+  let last = performance.now();
+
+  function step(now){
+    const dt = Math.min(0.032, (now - last) / 1000);
+    last = now;
+
+    const Fspring = -stiffness * (x - to);
+    const Fdamp = -damping * v;
+    const a = (Fspring + Fdamp) / mass;
+
+    v += a * dt;
+    x += v * dt;
+
+    onUpdate?.(x);
+
+    if(Math.abs(v) < threshold && Math.abs(x - to) < 0.7){
+      onUpdate?.(to);
+      onComplete?.();
+      return;
+    }
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
 const TAB_ORDER = ["schedule","tasks","calendar"];
 function tabIndex(tab){ return TAB_ORDER.indexOf(tab); }
 function tabByDelta(delta){
@@ -1149,18 +1178,15 @@ function springAnimate({from, to, onUpdate, onDone, stiffness=0.14, damping=0.82
 }
 
 function initTabSwipe(){
-  const content = document.querySelector(".content");
-  if(!content) return;
+  const root = document.querySelector(".content");
+  if(!root) return;
 
   let sx=0, sy=0, st=0;
-  let lastX=0, lastT=0;
   let tracking=false;
-  let swiping=false;
-
-  let fromTab=null, toTab=null;
-  let fromEl=null, toEl=null;
-  let w=0;
-  let cleanup=null;
+  let activeFrom=null, activeTo=null;
+  let width=0;
+  let dx=0;
+  let horizontal=false;
 
   const shouldIgnore = (target) => {
     if(!target) return true;
@@ -1168,18 +1194,16 @@ function initTabSwipe(){
     if(openModal) return true;
     if(target.closest("input,textarea,select,button")) return true;
     if(target.closest(".swipe")) return true;
-    if(target.closest(".daychip")) return true;
     return false;
   };
 
-  function prepareSwap(nextTab, dir){
-    fromTab = state.tab;
-    toTab = nextTab;
-    fromEl = getScreenEl(fromTab);
-    toEl = getScreenEl(toTab);
-    if(!fromEl || !toEl) return false;
+  function prep(toTab, dir){
+    const content = document.querySelector(".content");
+    const fromEl = getScreenEl(state.tab);
+    const toEl = getScreenEl(toTab);
+    if(!content || !fromEl || !toEl) return false;
 
-    w = content.getBoundingClientRect().width || window.innerWidth;
+    width = content.getBoundingClientRect().width || window.innerWidth;
 
     // show both
     fromEl.classList.add("swap");
@@ -1196,163 +1220,158 @@ function initTabSwipe(){
     fromEl.style.cssText += ";" + common;
     toEl.style.cssText += ";" + common;
 
-    // initial positions (toEl offscreen)
-    const startOffset = dir < 0 ? w : -w; // dir<0 means swipe left -> next comes from right
-    toEl.style.transform = `translateX(${startOffset}px)`;
+    // initial positions
+    const startX = dir < 0 ? width : -width;
+    toEl.style.transform = `translateX(${startX}px)`;
     toEl.style.opacity = "1";
     fromEl.style.transform = "translateX(0px)";
     fromEl.style.opacity = "1";
 
-    cleanup = ()=>{
-      content.style.height = "";
-      fromEl?.classList.remove("swap");
-      toEl?.classList.remove("swap");
-
-      for(const el of [fromEl, toEl]){
-        if(!el) continue;
-        el.style.position = "";
-        el.style.left = "";
-        el.style.right = "";
-        el.style.top = "";
-        el.style.width = "";
-        el.style.transform = "";
-        el.style.opacity = "";
-      }
-    };
-
+    activeFrom = fromEl;
+    activeTo = toEl;
     return true;
   }
 
-  function applyX(dx){
-    if(!fromEl || !toEl) return;
+  function applyDrag(dx){
+    if(!activeFrom || !activeTo) return;
     const dir = dx < 0 ? -1 : 1;
-    const abs = Math.min(Math.abs(dx), w);
-    const p = abs / w;
+    const abs = Math.min(width, Math.abs(dx));
+    const t = abs / width;
 
-    fromEl.style.transform = `translateX(${dx}px)`;
-    fromEl.style.opacity = String(1 - p*0.18);
+    activeFrom.style.transform = `translateX(${dx}px)`;
+    activeFrom.style.opacity = String(1 - t*0.10);
 
-    if(dir < 0){
-      // swipe left -> next from right
-      toEl.style.transform = `translateX(${dx + w}px)`;
-    }else{
-      // swipe right -> prev from left
-      toEl.style.transform = `translateX(${dx - w}px)`;
-    }
-    toEl.style.opacity = "1";
+    const toBase = dir < 0 ? width : -width;
+    activeTo.style.transform = `translateX(${toBase + dx}px)`;
+    activeTo.style.opacity = String(0.92 + t*0.08);
   }
 
-  content.addEventListener("touchstart", (e)=>{
+  function cleanup(){
+    const content = document.querySelector(".content");
+    if(content) content.style.height = "";
+
+    for(const el of [activeFrom, activeTo]){
+      if(!el) continue;
+      el.classList.remove("swap");
+      el.style.position = "";
+      el.style.left = "";
+      el.style.right = "";
+      el.style.top = "";
+      el.style.width = "";
+      el.style.transform = "";
+      el.style.opacity = "";
+    }
+
+    // ensure only active screen visible
+    document.getElementById("screenSchedule")?.classList.toggle("active", state.tab==="schedule");
+    document.getElementById("screenTasks")?.classList.toggle("active", state.tab==="tasks");
+    document.getElementById("screenWeek")?.classList.toggle("active", state.tab==="calendar");
+
+    activeFrom = null;
+    activeTo = null;
+  }
+
+  root.addEventListener("touchstart", (e)=>{
     if(e.touches.length !== 1) return;
     if(shouldIgnore(e.target)) return;
 
     tracking = true;
-    swiping = false;
+    horizontal = false;
     sx = e.touches[0].clientX;
     sy = e.touches[0].clientY;
     st = Date.now();
-    lastX = sx;
-    lastT = st;
+    dx = 0;
+    activeFrom = null;
+    activeTo = null;
+    width = 0;
   }, {passive:true});
 
-  content.addEventListener("touchmove", (e)=>{
+  root.addEventListener("touchmove", (e)=>{
     if(!tracking) return;
+    const mx = e.touches[0].clientX;
+    const my = e.touches[0].clientY;
+    dx = mx - sx;
+    const dy = my - sy;
 
-    const x = e.touches[0].clientX;
-    const y = e.touches[0].clientY;
-    const dx = x - sx;
-    const dy = y - sy;
+    if(!horizontal){
+      if(Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)*1.2){
+        horizontal = true;
 
-    // determine intent
-    if(!swiping){
-      if(Math.abs(dx) < 12) return;
-      if(Math.abs(dx) < Math.abs(dy)*1.25) return;
-
-      // begin swipe
-      const delta = dx < 0 ? +1 : -1;
-      const next = tabByDelta(delta);
-      if(!next){ tracking = false; return; }
-
-      const dir = dx < 0 ? -1 : 1;
-      const ok = prepareSwap(next, dir);
-      if(!ok){ tracking = false; return; }
-      swiping = true;
-      // haptic: tiny tick at start of swipe
-      if(window.Telegram?.WebApp){
-        try{ window.Telegram.WebApp.HapticFeedback?.selectionChanged(); }catch(err){}
+        // determine next tab
+        const delta = dx < 0 ? +1 : -1;
+        const next = tabByDelta(delta);
+        if(!next){
+          tracking = false;
+          return;
+        }
+        // dir: dx<0 -> swipe left -> next appears from right (dir=-1)
+        const dir = dx < 0 ? -1 : 1;
+        if(!prep(next, dir)){
+          tracking = false;
+          return;
+        }
+        activeTo.dataset._targetTab = next;
+        // prevent scroll
+        e.preventDefault();
+      }else{
+        return; // keep waiting for intent
       }
     }
 
-    if(swiping){
-      e.preventDefault();
-      // clamp with slight rubber-band
-      const max = w;
-      let ndx = dx;
-      if(Math.abs(ndx) > max){
-        const extra = Math.abs(ndx) - max;
-        ndx = (ndx < 0 ? -1 : 1) * (max + extra*0.18);
-      }
-      applyX(ndx);
-
-      lastX = x;
-      lastT = Date.now();
-    }
+    // horizontal drag
+    e.preventDefault();
+    // friction near edges
+    const lim = width * 0.98;
+    const dd = Math.max(-lim, Math.min(lim, dx));
+    applyDrag(dd);
   }, {passive:false});
 
-  content.addEventListener("touchend", (e)=>{
+  root.addEventListener("touchend", ()=>{
     if(!tracking) return;
     tracking = false;
 
-    if(!swiping){
+    if(!horizontal || !activeTo){
+      cleanup();
       return;
     }
 
-    const ex = e.changedTouches[0].clientX;
-    const dx = ex - sx;
+    const toTab = activeTo.dataset._targetTab;
+    const absDx = Math.abs(dx);
+    const dt = Math.max(1, Date.now() - st);
+    const vel = absDx / dt; // px/ms
+    const commit = absDx > width*0.28 || vel > 0.75;
 
-    const dt = Math.max(1, Date.now() - lastT);
-    const v = (ex - lastX) / dt; // px/ms velocity at end
+    const dir = dx < 0 ? -1 : 1;
+    const targetDx = commit ? (dir < 0 ? -width : width) : 0;
+    const startDx = dx;
 
-    const abs = Math.abs(dx);
-    const progress = abs / w;
-
-    const commit = (progress > 0.22) || (Math.abs(v) > 0.65);
-
-    const targetX = commit ? (dx < 0 ? -w : w) : 0;
-
-    springAnimate({
-      from: dx,
-      to: targetX,
-      onUpdate: (x)=> applyX(x),
-      onDone: ()=>{
-        // finalize
-        cleanup?.();
-
-        if(commit && toTab){
-          // set tab without extra animation
+    spring({
+      from: startDx,
+      to: targetDx,
+      stiffness: 520,
+      damping: 44,
+      onUpdate: (x)=> applyDrag(x),
+      onComplete: ()=>{
+        if(commit){
+          // finalize state
           setTab(toTab, {transition:"none"});
-        }else{
-          // restore current tab
-          // ensure active classes correct
-          setTab(fromTab, {transition:"none"});
         }
-        fromTab = toTab = null;
-        fromEl = toEl = null;
-        w = 0;
-        swiping = false;
+        cleanup();
+        // haptic for success
+        if(commit && window.Telegram?.WebApp){
+          try{ window.Telegram.WebApp.HapticFeedback?.notificationOccurred?.("success"); }catch(e){}
+        }
       }
     });
   }, {passive:true});
 
-  content.addEventListener("touchcancel", ()=>{
+  root.addEventListener("touchcancel", ()=>{
     tracking = false;
-    if(swiping){
-      cleanup?.();
-      setTab(state.tab, {transition:"none"});
-      swiping = false;
-    }
+    cleanup();
   }, {passive:true});
 }
+
+
 
 
 
