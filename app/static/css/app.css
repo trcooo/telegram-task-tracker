@@ -244,7 +244,7 @@
   padding: 10px 12px calc(10px + var(--safe-bot));
   display:flex;
   gap: 0;
-  justify-content: stretch;
+  justify-content: space-between;
   background: rgba(255,255,255,.72);
   backdrop-filter: blur(16px);
   border: 1px solid rgba(255,255,255,.55);
@@ -259,16 +259,16 @@
   position: relative;
   flex: 1 1 0;
   min-width: 0;
-  height: 60px;
+  height: 62px;
   border-radius: 18px;
   border: 0;
   background: transparent;
-  padding: 10px 0 8px;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap: 4px;
+  padding: 8px 0 8px;
+  display:grid;
+  grid-template-rows: 24px 12px;
+  justify-items:center;
+  align-content:center;
+  row-gap: 6px;
   font-size: 11px;
   color: rgba(16,22,42,.65);
   -webkit-tap-highlight-color: transparent;
@@ -382,7 +382,23 @@
 
 @media (max-width: 380px){
   .tab{
-  position: relative;width: 96px}
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 62px;
+  border-radius: 18px;
+  border: 0;
+  background: transparent;
+  padding: 8px 0 8px;
+  display:grid;
+  grid-template-rows: 24px 12px;
+  justify-items:center;
+  align-content:center;
+  row-gap: 6px;
+  font-size: 11px;
+  color: rgba(16,22,42,.65);
+  -webkit-tap-highlight-color: transparent;
+}
 }
 
 
@@ -634,8 +650,20 @@
 }
 .tab{
   position: relative;
-  transition: transform .16s ease, background .16s ease, box-shadow .16s ease, border-color .16s ease;
-  user-select:none;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 62px;
+  border-radius: 18px;
+  border: 0;
+  background: transparent;
+  padding: 8px 0 8px;
+  display:grid;
+  grid-template-rows: 24px 12px;
+  justify-items:center;
+  align-content:center;
+  row-gap: 6px;
+  font-size: 11px;
+  color: rgba(16,22,42,.65);
   -webkit-tap-highlight-color: transparent;
 }
 .tab:active{ transform: scale(.98); }
@@ -791,18 +819,18 @@
 
 
 .navicon{
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
+  width: 24px;
+  height: 24px;
   display:block;
   stroke: currentColor;
   stroke-width: 2.2;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
-  opacity: .95;
+  opacity: .92;
 }
 .bottom .lbl{
+  display:block;
   line-height: 12px;
   height: 12px;
   font-weight: 800;
@@ -844,36 +872,24 @@
 
 .dotbadge{
   position: absolute;
-  top: 12px;
-  right: calc(50% - 18px);
+  top: 14px;
+  left: 50%;
+  transform: translateX(10px) scale(.8);
   width: 8px;
   height: 8px;
   border-radius: 999px;
   background: rgba(255,59,79,.95);
   box-shadow: 0 8px 18px rgba(255,59,79,.22);
   opacity: 0;
-  transform: scale(.8);
   transition: opacity .16s ease, transform .16s ease;
 }
-.tab.has-dot .dotbadge{
-  position: absolute;
-  top: 12px;
-  right: calc(50% - 18px);
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(255,59,79,.95);
-  box-shadow: 0 8px 18px rgba(255,59,79,.22);
-  opacity: 0;
-  transform: scale(.8);
-  transition: opacity .16s ease, transform .16s ease;
-}
+.tab.has-dot .dotbadge{ opacity: 1; transform: translateX(10px) scale(1); }
 
 /* --- iOS-like active capsule highlight --- */
 .tab::before{
   content:"";
   position:absolute;
-  inset: 6px 12px 6px;
+  inset: 6px 12px;
   border-radius: 18px;
   background: rgba(255,255,255,.62);
   backdrop-filter: blur(12px);
@@ -885,15 +901,15 @@
 }
 .tab .navicon, .tab .lbl, .tab .dotbadge{
   position: absolute;
-  top: 12px;
-  right: calc(50% - 18px);
+  top: 14px;
+  left: 50%;
+  transform: translateX(10px) scale(.8);
   width: 8px;
   height: 8px;
   border-radius: 999px;
   background: rgba(255,59,79,.95);
   box-shadow: 0 8px 18px rgba(255,59,79,.22);
   opacity: 0;
-  transform: scale(.8);
   transition: opacity .16s ease, transform .16s ease;
 }
 .tab.active::before{
@@ -906,16 +922,15 @@
 }
 .tab.active .lbl{ opacity: 1; }
 .tab .navicon{
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
+  width: 24px;
+  height: 24px;
   display:block;
   stroke: currentColor;
   stroke-width: 2.2;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
-  opacity: .95;
+  opacity: .92;
 }
 .tab.active .navicon{ opacity: 1; }
 
