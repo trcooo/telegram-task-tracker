@@ -237,7 +237,7 @@
 
 .bottom{
   position: fixed;
-  left: 10px; right: 10px; bottom: 10px;
+  left: 10px; right: 10px; bottom: calc(10px - var(--vv-extra));
   padding: 10px 12px calc(10px + var(--safe-bot));
   display:flex;
   gap: 0;
@@ -276,7 +276,7 @@
 .fab{
   position: fixed;
   left: 50%;
-  bottom: calc(10px + var(--bottom-h) + 14px);
+  bottom: calc(10px + var(--bottom-h) + 14px - var(--vv-extra));
   transform: translateX(-50%);
   transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;
   width: 56px;
@@ -683,7 +683,7 @@
 .frame{
   position: fixed;
   top: 10px; left: 10px; right: 10px;
-  bottom: 10px;
+  bottom: calc(10px - var(--vv-extra));
   border: 1px solid var(--line2);
   border-radius: 28px;
   pointer-events: none;

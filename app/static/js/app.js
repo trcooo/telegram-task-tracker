@@ -289,6 +289,14 @@ function moveTabIndicator(){
 
 
 function updateLayoutVars(){
+  // VisualViewport extra height (when WebView chrome hides/shows)
+  try{
+    const layoutH = document.documentElement.clientHeight || window.innerHeight;
+    const visualH = (window.visualViewport && window.visualViewport.height) ? window.visualViewport.height : window.innerHeight;
+    const extra = Math.max(0, Math.round(visualH - layoutH));
+    document.documentElement.style.setProperty("--vv-extra", extra + "px");
+  }catch(e){}
+
   // Freeze safe-area inset so borders don't "float" when WebView UI changes
   try{
     const probe = document.createElement("div");
@@ -1475,6 +1483,10 @@ function bindUI(){
 
   window.addEventListener("resize", ()=> { updateLayoutVars(); moveTabIndicator(); });
   window.addEventListener("orientationchange", ()=> { setTimeout(()=> { updateLayoutVars(); moveTabIndicator(); }, 80); });
+  if(window.visualViewport){
+    window.visualViewport.addEventListener("resize", ()=> { updateLayoutVars(); moveTabIndicator(); });
+    window.visualViewport.addEventListener("scroll", ()=> { updateLayoutVars(); });
+  }
 }
 
 async function boot(){
