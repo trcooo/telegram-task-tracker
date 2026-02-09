@@ -13,8 +13,13 @@
     <div class="blob" aria-hidden="true"></div>
     <div class="frame" aria-hidden="true"></div>
     <header class="top">
-      <div class="title">Schedule</div>
-      <div class="subtitle" id="subtitle">Today</div>
+      <div class="toprow">
+        <div>
+          <div class="title">Schedule</div>
+          <div class="subtitle" id="subtitle">Today</div>
+        </div>
+        <button class="tzpill" id="btnTZ" type="button">TZ</button>
+      </div>
       <div class="week" id="week"></div>
     </header>
 
@@ -141,15 +146,8 @@
 
         <div class="row" id="eventFields">
           <label class="field">
-            <span>Длительность</span>
-            <select id="selDuration">
-              <option value="15">15 мин</option>
-              <option value="30" selected>30 мин</option>
-              <option value="45">45 мин</option>
-              <option value="60">60 мин</option>
-              <option value="90">90 мин</option>
-              <option value="120">120 мин</option>
-            </select>
+            <span>Конец</span>
+            <input id="inpEndTime" type="time" />
           </label>
           <label class="field">
             <span>Цвет</span>
@@ -186,7 +184,33 @@
         </div>
       </div>
     </div>
+  
+  <!-- Timezone Modal -->
+  <div class="modal" id="tzModal" aria-hidden="true">
+    <div class="backdrop" id="tzBackdrop"></div>
+    <div class="sheet">
+      <div class="sheet-head">
+        <div class="sheet-title">Часовой пояс</div>
+        <button class="ghost" id="tzClose" type="button">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="hint" style="margin-bottom:10px">
+          Авто определение с устройства включено. Можно переопределить вручную.
+        </div>
+
+        <label class="field">
+          <span>Timezone</span>
+          <select id="tzSelect"></select>
+        </label>
+
+        <div class="row">
+          <button class="ghost" id="tzAutoBtn" type="button">Использовать timezone устройства</button>
+          <button class="primary" id="tzSaveBtn" type="button">Сохранить</button>
+        </div>
+      </div>
+    </div>
   </div>
+</div>
 
   <script src="/static/js/api.js"></script>
   <script src="/static/js/app.js"></script>

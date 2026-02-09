@@ -1,22 +1,39 @@
 const state = {
-  date: new Date(),
+  dateStr: null,          // "YYYY-MM-DD" (civil date in выбранном TZ)
+  timezone: "UTC",        // IANA
   projects: [],
   tasks: [],
   events: [],
-  mode: "task",     // task | event
-  tab: "schedule",  // schedule | tasks | calendar
+  mode: "task",           // task | event
+  tab: "schedule",        // schedule | tasks | calendar
   tasksFilter: "inbox",
   tasksSearch: "",
-  weekSelected: null, // Date
 };
 
 let openSwipeEl = null;
+let isBooted = false;
 
-
+function pad2(n){ return String(n).padStart(2,"0"); }
+function parseISODate(dateStr){
+  const [y,m,d] = dateStr.split("-").map(Number);
+  return {y, m, d};
+}
+function dateStrMidUTC(dateStr){
+  const {y,m,d} = parseISODate(dateStr);
+  return new Date(Date.UTC(y, m-1, d, 12, 0, 0));
+}
+function addDays(dateStr, delta){
+  const {y,m,d} = parseISODate(dateStr);
+  const dt = new Date(Date.UTC(y, m-1, d, 12, 0, 0));
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth()+1)}-${pad2(dt.getUTCDate())}`;
+}
+function escapeHtml(s){
+  return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+}
 function prefersReducedMotion(){
   return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
-
 function animateIn(el, {y=8, duration=200, delay=0} = {}){
   if(!el || prefersReducedMotion()) return;
   try{
@@ -29,42 +46,91 @@ function animateIn(el, {y=8, duration=200, delay=0} = {}){
     );
   }catch(e){}
 }
-
 function animateList(container, selector){
   if(!container || prefersReducedMotion()) return;
   const items = Array.from(container.querySelectorAll(selector));
   items.forEach((el, i)=> animateIn(el, {y: 10, duration: 220, delay: Math.min(i*18, 160)}));
 }
 
-function moveTabIndicator(){
-  const ind = document.getElementById("tabIndicator");
-  const active = document.querySelector(".bottom .tab.active");
-  if(!ind || !active) return;
-  const r1 = active.getBoundingClientRect();
-  const r2 = ind.parentElement.getBoundingClientRect();
-  const w = Math.max(64, Math.min(96, r1.width - 22));
-  const x = (r1.left - r2.left) + (r1.width - w)/2;
-  ind.style.width = `${w}px`;
-  ind.style.transform = `translateX(${x}px)`;
+/* ---------------- Timezone helpers ---------------- */
+function deviceTimezone(){
+  try{
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  }catch(e){
+    return "UTC";
+  }
+}
+function tzButtonLabel(tz){
+  // show short label like UTC+03 or last segment
+  const now = new Date();
+  const offMin = getTimeZoneOffsetMinutes(tz, now);
+  const sign = offMin <= 0 ? "+" : "-"; // offset minutes is tz - UTC; could be negative for UTC+X
+  const abs = Math.abs(offMin);
+  const hh = pad2(Math.floor(abs/60));
+  const mm = pad2(abs%60);
+  const short = tz.split("/").pop();
+  return `UTC${sign}${hh}${mm==="00" ? "" : ":"+mm} • ${short}`;
 }
 
+// Get TZ offset (minutes) for tz at given Date instant
+function getTimeZoneOffsetMinutes(tz, date){
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year:"numeric", month:"2-digit", day:"2-digit",
+    hour:"2-digit", minute:"2-digit", second:"2-digit",
+    hour12:false
+  });
+  const parts = fmt.formatToParts(date);
+  const map = {};
+  for(const p of parts){
+    if(p.type !== "literal") map[p.type] = p.value;
+  }
+  const asUTC = Date.UTC(
+    Number(map.year), Number(map.month)-1, Number(map.day),
+    Number(map.hour), Number(map.minute), Number(map.second)
+  );
+  return (asUTC - date.getTime()) / 60000;
+}
 
-function pad2(n){ return String(n).padStart(2,'0'); }
-function toISODate(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
-function startOfDay(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0,0,0,0); }
-function addMinutes(d, mins){ return new Date(d.getTime() + mins*60000); }
-function escapeHtml(s){
-  return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-}
-function fmtDayPill(d){
-  const opts = {weekday:"short", month:"short", day:"numeric"};
-  return d.toLocaleDateString("ru-RU", opts);
-}
-function weekdayShort(d){
-  return d.toLocaleDateString("ru-RU", {weekday:"short"}).slice(0,2);
+// Convert civil time in tz (dateStr + HH:MM) into UTC ISO string with Z
+function zonedTimeToUtcISO(dateStr, timeStr, tz){
+  const {y,m,d} = parseISODate(dateStr);
+  const [hh, mm] = (timeStr || "09:00").split(":").map(Number);
+  const guess = new Date(Date.UTC(y, m-1, d, hh, mm, 0));
+  const offset = getTimeZoneOffsetMinutes(tz, guess);
+  const utc = new Date(guess.getTime() - offset*60000);
+  return utc.toISOString();
 }
 
-/* ---------------- UI: screens & header ---------------- */
+// Extract hour/min for a UTC ISO, displayed in tz
+function zonedHourMin(iso, tz){
+  const dt = new Date(iso);
+  const fmt = new Intl.DateTimeFormat("en-US", {timeZone: tz, hour:"2-digit", minute:"2-digit", hour12:false});
+  const parts = fmt.formatToParts(dt);
+  let hh="00", mm="00";
+  for(const p of parts){
+    if(p.type==="hour") hh = p.value;
+    if(p.type==="minute") mm = p.value;
+  }
+  return {h: Number(hh), m: Number(mm)};
+}
+function fmtTime(iso, tz){
+  const dt = new Date(iso);
+  const fmt = new Intl.DateTimeFormat("ru-RU", {timeZone: tz, hour:"2-digit", minute:"2-digit", hour12:false});
+  return fmt.format(dt);
+}
+function fmtDayPill(dateStr, tz){
+  const dt = dateStrMidUTC(dateStr);
+  const fmt = new Intl.DateTimeFormat("ru-RU", {timeZone: tz, weekday:"short", month:"short", day:"numeric"});
+  return fmt.format(dt);
+}
+function weekdayShort(dateStr, tz){
+  const dt = dateStrMidUTC(dateStr);
+  const fmt = new Intl.DateTimeFormat("ru-RU", {timeZone: tz, weekday:"short"});
+  return fmt.format(dt).slice(0,2);
+}
+
+/* ---------------- UI: header + tabs ---------------- */
 function setHeaderForTab(){
   const titleEl = document.querySelector(".title");
   const subEl = document.getElementById("subtitle");
@@ -80,6 +146,18 @@ function setHeaderForTab(){
     titleEl.textContent = "Week";
     subEl.textContent = "Обзор недели";
   }
+}
+
+function moveTabIndicator(){
+  const ind = document.getElementById("tabIndicator");
+  const active = document.querySelector(".bottom .tab.active");
+  if(!ind || !active) return;
+  const r1 = active.getBoundingClientRect();
+  const r2 = ind.parentElement.getBoundingClientRect();
+  const w = Math.max(64, Math.min(96, r1.width - 22));
+  const x = (r1.left - r2.left) + (r1.width - w)/2;
+  ind.style.width = `${w}px`;
+  ind.style.transform = `translateX(${x}px)`;
 }
 
 function setTab(tab){
@@ -100,19 +178,15 @@ function setTab(tab){
   setHeaderForTab();
   updateFabForTab();
   moveTabIndicator();
-  moveTabIndicator();
 
   if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.selectionChanged();
 
-  // Animate screen entrance (JS-based)
   const screen = (tab==="schedule") ? sc : (tab==="tasks") ? ts : wk;
   animateIn(screen, {y: 6, duration: 200});
 
-  // lazy refresh
   if(tab==="tasks") refreshTasksScreen();
   if(tab==="calendar") refreshWeekScreen();
 }
-
 
 function updateFabForTab(){
   const fab = document.getElementById("fab");
@@ -127,19 +201,18 @@ function buildWeekStrip(){
   if(!weekEl) return;
   weekEl.innerHTML = "";
 
-  const base = startOfDay(state.date);
   for(let i=-3;i<=3;i++){
-    const d = new Date(base.getTime() + i*86400000);
+    const ds = addDays(state.dateStr, i);
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = "daychip" + (toISODate(d)===toISODate(state.date) ? " active":"");
-    chip.innerHTML = `<div class="dname">${weekdayShort(d)}</div><div class="dnum">${d.getDate()}</div>`;
-    chip.onclick = () => { state.date = d; refreshAll(); };
+    chip.className = "daychip" + (ds===state.dateStr ? " active":"");
+    chip.innerHTML = `<div class="dname">${weekdayShort(ds, state.timezone)}</div><div class="dnum">${Number(ds.split("-")[2])}</div>`;
+    chip.onclick = () => { state.dateStr = ds; refreshAll(); };
     weekEl.appendChild(chip);
   }
 
   const pill = document.getElementById("selectedDatePill");
-  if(pill) pill.textContent = fmtDayPill(state.date);
+  if(pill) pill.textContent = fmtDayPill(state.dateStr, state.timezone);
 }
 
 function buildDayGrid(){
@@ -165,6 +238,19 @@ function buildDayGrid(){
       drop.dataset.hour = String(h);
       drop.dataset.min = String(m);
 
+      // click empty slot -> add event
+      drop.addEventListener("click", (e)=>{
+        const isOnCard = e.target.closest(".card");
+        if(isOnCard) return;
+        setMode("event");
+        openModal();
+        document.getElementById("inpDate").value = state.dateStr;
+        const st = `${pad2(h)}:${pad2(m)}`;
+        document.getElementById("inpTime").value = st;
+        // default end = start + 30m
+        document.getElementById("inpEndTime").value = addMinutesToTimeStr(st, 30);
+      });
+
       drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
       drop.addEventListener("dragleave", () => drop.classList.remove("over"));
       drop.addEventListener("drop", async (e) => {
@@ -173,12 +259,12 @@ function buildDayGrid(){
         const taskId = e.dataTransfer.getData("text/taskId");
         if(!taskId) return;
 
-        const d0 = startOfDay(state.date);
-        const start = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate(), h, m, 0, 0);
+        const startISO = zonedTimeToUtcISO(state.dateStr, `${pad2(h)}:${pad2(m)}`, state.timezone);
 
         try{
-          await API.planTask(Number(taskId), start.toISOString(), 30);
+          await API.planTask(Number(taskId), startISO, 30);
           await refreshAll();
+          if(state.tab==="calendar") await refreshWeekScreen();
           if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.notificationOccurred("success");
         }catch(err){
           alert("Не удалось запланировать: " + err);
@@ -201,19 +287,29 @@ function renderEventsOnGrid(){
   const evs = state.events.slice().sort((a,b)=> new Date(a.start_dt) - new Date(b.start_dt));
 
   for(const ev of evs){
-    const s = new Date(ev.start_dt);
-    const e = new Date(ev.end_dt);
+    const sHM = zonedHourMin(ev.start_dt, state.timezone);
+    const eHM = zonedHourMin(ev.end_dt, state.timezone);
 
-    const h = s.getHours();
-    const m = s.getMinutes();
-    const snappedM = (m<15)?0:(m<45)?30:0;
-    const snappedH = (m<45)?h:h+1;
+    const snappedM = (sHM.m<15)?0:(sHM.m<45)?30:0;
+    const snappedH = (sHM.m<45)?sHM.h:sHM.h+1;
 
     const drop = grid.querySelector(`.sdrop[data-hour="${snappedH}"][data-min="${snappedM}"]`);
     if(!drop) continue;
 
     const card = document.createElement("div");
     card.className = "card";
+    card.addEventListener("click", ()=>{
+      // Edit existing event
+      setMode("event");
+      openModal();
+      document.getElementById("inpTitle").value = ev.title;
+      document.getElementById("inpDate").value = state.dateStr;
+      document.getElementById("inpTime").value = `${pad2(sHM.h)}:${pad2(sHM.m)}`;
+      document.getElementById("inpEndTime").value = `${pad2(eHM.h)}:${pad2(eHM.m)}`;
+      document.getElementById("inpColor").value = ev.color || "#6EA8FF";
+      document.getElementById("saveBtn").dataset.editEventId = String(ev.id);
+      document.getElementById("sheetTitle").textContent = "Редактировать событие";
+    });
 
     const bar = document.createElement("div");
     bar.className = "bar";
@@ -221,7 +317,7 @@ function renderEventsOnGrid(){
 
     const body = document.createElement("div");
     body.className = "cbody";
-    const t1 = `${pad2(s.getHours())}:${pad2(s.getMinutes())}–${pad2(e.getHours())}:${pad2(e.getMinutes())}`;
+    const t1 = `${fmtTime(ev.start_dt, state.timezone)}–${fmtTime(ev.end_dt, state.timezone)}`;
     body.innerHTML = `
       <div class="ctime">${t1}</div>
       <div class="ctitle">${escapeHtml(ev.title)}</div>
@@ -234,7 +330,8 @@ function renderEventsOnGrid(){
     btnDel.className = "iconbtn";
     btnDel.type = "button";
     btnDel.textContent = "🗑️";
-    btnDel.onclick = async () => {
+    btnDel.onclick = async (e) => {
+      e.stopPropagation();
       if(!confirm("Удалить блок?")) return;
       await API.deleteEvent(ev.id);
       await refreshAll();
@@ -247,6 +344,8 @@ function renderEventsOnGrid(){
     card.appendChild(actions);
     drop.appendChild(card);
   }
+
+  animateList(document.getElementById("dayGrid"), ".card");
 }
 
 /* ---------------- Swipe to delete ---------------- */
@@ -297,7 +396,6 @@ function attachSwipeToDelete(wrapperEl, onDelete){
     });
   }
 }
-
 document.addEventListener("touchstart", (e)=>{
   if(openSwipeEl && !openSwipeEl.contains(e.target)){
     openSwipeEl.classList.remove("open");
@@ -377,31 +475,20 @@ function renderTasksTo(listEl, tasks){
   }
 }
 
-function renderInboxTasks(){
-  const list = document.getElementById("taskList");
-  if(!list) return;
-  renderTasksTo(list, state.tasks);
-}
-
 /* ---------------- Screens refresh ---------------- */
 async function refreshAll(){
   buildWeekStrip();
   buildDayGrid();
 
-  const dateStr = toISODate(state.date);
-  state.events = await API.scheduleDay(dateStr);
+  state.events = await API.scheduleDay(state.dateStr);
   state.tasks = await API.listTasks("inbox");
 
   renderEventsOnGrid();
-  renderInboxTasks();
+  renderTasksTo(document.getElementById("taskList"), state.tasks);
 
-  // keep title pill fresh
   const pill = document.getElementById("selectedDatePill");
-  if(pill) pill.textContent = fmtDayPill(state.date);
+  if(pill) pill.textContent = fmtDayPill(state.dateStr, state.timezone);
 
-
-  // Stagger animation
-  animateList(document.getElementById("dayGrid"), ".card");
   animateList(document.getElementById("taskList"), ".swipe");
 }
 
@@ -410,7 +497,6 @@ async function refreshTasksScreen(){
   if(!listEl) return;
 
   const raw = await API.listTasks(state.tasksFilter);
-
   const q = (state.tasksSearch||"").trim().toLowerCase();
   const tasks = q ? raw.filter(t => (t.title||"").toLowerCase().includes(q)) : raw;
 
@@ -424,9 +510,7 @@ async function refreshTasksScreen(){
     listEl.appendChild(msg);
   }
 
-
-  // Stagger animation
-  animateList(document.getElementById("taskListAll"), ".swipe");
+  animateList(listEl, ".swipe");
 }
 
 async function refreshWeekScreen(){
@@ -434,29 +518,27 @@ async function refreshWeekScreen(){
   if(!box) return;
   box.innerHTML = "";
 
-  const baseD = startOfDay(new Date());
   const days = [];
-  for(let i=0;i<7;i++) days.push(new Date(baseD.getTime() + i*86400000));
+  for(let i=0;i<7;i++) days.push(addDays(state.dateStr, i));
 
-  const results = await Promise.all(days.map(async (d)=>{
-    const dateStr = toISODate(d);
+  const results = await Promise.all(days.map(async (ds)=>{
     try{
-      const evs = await API.scheduleDay(dateStr);
-      return {d, evs};
+      const evs = await API.scheduleDay(ds);
+      return {ds, evs};
     }catch(e){
-      return {d, evs: []};
+      return {ds, evs: []};
     }
   }));
 
-  for(const {d, evs} of results){
+  for(const {ds, evs} of results){
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "week-item";
 
-    const label = d.toLocaleDateString("ru-RU", {weekday:"short", month:"short", day:"numeric"});
+    const label = fmtDayPill(ds, state.timezone);
     const left = document.createElement("div");
     left.style.minWidth = "0";
-    left.innerHTML = `<div class="wdate">${label}</div><div class="wmeta">${toISODate(d)===toISODate(new Date()) ? "Сегодня" : ""}</div>`;
+    left.innerHTML = `<div class="wdate">${label}</div><div class="wmeta">${ds===state.dateStr ? "Выбранный день" : ""}</div>`;
 
     const preview = document.createElement("div");
     preview.className = "week-preview";
@@ -467,9 +549,7 @@ async function refreshWeekScreen(){
       preview.innerHTML = `<div class="ev"><span class="dot"></span><span class="n">Нет событий</span></div>`;
     }else{
       preview.innerHTML = top.map(ev=>{
-        const s = new Date(ev.start_dt);
-        const t = `${pad2(s.getHours())}:${pad2(s.getMinutes())}`;
-        return `<div class="ev"><span class="dot" style="background:${ev.color || 'rgba(16,22,42,.25)'}"></span><span class="t">${t}</span><span class="n">${escapeHtml(ev.title)}</span></div>`;
+        return `<div class="ev"><span class="dot" style="background:${ev.color || 'rgba(16,22,42,.25)'}"></span><span class="t">${fmtTime(ev.start_dt, state.timezone)}</span><span class="n">${escapeHtml(ev.title)}</span></div>`;
       }).join("");
     }
     left.appendChild(preview);
@@ -482,8 +562,7 @@ async function refreshWeekScreen(){
     btn.appendChild(count);
 
     btn.onclick = () => {
-      state.weekSelected = d;
-      state.date = d;
+      state.dateStr = ds;
       setTab("schedule");
       refreshAll();
     };
@@ -491,19 +570,23 @@ async function refreshWeekScreen(){
     box.appendChild(btn);
   }
 
-
-  // Stagger animation
-  animateList(document.getElementById("weekList"), ".week-item");
+  animateList(box, ".week-item");
 }
 
 /* ---------------- Modal ---------------- */
+function addMinutesToTimeStr(timeStr, mins){
+  const [hh, mm] = (timeStr||"09:00").split(":").map(Number);
+  const total = hh*60 + mm + mins;
+  const nh = Math.floor((total % (24*60)) / 60);
+  const nm = total % 60;
+  return `${pad2(nh)}:${pad2(nm)}`;
+}
+
 function openModal(){
-  // Prefill date with current selection
-  document.getElementById("inpDate").value = toISODate(state.date);
+  document.getElementById("inpDate").value = state.dateStr;
   const modal = document.getElementById("modal");
   modal.setAttribute("aria-hidden","false");
 
-  // JS animation (extra polish)
   if(!prefersReducedMotion()){
     const sheet = modal.querySelector(".sheet");
     const backdrop = modal.querySelector(".backdrop");
@@ -524,20 +607,17 @@ function closeModal(){
   if(!prefersReducedMotion()){
     const sheet = modal.querySelector(".sheet");
     const backdrop = modal.querySelector(".backdrop");
-    const a1 = backdrop?.animate([{opacity:1},{opacity:0}], {duration: 160, easing:"ease", fill:"both"});
     const a2 = sheet?.animate(
       [{transform:"translateY(0px)", opacity:1},{transform:"translateY(18px)", opacity:0}],
       {duration: 180, easing:"cubic-bezier(.2,.9,.2,1)", fill:"both"}
     );
+    backdrop?.animate([{opacity:1},{opacity:0}], {duration: 160, easing:"ease", fill:"both"});
     const done = () => {
       modal.setAttribute("aria-hidden","true");
       clearModal();
     };
-    if(a2){
-      a2.onfinish = done;
-    }else{
-      done();
-    }
+    if(a2) a2.onfinish = done;
+    else done();
   }else{
     modal.setAttribute("aria-hidden","true");
     clearModal();
@@ -547,13 +627,14 @@ function closeModal(){
 function clearModal(){
   document.getElementById("inpTitle").value = "";
   document.getElementById("inpTime").value = "";
+  document.getElementById("inpEndTime").value = "";
   document.getElementById("inpColor").value = "#6EA8FF";
-  document.getElementById("selDuration").value = "30";
   document.getElementById("selPriority").value = "2";
   document.getElementById("selEstimate").value = "30";
-  document.getElementById("inpDate").value = toISODate(state.date);
+  document.getElementById("inpDate").value = state.dateStr;
   document.getElementById("sheetTitle").textContent = state.mode==="task" ? "Добавить задачу" : "Добавить событие";
   document.getElementById("saveBtn").dataset.editTaskId = "";
+  document.getElementById("saveBtn").dataset.editEventId = "";
 }
 
 function setMode(mode){
@@ -585,16 +666,12 @@ async function saveFromModal(){
   const title = document.getElementById("inpTitle").value.trim();
   if(!title){ alert("Введите название"); return; }
 
-  const dateStr = document.getElementById("inpDate").value || toISODate(state.date);
+  const dateStr = document.getElementById("inpDate").value || state.dateStr;
   const timeStr = document.getElementById("inpTime").value || "09:00";
-  const [hh, mm] = timeStr.split(":").map(Number);
-  const d = new Date(dateStr + "T00:00:00");
-  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hh, mm, 0, 0);
-
-  const projectIdRaw = document.getElementById("selProject").value;
-  const project_id = projectIdRaw ? Number(projectIdRaw) : null;
 
   if(state.mode === "task"){
+    const projectIdRaw = document.getElementById("selProject").value;
+    const project_id = projectIdRaw ? Number(projectIdRaw) : null;
     const editId = document.getElementById("saveBtn").dataset.editTaskId;
     const priority = Number(document.getElementById("selPriority").value);
     const estimate_min = Number(document.getElementById("selEstimate").value);
@@ -604,6 +681,7 @@ async function saveFromModal(){
     }else{
       await API.createTask({title, priority, estimate_min, project_id});
     }
+
     closeModal();
     await refreshAll();
     if(state.tab==="tasks") await refreshTasksScreen();
@@ -611,15 +689,33 @@ async function saveFromModal(){
     return;
   }
 
-  const duration = Number(document.getElementById("selDuration").value);
+  const endTime = document.getElementById("inpEndTime").value;
+  if(!endTime){
+    alert("Укажите время окончания");
+    return;
+  }
+  if(endTime <= timeStr){
+    alert("Конец должен быть позже начала");
+    return;
+  }
+
   const color = document.getElementById("inpColor").value || "#6EA8FF";
-  const end = addMinutes(start, duration);
-  await API.createEvent({title, start_dt: start.toISOString(), end_dt: end.toISOString(), color, source:"manual"});
+  const startISO = zonedTimeToUtcISO(dateStr, timeStr, state.timezone);
+  const endISO = zonedTimeToUtcISO(dateStr, endTime, state.timezone);
+
+  const editEventId = document.getElementById("saveBtn").dataset.editEventId;
+  if(editEventId){
+    await API.updateEvent(Number(editEventId), {title, start_dt: startISO, end_dt: endISO, color});
+  }else{
+    await API.createEvent({title, start_dt: startISO, end_dt: endISO, color, source:"manual"});
+  }
+
   closeModal();
   await refreshAll();
   if(state.tab==="calendar") await refreshWeekScreen();
 }
 
+/* ---------------- Tasks edit ---------------- */
 function openEditTask(t){
   setMode("task");
   openModal();
@@ -631,37 +727,65 @@ function openEditTask(t){
   document.getElementById("sheetTitle").textContent = "Редактировать задачу";
 }
 
-/* ---------------- Boot ---------------- */
-async function boot(){
-  // Bind UI no matter what (so tabs respond even if auth fails)
-  bindUI();
+/* ---------------- Timezone modal ---------------- */
+const TZ_LIST = [
+  "UTC",
+  "Europe/London","Europe/Paris","Europe/Berlin","Europe/Warsaw","Europe/Kyiv","Europe/Moscow",
+  "Asia/Tbilisi","Asia/Yerevan","Asia/Baku","Asia/Almaty","Asia/Tashkent","Asia/Dubai",
+  "Asia/Kolkata","Asia/Bangkok","Asia/Singapore","Asia/Shanghai","Asia/Tokyo","Asia/Seoul",
+  "Australia/Sydney",
+  "America/New_York","America/Chicago","America/Denver","America/Los_Angeles",
+];
 
-  let initData = "";
-  if(window.Telegram?.WebApp){
-    const tg = window.Telegram.WebApp;
-    tg.ready();
-    initData = tg.initData || "";
+function openTZModal(){
+  const m = document.getElementById("tzModal");
+  m.setAttribute("aria-hidden","false");
+  if(!prefersReducedMotion()){
+    const sheet = m.querySelector(".sheet");
+    const backdrop = m.querySelector(".backdrop");
+    backdrop?.animate([{opacity:0},{opacity:1}], {duration: 180, easing:"ease", fill:"both"});
+    sheet?.animate([{transform:"translateY(18px)", opacity:0},{transform:"translateY(0px)", opacity:1}],
+      {duration: 220, easing:"cubic-bezier(.2,.9,.2,1)", fill:"both"});
   }
-
-  if(!initData){
-    document.getElementById("subtitle").textContent = "Open inside Telegram";
-    alert("Открой Mini App внутри Telegram (через кнопку из бота), чтобы авторизация работала.");
-    return;
+}
+function closeTZModal(){
+  const m = document.getElementById("tzModal");
+  if(!m) return;
+  m.setAttribute("aria-hidden","true");
+}
+function fillTZSelect(){
+  const sel = document.getElementById("tzSelect");
+  sel.innerHTML = "";
+  // add device tz at top if not in list
+  const dev = deviceTimezone();
+  const list = Array.from(new Set([dev, ...TZ_LIST]));
+  for(const tz of list){
+    const opt = document.createElement("option");
+    opt.value = tz;
+    opt.textContent = tz;
+    sel.appendChild(opt);
   }
+  sel.value = state.timezone;
+}
+async function applyTimezone(tz){
+  state.timezone = tz;
+  localStorage.setItem("planner_tz", tz);
 
-  await API.authTelegram(initData);
-  state.projects = await API.getProjects();
-  fillProjects();
+  const btn = document.getElementById("btnTZ");
+  if(btn) btn.textContent = tzButtonLabel(tz);
 
-  document.getElementById("inpDate").value = toISODate(state.date);
+  // sync to server (ignore errors quietly)
+  try{ await API.setTimezone(tz); }catch(e){}
 
-  setTab("schedule");
-  requestAnimationFrame(()=> moveTabIndicator());
+  // refresh screens
+  buildWeekStrip();
   await refreshAll();
+  if(state.tab==="calendar") await refreshWeekScreen();
 }
 
+/* ---------------- Boot ---------------- */
 function bindUI(){
-  // Bottom tabs: click + touchend (Telegram webview can be picky)
+  // Bottom tabs
   const map = [
     ["tabSchedule","schedule"],
     ["tabTasks","tasks"],
@@ -695,7 +819,15 @@ function bindUI(){
   }
 
   // Buttons
-  document.getElementById("btnToday")?.addEventListener("click", ()=>{ state.date = new Date(); refreshAll(); });
+  document.getElementById("btnToday")?.addEventListener("click", ()=>{
+    // set to "today" in selected TZ
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-CA", {timeZone: state.timezone, year:"numeric", month:"2-digit", day:"2-digit"}).formatToParts(now);
+    const map = {};
+    for(const p of parts){ if(p.type !== "literal") map[p.type] = p.value; }
+    state.dateStr = `${map.year}-${map.month}-${map.day}`;
+    refreshAll();
+  });
   document.getElementById("btnRefresh")?.addEventListener("click", refreshAll);
   document.getElementById("btnTasksRefresh")?.addEventListener("click", refreshTasksScreen);
   document.getElementById("btnWeekRefresh")?.addEventListener("click", refreshWeekScreen);
@@ -705,6 +837,11 @@ function bindUI(){
     if(state.tab === "calendar") setMode("event");
     else setMode("task");
     openModal();
+    if(state.mode === "event"){
+      // default times
+      if(!document.getElementById("inpTime").value) document.getElementById("inpTime").value = "09:00";
+      if(!document.getElementById("inpEndTime").value) document.getElementById("inpEndTime").value = "09:30";
+    }
   });
   document.getElementById("closeModal")?.addEventListener("click", closeModal);
   document.getElementById("backdrop")?.addEventListener("click", closeModal);
@@ -712,12 +849,83 @@ function bindUI(){
   document.getElementById("segEvent")?.addEventListener("click", ()=>setMode("event"));
   document.getElementById("saveBtn")?.addEventListener("click", saveFromModal);
 
+  // start time change -> adjust end time if needed
+  document.getElementById("inpTime")?.addEventListener("change", ()=>{
+    if(state.mode !== "event") return;
+    const st = document.getElementById("inpTime").value || "09:00";
+    const end = document.getElementById("inpEndTime").value || "";
+    if(!end || end <= st){
+      document.getElementById("inpEndTime").value = addMinutesToTimeStr(st, 30);
+    }
+  });
+
+  // Timezone UI
+  document.getElementById("btnTZ")?.addEventListener("click", ()=>{
+    fillTZSelect();
+    openTZModal();
+  });
+  document.getElementById("tzBackdrop")?.addEventListener("click", closeTZModal);
+  document.getElementById("tzClose")?.addEventListener("click", closeTZModal);
+  document.getElementById("tzAutoBtn")?.addEventListener("click", async ()=>{
+    const dev = deviceTimezone();
+    document.getElementById("tzSelect").value = dev;
+  });
+  document.getElementById("tzSaveBtn")?.addEventListener("click", async ()=>{
+    const tz = document.getElementById("tzSelect").value;
+    await applyTimezone(tz);
+    closeTZModal();
+  });
+
   setHeaderForTab();
   updateFabForTab();
   moveTabIndicator();
+
+  window.addEventListener("resize", ()=> moveTabIndicator());
 }
 
-window.addEventListener("resize", ()=> moveTabIndicator());
+async function boot(){
+  bindUI();
+
+  // timezone init
+  const savedTZ = localStorage.getItem("planner_tz");
+  state.timezone = savedTZ || deviceTimezone();
+
+  const btn = document.getElementById("btnTZ");
+  if(btn) btn.textContent = tzButtonLabel(state.timezone);
+
+  // default dateStr = "today" in tz
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-CA", {timeZone: state.timezone, year:"numeric", month:"2-digit", day:"2-digit"}).formatToParts(now);
+  const map = {};
+  for(const p of parts){ if(p.type !== "literal") map[p.type] = p.value; }
+  state.dateStr = `${map.year}-${map.month}-${map.day}`;
+
+  let initData = "";
+  if(window.Telegram?.WebApp){
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    initData = tg.initData || "";
+  }
+  if(!initData){
+    document.getElementById("subtitle").textContent = "Open inside Telegram";
+    alert("Открой Mini App внутри Telegram (через кнопку из бота), чтобы авторизация работала.");
+    return;
+  }
+
+  await API.authTelegram(initData);
+
+  // sync timezone to backend
+  try{ await API.setTimezone(state.timezone); }catch(e){}
+
+  state.projects = await API.getProjects();
+  fillProjects();
+
+  document.getElementById("inpDate").value = state.dateStr;
+
+  setTab("schedule");
+  requestAnimationFrame(()=> moveTabIndicator());
+  await refreshAll();
+}
 
 boot().catch(err=>{
   console.error(err);

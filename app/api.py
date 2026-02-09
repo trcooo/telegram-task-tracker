@@ -1,4 +1,5 @@
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
@@ -10,7 +11,8 @@ from .schemas import (
     TaskCreate, TaskUpdate, TaskOut,
     EventCreate, EventUpdate, EventOut,
     PlanTaskIn,
-    ProjectCreate, ProjectOut
+    ProjectCreate, ProjectOut,
+    UserTimezoneIn
 )
 from .telegram_auth import validate_init_data
 from .security import create_token
@@ -53,6 +55,22 @@ def auth_telegram(payload: AuthIn, db: Session = Depends(get_db)):
     token = create_token(user.id)
     return {"token": token, "user": {"id": user.id, "telegram_id": user.telegram_id, "first_name": user.first_name, "username": user.username}}
 
+def _to_utc_naive(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+@router.patch("/user/timezone")
+def set_user_timezone(body: UserTimezoneIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        ZoneInfo(body.timezone)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid timezone")
+    user.timezone = body.timezone
+    db.commit()
+    return {"ok": True, "timezone": user.timezone}
+
 # ---- Projects ----
 @router.get("/projects", response_model=list[ProjectOut])
 def list_projects(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -86,7 +104,7 @@ def _task_to_out(t: Task) -> dict:
 def list_tasks(filter: str = "inbox", user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = db.query(Task).options(joinedload(Task.project)).filter(Task.user_id == user.id)
 
-    today = date.today()
+    today = datetime.now(ZoneInfo(user.timezone or "UTC")).date()
     if filter == "inbox":
         q = q.filter(Task.status == "inbox")
     elif filter == "today":
@@ -175,8 +193,8 @@ def create_event(body: EventCreate, user: User = Depends(get_current_user), db: 
     ev = Event(
         user_id=user.id,
         title=body.title,
-        start_dt=body.start_dt,
-        end_dt=body.end_dt,
+        start_dt=_to_utc_naive(body.start_dt),
+        end_dt=_to_utc_naive(body.end_dt),
         color=body.color,
         source=body.source,
         task_id=body.task_id
@@ -201,6 +219,8 @@ def update_event(event_id: int, body: EventUpdate, user: User = Depends(get_curr
     if not ev:
         raise HTTPException(status_code=404, detail="Event not found")
     for k, v in body.model_dump(exclude_unset=True).items():
+        if k in ("start_dt", "end_dt") and v is not None:
+            v = _to_utc_naive(v)
         setattr(ev, k, v)
     db.commit()
     db.refresh(ev)
@@ -225,8 +245,8 @@ def plan_task(task_id: int, body: PlanTaskIn, user: User = Depends(get_current_u
     ev = Event(
         user_id=user.id,
         title=t.title,
-        start_dt=body.start_dt,
-        end_dt=body.start_dt + timedelta(minutes=body.duration_min),
+        start_dt=_to_utc_naive(body.start_dt),
+        end_dt=_to_utc_naive(body.start_dt) + timedelta(minutes=body.duration_min),
         color=color,
         source="task",
         task_id=t.id

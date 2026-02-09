@@ -1,5 +1,5 @@
-from datetime import datetime, date
-from pydantic import BaseModel, Field
+from datetime import datetime, date, timezone
+from pydantic import BaseModel, Field, field_serializer
 
 class AuthIn(BaseModel):
     init_data: str
@@ -53,6 +53,13 @@ class EventOut(BaseModel):
     source: str
     task_id: int | None = None
 
+    @field_serializer("start_dt", "end_dt")
+    def _ser_dt(self, v: datetime):
+        # Store UTC-naive in DB, but send as UTC-aware ISO to the client
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        return v.isoformat()
+
 class EventCreate(BaseModel):
     title: str
     start_dt: datetime
@@ -70,3 +77,7 @@ class EventUpdate(BaseModel):
 class PlanTaskIn(BaseModel):
     start_dt: datetime
     duration_min: int = Field(default=30, ge=5, le=720)
+
+
+class UserTimezoneIn(BaseModel):
+    timezone: str

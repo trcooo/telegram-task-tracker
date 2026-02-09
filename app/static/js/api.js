@@ -16,6 +16,10 @@ const API = {
   async getProjects(){
     return this._get("/api/projects");
   },
+
+  async setTimezone(timezone){
+    return this._patch("/api/user/timezone", {timezone});
+  },
   async createProject(name, color){
     return this._post("/api/projects", {name, color});
   },
