@@ -241,10 +241,10 @@
 .bottom{
   position: fixed;
   left: 10px; right: 10px; bottom: calc(10px - var(--vv-extra));
-  padding: 8px 12px calc(8px + var(--safe-bot));
+  padding: 10px 12px calc(10px + var(--safe-bot));
   display:flex;
   gap: 0;
-  justify-content: space-between;
+  justify-content: stretch;
   background: rgba(255,255,255,.72);
   backdrop-filter: blur(16px);
   border: 1px solid rgba(255,255,255,.55);
@@ -259,22 +259,21 @@
   position: relative;
   flex: 1 1 0;
   min-width: 0;
-  height: 54px;
+  height: 60px;
   border-radius: 18px;
   border: 0;
   background: transparent;
-  padding: 6px 6px 4px;
+  padding: 10px 0 8px;
   display:flex;
   flex-direction:column;
   align-items:center;
   justify-content:center;
-  gap: 3px;
+  gap: 4px;
   font-size: 11px;
   color: rgba(16,22,42,.65);
+  -webkit-tap-highlight-color: transparent;
 }
-.tab.active{
-  color: rgba(59,108,255,1);
-}
+.tab.active{ color: rgba(59,108,255,1); }
 .ico{font-size: 16px}
 .lbl{font-weight:700}
 
@@ -794,6 +793,8 @@
 .navicon{
   width: 22px;
   height: 22px;
+  flex: 0 0 22px;
+  display:block;
   stroke: currentColor;
   stroke-width: 2.2;
   fill: none;
@@ -802,9 +803,11 @@
   opacity: .95;
 }
 .bottom .lbl{
-  line-height: 1;
+  line-height: 12px;
+  height: 12px;
   font-weight: 800;
   letter-spacing: .2px;
+  opacity: .86;
 }
 
 .now-layer{
@@ -837,14 +840,12 @@
   45%{ transform: translateY(-3px) scale(1.02); }
   100%{ transform: translateY(0) scale(1); }
 }
-.tab.active .navicon{
-  animation: tabBounce .32s cubic-bezier(.2,.9,.2,1);
-}
+.tab.active .navicon{ opacity: 1; }
 
 .dotbadge{
   position: absolute;
-  top: 10px;
-  right: calc(50% - 16px);
+  top: 12px;
+  right: calc(50% - 18px);
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -855,18 +856,27 @@
   transition: opacity .16s ease, transform .16s ease;
 }
 .tab.has-dot .dotbadge{
-  opacity: 1;
-  transform: scale(1);
+  position: absolute;
+  top: 12px;
+  right: calc(50% - 18px);
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,59,79,.95);
+  box-shadow: 0 8px 18px rgba(255,59,79,.22);
+  opacity: 0;
+  transform: scale(.8);
+  transition: opacity .16s ease, transform .16s ease;
 }
 
 /* --- iOS-like active capsule highlight --- */
 .tab::before{
   content:"";
   position:absolute;
-  inset: 4px 10px 4px;
-  border-radius: 16px;
+  inset: 6px 12px 6px;
+  border-radius: 18px;
   background: rgba(255,255,255,.62);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
   border: 1px solid rgba(59,108,255,.14);
   box-shadow: 0 12px 26px rgba(16,22,42,.10);
   opacity: 0;
@@ -874,8 +884,17 @@
   transition: opacity .18s ease, transform .18s cubic-bezier(.2,.9,.2,1);
 }
 .tab .navicon, .tab .lbl, .tab .dotbadge{
-  position: relative;
-  z-index: 1;
+  position: absolute;
+  top: 12px;
+  right: calc(50% - 18px);
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,59,79,.95);
+  box-shadow: 0 8px 18px rgba(255,59,79,.22);
+  opacity: 0;
+  transform: scale(.8);
+  transition: opacity .16s ease, transform .16s ease;
 }
 .tab.active::before{
   opacity: 1;
@@ -885,13 +904,20 @@
   opacity: .85;
   transition: opacity .18s ease, transform .18s ease;
 }
-.tab.active .lbl{ opacity: 1; transform: translateY(-.5px); }
+.tab.active .lbl{ opacity: 1; }
 .tab .navicon{
-  transition: transform .18s ease;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display:block;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .95;
 }
-.tab.active .navicon{
-  transform: translateY(-1px);
-}
+.tab.active .navicon{ opacity: 1; }
 
 /* --- Slide transition helpers --- */
 .screen.swap{
