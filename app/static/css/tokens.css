@@ -4,6 +4,17 @@
   --muted: rgba(20,25,38,.55);
   --text: #10162a;
   --blue: #3b6cff;
+  --purple: #7c4dff;
+  --danger: #ff3b4f;
+  --ok: #22c55e;
+  --glass: rgba(255,255,255,.72);
+  --glass2: rgba(255,255,255,.86);
+  --line: rgba(16,22,42,.08);
+  --line2: rgba(16,22,42,.12);
+  --muted2: rgba(20,25,38,.45);
+  --shadow2: 0 18px 48px rgba(16,22,42,.16);
+  --shadow3: 0 10px 30px rgba(59,108,255,.18);
+
   --shadow: 0 8px 24px rgba(16,22,42,.10);
   --radius: 18px;
   --radius2: 22px;

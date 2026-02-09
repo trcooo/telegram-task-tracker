@@ -12,6 +12,43 @@ const state = {
 
 let openSwipeEl = null;
 
+
+function prefersReducedMotion(){
+  return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function animateIn(el, {y=8, duration=200, delay=0} = {}){
+  if(!el || prefersReducedMotion()) return;
+  try{
+    el.animate(
+      [
+        {opacity: 0, transform: `translateY(${y}px) scale(0.985)`},
+        {opacity: 1, transform: "translateY(0px) scale(1)"}
+      ],
+      {duration, delay, easing: "cubic-bezier(.2,.9,.2,1)", fill: "both"}
+    );
+  }catch(e){}
+}
+
+function animateList(container, selector){
+  if(!container || prefersReducedMotion()) return;
+  const items = Array.from(container.querySelectorAll(selector));
+  items.forEach((el, i)=> animateIn(el, {y: 10, duration: 220, delay: Math.min(i*18, 160)}));
+}
+
+function moveTabIndicator(){
+  const ind = document.getElementById("tabIndicator");
+  const active = document.querySelector(".bottom .tab.active");
+  if(!ind || !active) return;
+  const r1 = active.getBoundingClientRect();
+  const r2 = ind.parentElement.getBoundingClientRect();
+  const w = Math.max(64, Math.min(96, r1.width - 22));
+  const x = (r1.left - r2.left) + (r1.width - w)/2;
+  ind.style.width = `${w}px`;
+  ind.style.transform = `translateX(${x}px)`;
+}
+
+
 function pad2(n){ return String(n).padStart(2,'0'); }
 function toISODate(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 function startOfDay(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0,0,0,0); }
@@ -48,9 +85,13 @@ function setHeaderForTab(){
 function setTab(tab){
   state.tab = tab;
 
-  document.getElementById("screenSchedule")?.classList.toggle("active", tab==="schedule");
-  document.getElementById("screenTasks")?.classList.toggle("active", tab==="tasks");
-  document.getElementById("screenWeek")?.classList.toggle("active", tab==="calendar");
+  const sc = document.getElementById("screenSchedule");
+  const ts = document.getElementById("screenTasks");
+  const wk = document.getElementById("screenWeek");
+
+  sc?.classList.toggle("active", tab==="schedule");
+  ts?.classList.toggle("active", tab==="tasks");
+  wk?.classList.toggle("active", tab==="calendar");
 
   document.querySelectorAll(".bottom .tab").forEach(b=>{
     b.classList.toggle("active", b.dataset.tab===tab);
@@ -58,13 +99,20 @@ function setTab(tab){
 
   setHeaderForTab();
   updateFabForTab();
+  moveTabIndicator();
+  moveTabIndicator();
 
   if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.selectionChanged();
+
+  // Animate screen entrance (JS-based)
+  const screen = (tab==="schedule") ? sc : (tab==="tasks") ? ts : wk;
+  animateIn(screen, {y: 6, duration: 200});
 
   // lazy refresh
   if(tab==="tasks") refreshTasksScreen();
   if(tab==="calendar") refreshWeekScreen();
 }
+
 
 function updateFabForTab(){
   const fab = document.getElementById("fab");
@@ -350,6 +398,11 @@ async function refreshAll(){
   // keep title pill fresh
   const pill = document.getElementById("selectedDatePill");
   if(pill) pill.textContent = fmtDayPill(state.date);
+
+
+  // Stagger animation
+  animateList(document.getElementById("dayGrid"), ".card");
+  animateList(document.getElementById("taskList"), ".swipe");
 }
 
 async function refreshTasksScreen(){
@@ -370,6 +423,10 @@ async function refreshTasksScreen(){
     msg.textContent = "Пока пусто. Нажми + чтобы добавить задачу.";
     listEl.appendChild(msg);
   }
+
+
+  // Stagger animation
+  animateList(document.getElementById("taskListAll"), ".swipe");
 }
 
 async function refreshWeekScreen(){
@@ -433,19 +490,60 @@ async function refreshWeekScreen(){
 
     box.appendChild(btn);
   }
+
+
+  // Stagger animation
+  animateList(document.getElementById("weekList"), ".week-item");
 }
 
 /* ---------------- Modal ---------------- */
 function openModal(){
   // Prefill date with current selection
   document.getElementById("inpDate").value = toISODate(state.date);
-  document.getElementById("modal").setAttribute("aria-hidden","false");
-  setTimeout(()=> document.getElementById("inpTitle")?.focus(), 30);
+  const modal = document.getElementById("modal");
+  modal.setAttribute("aria-hidden","false");
+
+  // JS animation (extra polish)
+  if(!prefersReducedMotion()){
+    const sheet = modal.querySelector(".sheet");
+    const backdrop = modal.querySelector(".backdrop");
+    backdrop?.animate([{opacity:0},{opacity:1}], {duration: 180, easing:"ease", fill:"both"});
+    sheet?.animate(
+      [{transform:"translateY(18px)", opacity:0},{transform:"translateY(0px)", opacity:1}],
+      {duration: 220, easing:"cubic-bezier(.2,.9,.2,1)", fill:"both"}
+    );
+  }
+
+  setTimeout(()=> document.getElementById("inpTitle")?.focus(), 40);
 }
+
 function closeModal(){
-  document.getElementById("modal").setAttribute("aria-hidden","true");
-  clearModal();
+  const modal = document.getElementById("modal");
+  if(!modal) return;
+
+  if(!prefersReducedMotion()){
+    const sheet = modal.querySelector(".sheet");
+    const backdrop = modal.querySelector(".backdrop");
+    const a1 = backdrop?.animate([{opacity:1},{opacity:0}], {duration: 160, easing:"ease", fill:"both"});
+    const a2 = sheet?.animate(
+      [{transform:"translateY(0px)", opacity:1},{transform:"translateY(18px)", opacity:0}],
+      {duration: 180, easing:"cubic-bezier(.2,.9,.2,1)", fill:"both"}
+    );
+    const done = () => {
+      modal.setAttribute("aria-hidden","true");
+      clearModal();
+    };
+    if(a2){
+      a2.onfinish = done;
+    }else{
+      done();
+    }
+  }else{
+    modal.setAttribute("aria-hidden","true");
+    clearModal();
+  }
 }
+
 function clearModal(){
   document.getElementById("inpTitle").value = "";
   document.getElementById("inpTime").value = "";
@@ -558,6 +656,7 @@ async function boot(){
   document.getElementById("inpDate").value = toISODate(state.date);
 
   setTab("schedule");
+  requestAnimationFrame(()=> moveTabIndicator());
   await refreshAll();
 }
 
@@ -615,7 +714,10 @@ function bindUI(){
 
   setHeaderForTab();
   updateFabForTab();
+  moveTabIndicator();
 }
+
+window.addEventListener("resize", ()=> moveTabIndicator());
 
 boot().catch(err=>{
   console.error(err);
