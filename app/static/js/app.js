@@ -297,6 +297,66 @@ function slideSwap(fromTab, toTab, dir){
   return true;
 }
 
+
+let pillX = null;
+
+function tabButtonFor(tab){
+  if(tab==="schedule") return document.getElementById("tabSchedule");
+  if(tab==="tasks") return document.getElementById("tabTasks");
+  return document.getElementById("tabWeek");
+}
+
+function tabPillMetrics(tab){
+  const bar = document.querySelector(".bottom.bottom-v3");
+  const btn = tabButtonFor(tab);
+  if(!bar || !btn) return null;
+  const b = bar.getBoundingClientRect();
+  const r = btn.getBoundingClientRect();
+  const w = Math.max(96, Math.min(160, r.width * 0.88));
+  const x = (r.left - b.left) + (r.width - w)/2;
+  return {x, w};
+}
+
+function setPill(x, w){
+  const pill = document.getElementById("tabPill");
+  if(!pill) return;
+  pill.style.width = w + "px";
+  pill.style.transform = `translateX(${x}px)`;
+}
+
+function moveTabPill(immediate=false){
+  const pill = document.getElementById("tabPill");
+  if(!pill) return;
+  const m = tabPillMetrics(state.tab);
+  if(!m) return;
+
+  // keep pill vertically centered inside bar
+  const from = (typeof pillX === "number") ? pillX : m.x;
+  pillX = m.x;
+
+  if(immediate || prefersReducedMotion()){
+    setPill(m.x, m.w);
+    return;
+  }
+
+  const w0 = pill.getBoundingClientRect().width || m.w;
+  const x0 = from;
+
+  // spring x and ease width
+  spring({
+    from: x0,
+    to: m.x,
+    stiffness: 520,
+    damping: 44,
+    onUpdate: (x)=> {
+      const t = Math.min(1, Math.max(0, Math.abs(x - x0) / Math.max(1, Math.abs(m.x - x0))));
+      const w = w0 + (m.w - w0) * t;
+      setPill(x, w);
+    },
+    onComplete: ()=> setPill(m.x, m.w)
+  });
+}
+
 function moveTabIndicator(){
   const ind = document.getElementById("tabIndicator");
   if(!ind) return;
@@ -390,8 +450,10 @@ function setTab(tab, opts={}){
 
   setHeaderForTab();
   updateFabForTab();
-  moveTabIndicator();
+  moveTabIndicator(); moveTabPill(true);
+  moveTabPill();
   updateBottomPad();
+  moveTabPill(true);
 
   if(window.Telegram?.WebApp){
     const h = window.Telegram.WebApp.HapticFeedback;
@@ -1246,6 +1308,7 @@ function initTabSwipe(){
   let sx=0, sy=0, st=0;
   let tracking=false;
   let activeFrom=null, activeTo=null;
+  let pillFrom=null, pillTo=null;
   let width=0;
   let dx=0;
   let horizontal=false;
@@ -1306,6 +1369,13 @@ function initTabSwipe(){
     const toBase = dir < 0 ? width : -width;
     activeTo.style.transform = `translateX(${toBase + dx}px)`;
     activeTo.style.opacity = String(0.92 + t*0.08);
+
+    // move pill with finger
+    if(pillFrom && pillTo){
+      const px = pillFrom.x + (pillTo.x - pillFrom.x) * t;
+      const pw = pillFrom.w + (pillTo.w - pillFrom.w) * t;
+      setPill(px, pw);
+    }
   }
 
   function cleanup(){
@@ -1331,6 +1401,9 @@ function initTabSwipe(){
 
     activeFrom = null;
     activeTo = null;
+    pillFrom = null;
+    pillTo = null;
+    moveTabPill(true);
   }
 
   root.addEventListener("touchstart", (e)=>{
@@ -1345,6 +1418,9 @@ function initTabSwipe(){
     dx = 0;
     activeFrom = null;
     activeTo = null;
+    pillFrom = null;
+    pillTo = null;
+    moveTabPill(true);
     width = 0;
   }, {passive:true});
 
@@ -1373,6 +1449,8 @@ function initTabSwipe(){
           return;
         }
         activeTo.dataset._targetTab = next;
+        pillFrom = tabPillMetrics(state.tab);
+        pillTo = tabPillMetrics(next);
         // prevent scroll
         e.preventDefault();
       }else{
@@ -1533,15 +1611,19 @@ function bindUI(){
   setHeaderForTab();
   updateFabForTab();
   moveTabIndicator();
+  moveTabPill();
   initTabSwipe();
 
   window.addEventListener("resize", ()=> { updateLayoutVars();
-  updateBottomPad(); moveTabIndicator(); });
+  updateBottomPad(); moveTabIndicator();
+  moveTabPill(); });
   window.addEventListener("orientationchange", ()=> { setTimeout(()=> { updateLayoutVars();
-  updateBottomPad(); moveTabIndicator(); }, 80); });
+  updateBottomPad(); moveTabIndicator();
+  moveTabPill(); }, 80); });
   if(window.visualViewport){
     window.visualViewport.addEventListener("resize", ()=> { updateLayoutVars();
-  updateBottomPad(); moveTabIndicator(); });
+  updateBottomPad(); moveTabIndicator();
+  moveTabPill(); });
     window.visualViewport.addEventListener("scroll", ()=> { updateLayoutVars();
   updateBottomPad(); });
   }
