@@ -299,13 +299,21 @@ function slideSwap(fromTab, toTab, dir){
 
 function moveTabIndicator(){
   const ind = document.getElementById("tabIndicator");
+  if(!ind) return;
+  // If hidden, do nothing
+  const cs = getComputedStyle(ind);
+  if(cs.display === "none") return;
+
   const active = document.querySelector(".bottom .tab.active");
-  if(!ind || !active) return;
-  const r1 = active.getBoundingClientRect();
-  const r2 = ind.parentElement.getBoundingClientRect();
-  const w = Math.max(64, Math.min(96, r1.width - 22));
-  const x = (r1.left - r2.left) + (r1.width - w)/2;
-  ind.style.width = `${w}px`;
+  const bar = document.querySelector(".bottom");
+  if(!active || !bar) return;
+
+  const a = active.getBoundingClientRect();
+  const b = bar.getBoundingClientRect();
+  const w = Math.min(72, Math.max(54, a.width * 0.55));
+  const x = (a.left - b.left) + (a.width - w)/2;
+
+  ind.style.width = w + "px";
   ind.style.transform = `translateX(${x}px)`;
 }
 
