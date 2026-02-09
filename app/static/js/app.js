@@ -50,6 +50,404 @@ function rgba({r,g,b}, a){
   return `rgba(${r},${g},${b},${a})`;
 }
 
+
+// ---------------- Voice input (Web Speech API) ----------------
+function supportsSpeech(){
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function formatISODate(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+function addDaysISO(iso, n){
+  const d = new Date(iso+"T00:00:00");
+  d.setDate(d.getDate()+n);
+  return formatISODate(d);
+}
+function nextWeekdayISO(baseIso, targetDow){
+  // targetDow: 0=Sun..6=Sat
+  const d = new Date(baseIso+"T00:00:00");
+  const cur = d.getDay();
+  let delta = (targetDow - cur + 7) % 7;
+  if(delta === 0) delta = 7; // next occurrence
+  d.setDate(d.getDate()+delta);
+  return formatISODate(d);
+}
+
+function normalizeVoiceText(t){
+  return (t||"")
+    .toLowerCase()
+    .replace(/[–—]/g,"-")
+    .replace(/[.,]/g," ")
+    .replace(/\s+/g," ")
+    .trim();
+}
+
+function timeToStr(h, m){
+  const hh = String(h).padStart(2,"0");
+  const mm = String(m).padStart(2,"0");
+  return `${hh}:${mm}`;
+}
+
+function parseTimeToken(hh, mm){
+  const h = Number(hh);
+  const m = (mm==null || mm==="") ? 0 : Number(mm);
+  if(Number.isNaN(h) || Number.isNaN(m)) return null;
+  if(h<0 || h>23 || m<0 || m>59) return null;
+  return timeToStr(h,m);
+}
+
+function parseDurationMin(txt){
+  // examples: "на 30 минут", "на час", "на полтора часа", "на 2 часа"
+  if(!txt) return null;
+  if(/\bполчаса\b/.test(txt)) return 30;
+  if(/\bполтора\b/.test(txt)) return 90;
+  // "на час"
+  if(/\bна\s+час\b/.test(txt)) return 60;
+
+  let m = txt.match(/\bна\s+(\d+)\s*(мин|минута|минуты|минут)\b/);
+  if(m) return Number(m[1]);
+
+  let h = txt.match(/\bна\s+(\d+)\s*(час|часа|часов)\b/);
+  if(h) return Number(h[1]) * 60;
+
+  return null;
+}
+
+function parseDateISO(txt, baseIso){
+  if(/\bсегодня\b/.test(txt)) return baseIso;
+  if(/\bпослезавтра\b/.test(txt)) return addDaysISO(baseIso, 2);
+  if(/\bзавтра\b/.test(txt)) return addDaysISO(baseIso, 1);
+
+  const wd = [
+    {re:/\b(в\s+)?пн\b|\bпонедельник\b/, dow:1},
+    {re:/\b(в\s+)?вт\b|\bвторник\b/, dow:2},
+    {re:/\b(в\s+)?ср\b|\bсреда\b/, dow:3},
+    {re:/\b(в\s+)?чт\b|\bчетверг\b/, dow:4},
+    {re:/\b(в\s+)?пт\b|\bпятница\b/, dow:5},
+    {re:/\b(в\s+)?сб\b|\bсуббота\b/, dow:6},
+    {re:/\b(в\s+)?вс\b|\bвоскресенье\b/, dow:0},
+  ];
+  for(const w of wd){
+    if(w.re.test(txt)) return nextWeekdayISO(baseIso, w.dow);
+  }
+  return baseIso;
+}
+
+function extractTimes(txt){
+  // prefer explicit range "14:00-15:00" or "с 14 до 15"
+  let start = null, end = null;
+
+  // Range with hyphen
+  let r = txt.match(/\b([01]?\d|2[0-3])[:. ]([0-5]\d)\s*-\s*([01]?\d|2[0-3])[:. ]([0-5]\d)\b/);
+  if(r){
+    start = parseTimeToken(r[1], r[2]);
+    end = parseTimeToken(r[3], r[4]);
+    return {start, end};
+  }
+  // Range with "с ... до ..."
+  r = txt.match(/\bс\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\s*(?:до)\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\b/);
+  if(r){
+    start = parseTimeToken(r[1], r[2]||"00");
+    end = parseTimeToken(r[3], r[4]||"00");
+    return {start, end};
+  }
+
+  // Single time "в 14:30" or "в 14"
+  r = txt.match(/\bв\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\b/);
+  if(r){
+    start = parseTimeToken(r[1], r[2]||"00");
+  }else{
+    // fallback any HH:MM in string
+    r = txt.match(/\b([01]?\d|2[0-3])[:. ]([0-5]\d)\b/);
+    if(r) start = parseTimeToken(r[1], r[2]);
+  }
+
+  // End time with "до 15:00" if start already found
+  if(start){
+    const e = txt.match(/\bдо\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\b/);
+    if(e) end = parseTimeToken(e[1], e[2]||"00");
+  }
+
+  return {start, end};
+}
+
+function cleanTitle(txt){
+  let t = txt;
+  t = t.replace(/\b(добавь|добавить|создай|создать|запланируй|запланировать|поставь|поставить|сделай|напомни|напоминание)\b/g, "");
+  t = t.replace(/\b(сегодня|завтра|послезавтра)\b/g, "");
+  t = t.replace(/\b(понедельник|вторник|среда|четверг|пятница|суббота|воскресенье)\b/g, "");
+  t = t.replace(/\b(пн|вт|ср|чт|пт|сб|вс)\b/g, "");
+  t = t.replace(/\b(с|до|в|на)\b/g, "");
+  t = t.replace(/\b([01]?\d|2[0-3])[:. ]([0-5]\d)\b/g, "");
+  t = t.replace(/\b([01]?\d|2[0-3])\b/g, "");
+  t = t.replace(/\b(мин|минута|минуты|минут|час|часа|часов|полчаса|полтора)\b/g, "");
+  t = t.replace(/[-]/g," ");
+  t = t.replace(/\s+/g," ").trim();
+  return t;
+}
+
+function parseVoiceCommand(rawText, baseIso){
+  const txt = normalizeVoiceText(rawText);
+  const dateISO = parseDateISO(txt, baseIso);
+  const {start, end} = extractTimes(txt);
+  const dur = parseDurationMin(txt);
+
+  let kind = "task";
+  if(start) kind = "event";
+
+  let title = cleanTitle(txt);
+  if(!title) title = (kind==="event" ? "Событие" : "Задача");
+
+  let startTime = start || null;
+  let endTime = end || null;
+
+  if(kind==="event" && startTime){
+    if(!endTime){
+      const mins = dur ?? 60;
+      endTime = addMinutesToTimeStr(startTime, mins);
+      // prevent crossing midnight: clamp to 23:59
+      if(endTime < startTime) endTime = "23:59";
+    }else{
+      // if range crosses midnight (e.g. 23:00-01:00), clamp for MVP
+      if(endTime <= startTime) endTime = "23:59";
+    }
+  }
+
+  return {
+    kind,
+    title,
+    dateISO,
+    startTime,
+    endTime,
+    confidenceHint: txt
+  };
+}
+
+let voiceRec = null;
+let voiceListening = false;
+let voiceLast = null;
+
+function openVoiceModal(autoStart=true){
+  const modal = document.getElementById("voiceModal");
+  modal?.setAttribute("aria-hidden","false");
+  voiceUIReset();
+
+  if(window.Telegram?.WebApp){
+    try{ window.Telegram.WebApp.HapticFeedback?.impactOccurred?.("light"); }catch(e){}
+  }
+
+  if(autoStart) startVoiceListening();
+}
+
+function closeVoiceModal(){
+  stopVoiceListening();
+  const modal = document.getElementById("voiceModal");
+  if(!modal) return;
+  modal.setAttribute("aria-hidden","true");
+  voiceUIReset(true);
+}
+
+function voiceUIReset(keepText=false){
+  const status = document.getElementById("voiceStatus");
+  const mic = document.getElementById("voiceMicBtn");
+  const wave = document.getElementById("voiceWave");
+  const text = document.getElementById("voiceText");
+  const prev = document.getElementById("voicePreview");
+  const chips = document.getElementById("voiceChips");
+  const tprev = document.getElementById("voiceTitlePrev");
+
+  if(status) status.textContent = supportsSpeech() ? "Скажи задачу или событие" : "Голосовой ввод недоступен на этом устройстве";
+  mic?.classList.remove("listening");
+  wave?.classList.remove("on");
+
+  if(!keepText){
+    if(text){ text.hidden = true; text.textContent = ""; }
+    if(prev){ prev.hidden = true; }
+    if(chips) chips.innerHTML = "";
+    if(tprev) tprev.textContent = "";
+    voiceLast = null;
+  }
+
+  const add = document.getElementById("voiceAdd");
+  const edit = document.getElementById("voiceEdit");
+  add?.setAttribute("disabled","true");
+  edit?.setAttribute("disabled","true");
+}
+
+function ensureRecognizer(){
+  const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!Ctor) return null;
+  const r = new Ctor();
+  r.lang = "ru-RU";
+  r.continuous = false;
+  r.interimResults = true;
+  r.maxAlternatives = 1;
+  return r;
+}
+
+function startVoiceListening(){
+  if(voiceListening) return;
+  if(!supportsSpeech()){
+    alert("Голосовой ввод недоступен. Можно добавить текстом через «+».");
+    return;
+  }
+
+  const status = document.getElementById("voiceStatus");
+  const mic = document.getElementById("voiceMicBtn");
+  const wave = document.getElementById("voiceWave");
+
+  voiceRec = ensureRecognizer();
+  if(!voiceRec){
+    alert("Не удалось запустить распознавание речи.");
+    return;
+  }
+
+  voiceListening = true;
+  mic?.classList.add("listening");
+  wave?.classList.add("on");
+  if(status) status.textContent = "Слушаю…";
+
+  let finalText = "";
+
+  voiceRec.onresult = (ev)=>{
+    let text = "";
+    for(let i=ev.resultIndex; i<ev.results.length; i++){
+      text += ev.results[i][0].transcript + " ";
+      if(ev.results[i].isFinal) finalText = text.trim();
+    }
+    // show interim
+    const tbox = document.getElementById("voiceText");
+    if(tbox){
+      tbox.hidden = false;
+      tbox.textContent = (finalText || text).trim();
+    }
+  };
+
+  voiceRec.onerror = (e)=>{
+    voiceListening = false;
+    mic?.classList.remove("listening");
+    wave?.classList.remove("on");
+    if(status) status.textContent = "Ошибка распознавания. Попробуй ещё раз.";
+    try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("error"); }catch(_){}
+  };
+
+  voiceRec.onend = ()=>{
+    const mic = document.getElementById("voiceMicBtn");
+    const wave = document.getElementById("voiceWave");
+    mic?.classList.remove("listening");
+    wave?.classList.remove("on");
+    voiceListening = false;
+
+    const text = (finalText || document.getElementById("voiceText")?.textContent || "").trim();
+    if(!text){
+      const status = document.getElementById("voiceStatus");
+      if(status) status.textContent = "Не расслышал. Нажми «🎙️» и повтори.";
+      return;
+    }
+    onVoiceRecognized(text);
+  };
+
+  try{
+    voiceRec.start();
+    try{ window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.(); }catch(_){}
+  }catch(e){
+    voiceListening = false;
+    mic?.classList.remove("listening");
+    wave?.classList.remove("on");
+    alert("Не удалось начать запись. Разреши доступ к микрофону.");
+  }
+}
+
+function stopVoiceListening(){
+  if(!voiceRec) return;
+  try{ voiceRec.abort(); }catch(e){}
+  voiceListening = false;
+  voiceRec = null;
+  document.getElementById("voiceMicBtn")?.classList.remove("listening");
+  document.getElementById("voiceWave")?.classList.remove("on");
+}
+
+function onVoiceRecognized(text){
+  const status = document.getElementById("voiceStatus");
+  if(status) status.textContent = "Понял. Проверь и добавь ✅";
+
+  const baseIso = state.dateStr;
+  const parsed = parseVoiceCommand(text, baseIso);
+  voiceLast = parsed;
+
+  const prev = document.getElementById("voicePreview");
+  const chips = document.getElementById("voiceChips");
+  const tprev = document.getElementById("voiceTitlePrev");
+
+  if(chips){
+    const arr = [];
+    arr.push(parsed.kind==="event" ? "Событие" : "Задача");
+    if(parsed.dateISO) arr.push(parsed.dateISO);
+    if(parsed.startTime) arr.push(parsed.startTime + (parsed.endTime ? "–"+parsed.endTime : ""));
+    chips.innerHTML = arr.map(x=>`<span class="vchip">${escapeHtml(x)}</span>`).join("");
+  }
+  if(tprev) tprev.textContent = parsed.title;
+  if(prev) prev.hidden = false;
+
+  const add = document.getElementById("voiceAdd");
+  const edit = document.getElementById("voiceEdit");
+  add?.removeAttribute("disabled");
+  edit?.removeAttribute("disabled");
+
+  try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
+}
+
+async function voiceAddNow(){
+  if(!voiceLast) return;
+  const v = voiceLast;
+
+  if(v.kind === "task"){
+    await API.createTask({title: v.title, priority: 2, estimate_min: 30, project_id: null});
+    await refreshAll();
+    if(state.tab==="tasks") await refreshTasksScreen();
+    if(state.tab==="calendar") await refreshWeekScreen();
+    closeVoiceModal();
+    return;
+  }
+
+  // event
+  const dateStr = v.dateISO || state.dateStr;
+  const st = v.startTime || "09:00";
+  const en = v.endTime || addMinutesToTimeStr(st, 60);
+  const startISO = zonedTimeToUtcISO(dateStr, st, state.timezone);
+  const endISO = zonedTimeToUtcISO(dateStr, en, state.timezone);
+  await API.createEvent({title: v.title, start_dt: startISO, end_dt: endISO, color: "#6EA8FF", source:"voice"});
+  await refreshAll();
+  if(state.tab==="calendar") await refreshWeekScreen();
+  closeVoiceModal();
+}
+
+function voiceEdit(){
+  if(!voiceLast) return;
+  const v = voiceLast;
+
+  // set modal mode and prefill
+  if(v.kind === "task"){
+    setMode("task");
+    document.getElementById("inpTitle").value = v.title;
+    openModal();
+  }else{
+    setMode("event");
+    document.getElementById("inpTitle").value = v.title;
+    document.getElementById("inpDate").value = v.dateISO || state.dateStr;
+    document.getElementById("inpTime").value = v.startTime || "09:00";
+    document.getElementById("inpEndTime").value = v.endTime || addMinutesToTimeStr(document.getElementById("inpTime").value, 60);
+    document.getElementById("inpColor").value = "#6EA8FF";
+    openModal();
+  }
+  closeVoiceModal();
+}
+// --------------------------------------------------------------
+
 function escapeHtml(s){
   return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 }
@@ -418,6 +816,12 @@ function updateLayoutVars(){
   if(bottom){
     const h = Math.round(bottom.getBoundingClientRect().height);
     if(h > 0) document.documentElement.style.setProperty("--bottom-h", h + "px");
+  }
+
+  // Voice support hint
+  const mf = document.getElementById("micFab");
+  if(mf){
+    mf.style.opacity = supportsSpeech() ? "1" : ".55";
   }
 }
 
@@ -1627,6 +2031,16 @@ function bindUI(){
     window.visualViewport.addEventListener("scroll", ()=> { updateLayoutVars();
   updateBottomPad(); });
   }
+
+  // Voice UI
+  document.getElementById("micFab")?.addEventListener("click", ()=> openVoiceModal(true));
+  document.getElementById("voiceClose")?.addEventListener("click", closeVoiceModal);
+  document.getElementById("voiceBackdrop")?.addEventListener("click", closeVoiceModal);
+  document.getElementById("voiceRetry")?.addEventListener("click", ()=> { voiceUIReset(); startVoiceListening(); });
+  document.getElementById("voiceMicBtn")?.addEventListener("click", ()=> { if(voiceListening) stopVoiceListening(); else startVoiceListening(); });
+  document.getElementById("voiceAdd")?.addEventListener("click", ()=> voiceAddNow().catch(err=>alert(err?.message||String(err))));
+  document.getElementById("voiceEdit")?.addEventListener("click", voiceEdit);
+
 }
 
 async function boot(){

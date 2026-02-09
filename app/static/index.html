@@ -121,6 +121,14 @@
     </nav>
 
     <button class="fab" id="fab">+</button>
+    <button class="micfab" id="micFab" type="button" aria-label="Voice input">
+      <svg class="micicon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z"></path>
+        <path d="M19 11a7 7 0 0 1-14 0"></path>
+        <path d="M12 18v3"></path>
+        <path d="M8 21h8"></path>
+      </svg>
+    </button>
   </div>
 
   <!-- Modal -->
@@ -232,5 +240,55 @@
 
   <script src="/static/js/api.js"></script>
   <script src="/static/js/app.js"></script>
+
+  <!-- Voice Modal -->
+  <div class="modal" id="voiceModal" aria-hidden="true">
+    <div class="backdrop" id="voiceBackdrop"></div>
+    <div class="sheet voice-sheet">
+      <div class="sheet-head">
+        <div class="sheet-title" id="voiceSheetTitle">Голосовой ввод</div>
+        <button class="ghost" id="voiceClose" type="button">✕</button>
+      </div>
+
+      <div class="sheet-body">
+        <div class="voice-center">
+          <div class="voice-status" id="voiceStatus">Нажми «🎙️», чтобы начать</div>
+
+          <button class="voice-micbtn" id="voiceMicBtn" type="button" aria-label="Start/Stop voice">
+            <span class="voice-pulse" aria-hidden="true"></span>
+            <svg class="voice-micicon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z"></path>
+              <path d="M19 11a7 7 0 0 1-14 0"></path>
+              <path d="M12 18v3"></path>
+              <path d="M8 21h8"></path>
+            </svg>
+          </button>
+
+          <div class="voice-wave" id="voiceWave" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+
+          <div class="voice-text" id="voiceText" hidden></div>
+
+          <div class="voice-preview" id="voicePreview" hidden>
+            <div class="voice-chiprow" id="voiceChips"></div>
+            <div class="voice-titleprev" id="voiceTitlePrev"></div>
+          </div>
+        </div>
+
+        <div class="row actions voice-actions">
+          <button class="ghost" id="voiceRetry" type="button">Повторить</button>
+          <button class="ghost" id="voiceEdit" type="button">Редактировать</button>
+          <button class="primary" id="voiceAdd" type="button">Добавить</button>
+        </div>
+
+        <div class="hint" id="voiceHint">
+          Пример: «встреча 14:00–15:00 сегодня» или «купить продукты завтра».
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- End Voice Modal -->
+
 </body>
 </html>
