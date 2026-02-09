@@ -58,7 +58,9 @@
   display:flex;
   flex-direction:column;
   gap: 12px;
+  padding-bottom: calc(var(--bottom-h) + 18px + var(--safe-bot));
 }
+
 
 .timeline, .panel{
   background: var(--glass);
@@ -674,7 +676,7 @@
 .frame{
   position: fixed;
   top: 10px; left: 10px; right: 10px;
-  bottom: calc(10px + var(--bottom-h) + 8px);
+  bottom: 10px;
   border: 1px solid var(--line2);
   border-radius: 28px;
   pointer-events: none;
@@ -884,4 +886,41 @@
   display:block !important;
   opacity: 1 !important;
   transform: none !important;
+}
+
+/* --- Floating tab bar depth (Things 3 / Fantastical vibe) --- */
+.bottom{
+  background: rgba(255,255,255,.86);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,.65);
+  box-shadow:
+    0 22px 60px rgba(16,22,42,.22),
+    0 8px 18px rgba(16,22,42,.10);
+  transform: translateZ(0);
+}
+.bottom::before{
+  content:"";
+  position:absolute;
+  inset: 0;
+  border-radius: 22px;
+  pointer-events:none;
+  background: radial-gradient(120% 140% at 50% 0%, rgba(255,255,255,.95), rgba(255,255,255,.58) 55%, rgba(255,255,255,.42) 100%);
+  mix-blend-mode: normal;
+  opacity: .75;
+}
+.bottom::after{
+  content:"";
+  position:absolute;
+  left: 10px; right: 10px; bottom: -10px;
+  height: 18px;
+  border-radius: 999px;
+  background: radial-gradient(60% 100% at 50% 0%, rgba(16,22,42,.22), rgba(16,22,42,0));
+  pointer-events:none;
+  filter: blur(8px);
+  opacity: .55;
+}
+.bottom > *{ position: relative; z-index: 1; }
+
+html, body{
+  overscroll-behavior: none;
 }

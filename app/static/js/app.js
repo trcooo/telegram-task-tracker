@@ -282,7 +282,7 @@ function setTab(tab, opts={}){
   const prevTab = state.tab;
   if(tab === prevTab) return;
 
-  const transition = opts.transition || "fade"; // fade | slide
+  const transition = opts.transition || "fade"; // none | fade | slide
   const dir = (typeof opts.dir === "number") ? opts.dir : 0;
 
   // If slide requested, show the new screen before swapping classes, then animate
@@ -325,6 +325,8 @@ function setTab(tab, opts={}){
   if(tab==="calendar") refreshWeekScreen();
   if(tab==="schedule") updateNowLine();
 }
+
+
 
 
 
@@ -1123,64 +1125,236 @@ async function applyTimezone(tz){
 
 /* ---------------- Boot ---------------- */
 
+function springAnimate({from, to, onUpdate, onDone, stiffness=0.14, damping=0.82, maxFrames=420}){
+  let x = from;
+  let v = 0;
+  let frames = 0;
+
+  function step(){
+    frames += 1;
+    const f = (to - x) * stiffness;
+    v = (v + f) * damping;
+    x = x + v;
+
+    onUpdate(x);
+
+    if(frames > maxFrames || (Math.abs(to - x) < 0.6 && Math.abs(v) < 0.4)){
+      onUpdate(to);
+      onDone?.();
+      return;
+    }
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
 function initTabSwipe(){
-  const root = document.querySelector(".content");
-  if(!root) return;
+  const content = document.querySelector(".content");
+  if(!content) return;
 
   let sx=0, sy=0, st=0;
+  let lastX=0, lastT=0;
   let tracking=false;
+  let swiping=false;
+
+  let fromTab=null, toTab=null;
+  let fromEl=null, toEl=null;
+  let w=0;
+  let cleanup=null;
 
   const shouldIgnore = (target) => {
     if(!target) return true;
-    // ignore when modal open or interacting with inputs/buttons
     const openModal = document.querySelector('.modal[aria-hidden="false"]');
     if(openModal) return true;
     if(target.closest("input,textarea,select,button")) return true;
-    // ignore when swiping task delete
     if(target.closest(".swipe")) return true;
+    if(target.closest(".daychip")) return true;
     return false;
   };
 
-  root.addEventListener("touchstart", (e)=>{
+  function prepareSwap(nextTab, dir){
+    fromTab = state.tab;
+    toTab = nextTab;
+    fromEl = getScreenEl(fromTab);
+    toEl = getScreenEl(toTab);
+    if(!fromEl || !toEl) return false;
+
+    w = content.getBoundingClientRect().width || window.innerWidth;
+
+    // show both
+    fromEl.classList.add("swap");
+    toEl.classList.add("swap");
+    fromEl.style.display = "block";
+    toEl.style.display = "block";
+
+    // lock height
+    const h1 = fromEl.getBoundingClientRect().height;
+    const h2 = toEl.getBoundingClientRect().height;
+    content.style.height = Math.max(h1, h2) + "px";
+
+    const common = "position:absolute;left:0;right:0;top:0;width:100%;";
+    fromEl.style.cssText += ";" + common;
+    toEl.style.cssText += ";" + common;
+
+    // initial positions (toEl offscreen)
+    const startOffset = dir < 0 ? w : -w; // dir<0 means swipe left -> next comes from right
+    toEl.style.transform = `translateX(${startOffset}px)`;
+    toEl.style.opacity = "1";
+    fromEl.style.transform = "translateX(0px)";
+    fromEl.style.opacity = "1";
+
+    cleanup = ()=>{
+      content.style.height = "";
+      fromEl?.classList.remove("swap");
+      toEl?.classList.remove("swap");
+
+      for(const el of [fromEl, toEl]){
+        if(!el) continue;
+        el.style.position = "";
+        el.style.left = "";
+        el.style.right = "";
+        el.style.top = "";
+        el.style.width = "";
+        el.style.transform = "";
+        el.style.opacity = "";
+      }
+    };
+
+    return true;
+  }
+
+  function applyX(dx){
+    if(!fromEl || !toEl) return;
+    const dir = dx < 0 ? -1 : 1;
+    const abs = Math.min(Math.abs(dx), w);
+    const p = abs / w;
+
+    fromEl.style.transform = `translateX(${dx}px)`;
+    fromEl.style.opacity = String(1 - p*0.18);
+
+    if(dir < 0){
+      // swipe left -> next from right
+      toEl.style.transform = `translateX(${dx + w}px)`;
+    }else{
+      // swipe right -> prev from left
+      toEl.style.transform = `translateX(${dx - w}px)`;
+    }
+    toEl.style.opacity = "1";
+  }
+
+  content.addEventListener("touchstart", (e)=>{
     if(e.touches.length !== 1) return;
     if(shouldIgnore(e.target)) return;
+
     tracking = true;
+    swiping = false;
     sx = e.touches[0].clientX;
     sy = e.touches[0].clientY;
     st = Date.now();
+    lastX = sx;
+    lastT = st;
   }, {passive:true});
 
-  root.addEventListener("touchmove", (e)=>{
+  content.addEventListener("touchmove", (e)=>{
     if(!tracking) return;
-    const dx = e.touches[0].clientX - sx;
-    const dy = e.touches[0].clientY - sy;
-    if(Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy)*1.2){
-      // horizontal intent; prevent vertical scroll bounce
+
+    const x = e.touches[0].clientX;
+    const y = e.touches[0].clientY;
+    const dx = x - sx;
+    const dy = y - sy;
+
+    // determine intent
+    if(!swiping){
+      if(Math.abs(dx) < 12) return;
+      if(Math.abs(dx) < Math.abs(dy)*1.25) return;
+
+      // begin swipe
+      const delta = dx < 0 ? +1 : -1;
+      const next = tabByDelta(delta);
+      if(!next){ tracking = false; return; }
+
+      const dir = dx < 0 ? -1 : 1;
+      const ok = prepareSwap(next, dir);
+      if(!ok){ tracking = false; return; }
+      swiping = true;
+      // haptic: tiny tick at start of swipe
+      if(window.Telegram?.WebApp){
+        try{ window.Telegram.WebApp.HapticFeedback?.selectionChanged(); }catch(err){}
+      }
+    }
+
+    if(swiping){
       e.preventDefault();
+      // clamp with slight rubber-band
+      const max = w;
+      let ndx = dx;
+      if(Math.abs(ndx) > max){
+        const extra = Math.abs(ndx) - max;
+        ndx = (ndx < 0 ? -1 : 1) * (max + extra*0.18);
+      }
+      applyX(ndx);
+
+      lastX = x;
+      lastT = Date.now();
     }
   }, {passive:false});
 
-  root.addEventListener("touchend", (e)=>{
+  content.addEventListener("touchend", (e)=>{
     if(!tracking) return;
     tracking = false;
 
-    const dx = (e.changedTouches[0].clientX - sx);
-    const dy = (e.changedTouches[0].clientY - sy);
-    if(Math.abs(dx) < 60) return;
-    if(Math.abs(dx) < Math.abs(dy)*1.3) return;
+    if(!swiping){
+      return;
+    }
 
-    const dt = Math.max(1, Date.now() - st);
-    const vel = Math.abs(dx) / dt; // px/ms
+    const ex = e.changedTouches[0].clientX;
+    const dx = ex - sx;
 
-    // dx < 0 => swipe left => next tab
-    const delta = dx < 0 ? +1 : -1;
-    const next = tabByDelta(delta);
-    if(!next) return;
+    const dt = Math.max(1, Date.now() - lastT);
+    const v = (ex - lastX) / dt; // px/ms velocity at end
 
-    const dir = dx < 0 ? -1 : 1; // for slide animation: new comes from right on left swipe
-    setTab(next, {transition:"slide", dir});
+    const abs = Math.abs(dx);
+    const progress = abs / w;
+
+    const commit = (progress > 0.22) || (Math.abs(v) > 0.65);
+
+    const targetX = commit ? (dx < 0 ? -w : w) : 0;
+
+    springAnimate({
+      from: dx,
+      to: targetX,
+      onUpdate: (x)=> applyX(x),
+      onDone: ()=>{
+        // finalize
+        cleanup?.();
+
+        if(commit && toTab){
+          // set tab without extra animation
+          setTab(toTab, {transition:"none"});
+        }else{
+          // restore current tab
+          // ensure active classes correct
+          setTab(fromTab, {transition:"none"});
+        }
+        fromTab = toTab = null;
+        fromEl = toEl = null;
+        w = 0;
+        swiping = false;
+      }
+    });
+  }, {passive:true});
+
+  content.addEventListener("touchcancel", ()=>{
+    tracking = false;
+    if(swiping){
+      cleanup?.();
+      setTab(state.tab, {transition:"none"});
+      swiping = false;
+    }
   }, {passive:true});
 }
+
+
 
 function bindUI(){
   // Bottom tabs
