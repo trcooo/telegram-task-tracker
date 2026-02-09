@@ -4,6 +4,8 @@ const state = {
   tasks: [],
   events: [],
   mode: "task", // task | event
+  tab: "schedule",
+  tasksFilter: "inbox",
 };
 
 function pad2(n){ return String(n).padStart(2,'0'); }
@@ -166,11 +168,10 @@ function escapeHtml(s){
   return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 }
 
-function renderTasks(){
-  const list = document.getElementById("taskList");
-  list.innerHTML = "";
 
-  for(const t of state.tasks){
+function renderTasksTo(listEl, tasks){
+  listEl.innerHTML = "";
+  for(const t of tasks){
     const row = document.createElement("div");
     row.className = "task" + (t.status==="done" ? " done":"");
     row.draggable = t.status !== "done";
@@ -188,6 +189,7 @@ function renderTasks(){
       if(t.status==="done") return;
       await API.completeTask(t.id);
       await refreshAll();
+      await refreshTasksScreen(); // keep tasks screen in sync
     };
 
     const info = document.createElement("div");
@@ -208,8 +210,13 @@ function renderTasks(){
     row.appendChild(info);
     row.appendChild(badge);
     row.appendChild(more);
-    list.appendChild(row);
+    listEl.appendChild(row);
   }
+}
+
+function renderTasks(){
+  const list = document.getElementById("taskList");
+  renderTasksTo(list, state.tasks);
 }
 
 async function refreshAll(){
@@ -358,3 +365,58 @@ boot().catch(err => {
   console.error(err);
   alert("Ошибка: " + (err?.message || err));
 });
+
+
+async function refreshTasksScreen(){
+  const listEl = document.getElementById("taskListAll");
+  const tasks = await API.listTasks(state.tasksFilter);
+  renderTasksTo(listEl, tasks);
+}
+
+async function refreshWeekScreen(){
+  const box = document.getElementById("weekList");
+  box.innerHTML = "";
+  const base = startOfDay(new Date());
+  // next 7 days
+  for(let i=0;i<7;i++){
+    const d = new Date(base.getTime() + i*86400000);
+    const dateStr = toISODate(d);
+    let evs = [];
+    try{
+      evs = await API.scheduleDay(dateStr);
+    }catch(e){
+      evs = [];
+    }
+    const btn = document.createElement("button");
+    btn.className = "week-item";
+    const label = d.toLocaleDateString("ru-RU", {weekday:"short", month:"short", day:"numeric"});
+    btn.innerHTML = `<div><div class="wdate">${label}</div><div class="wmeta">${i===0 ? "Сегодня" : ""}</div></div><div class="wcount">${evs.length}</div>`;
+    btn.onclick = () => {
+      state.date = d;
+      setTab("schedule");
+      refreshAll();
+    };
+    box.appendChild(btn);
+  }
+}
+
+function setTab(tab){
+  state.tab = tab;
+  document.getElementById("screenSchedule").style.display = (tab==="schedule") ? "block" : "none";
+  document.getElementById("screenTasks").style.display = (tab==="tasks") ? "block" : "none";
+  document.getElementById("screenWeek").style.display = (tab==="calendar") ? "block" : "none";
+
+  document.querySelectorAll(".bottom .tab").forEach(b=>{
+    b.classList.toggle("active", b.dataset.tab===tab);
+  });
+
+  // Optional: haptic
+  if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.selectionChanged();
+
+  if(tab==="tasks"){
+    refreshTasksScreen();
+  }
+  if(tab==="calendar"){
+    refreshWeekScreen();
+  }
+}
