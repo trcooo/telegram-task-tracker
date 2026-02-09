@@ -1572,3 +1572,67 @@ nav.bottom > .tab.active .navicon{
 @media (max-height: 680px){
   .micfab{ display:none; }
 }
+
+/* Voice buttons state */
+.is-disabled{ opacity: .55; }
+.primary.is-loading{
+  opacity: .85;
+  position: relative;
+}
+.primary.is-loading::after{
+  content:"";
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(255,255,255,.65);
+  border-top-color: rgba(255,255,255,0);
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin{
+  from{ transform: translateY(-50%) rotate(0deg); }
+  to{ transform: translateY(-50%) rotate(360deg); }
+}
+
+/* ===== Voice: header button + modal visibility ===== */
+.top-actions{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+}
+
+.voiceTopBtn{
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.60);
+  background: rgba(255,255,255,.72);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 14px 30px rgba(16,22,42,.10);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  -webkit-tap-highlight-color: transparent;
+}
+.voiceTopBtn:active{ transform: scale(.98); }
+.voiceTopIcon{
+  width: 20px;
+  height: 20px;
+  stroke: rgba(16,22,42,.82);
+  stroke-width: 2.2;
+  fill:none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Proper show/hide for all modals */
+.modal{ display:none; position: fixed; inset: 0; z-index: 50; }
+.modal[aria-hidden="false"]{ display:block; }
+
+html.modal-open, html.modal-open body{ overflow:hidden; }
+
+/* Avoid duplicate mic entry point */
+.micfab{ display:none !important; }

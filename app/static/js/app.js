@@ -51,6 +51,17 @@ function rgba({r,g,b}, a){
 }
 
 
+
+function uiAlert(msg){
+  try{
+    if(window.Telegram?.WebApp?.showAlert){
+      window.Telegram.WebApp.showAlert(msg);
+      return;
+    }
+  }catch(e){}
+  try{ alert(msg); }catch(e){}
+}
+
 // ---------------- Voice input (Web Speech API) ----------------
 function supportsSpeech(){
   return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -274,8 +285,16 @@ function voiceUIReset(keepText=false){
 
   const add = document.getElementById("voiceAdd");
   const edit = document.getElementById("voiceEdit");
-  add?.setAttribute("disabled","true");
-  edit?.setAttribute("disabled","true");
+  add?.removeAttribute("disabled");
+  edit?.removeAttribute("disabled");
+  add?.removeAttribute("aria-disabled");
+  edit?.removeAttribute("aria-disabled");
+  add?.classList.remove("is-disabled");
+  edit?.classList.remove("is-disabled");
+add?.setAttribute("aria-disabled","true");
+  edit?.setAttribute("aria-disabled","true");
+  add?.classList.add("is-disabled");
+  edit?.classList.add("is-disabled");
 }
 
 function ensureRecognizer(){
@@ -397,33 +416,68 @@ function onVoiceRecognized(text){
   const edit = document.getElementById("voiceEdit");
   add?.removeAttribute("disabled");
   edit?.removeAttribute("disabled");
-
-  try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
+  add?.removeAttribute("aria-disabled");
+  edit?.removeAttribute("aria-disabled");
+  add?.classList.remove("is-disabled");
+  edit?.classList.remove("is-disabled");
+try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
 }
 
 async function voiceAddNow(){
-  if(!voiceLast) return;
-  const v = voiceLast;
+  const addBtn = document.getElementById("voiceAdd");
+  const editBtn = document.getElementById("voiceEdit");
+  const status = document.getElementById("voiceStatus");
 
-  if(v.kind === "task"){
-    await API.createTask({title: v.title, priority: 2, estimate_min: 30, project_id: null});
-    await refreshAll();
-    if(state.tab==="tasks") await refreshTasksScreen();
-    if(state.tab==="calendar") await refreshWeekScreen();
-    closeVoiceModal();
+  // If user taps Add before we parsed anything — start listening instead of "doing nothing"
+  if(!voiceLast){
+    if(status) status.textContent = "Сначала продиктуй фразу 🎙️";
+    try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("warning"); }catch(_){}
+    startVoiceListening();
     return;
   }
 
-  // event
-  const dateStr = v.dateISO || state.dateStr;
-  const st = v.startTime || "09:00";
-  const en = v.endTime || addMinutesToTimeStr(st, 60);
-  const startISO = zonedTimeToUtcISO(dateStr, st, state.timezone);
-  const endISO = zonedTimeToUtcISO(dateStr, en, state.timezone);
-  await API.createEvent({title: v.title, start_dt: startISO, end_dt: endISO, color: "#6EA8FF", source:"voice"});
-  await refreshAll();
-  if(state.tab==="calendar") await refreshWeekScreen();
-  closeVoiceModal();
+  // prevent double submit
+  addBtn?.classList.add("is-loading");
+  addBtn?.setAttribute("aria-busy","true");
+  editBtn?.setAttribute("aria-disabled","true");
+  editBtn?.classList.add("is-disabled");
+  if(status) status.textContent = "Добавляю…";
+
+  try{
+    const v = voiceLast;
+
+    if(v.kind === "task"){
+      await API.createTask({title: v.title, priority: 2, estimate_min: 30, project_id: null});
+      await refreshAll();
+      if(state.tab==="tasks") await refreshTasksScreen();
+      closeVoiceModal();
+      try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
+      return;
+    }
+
+    // event
+    const dateStr = v.dateISO || state.dateStr;
+    const st = v.startTime || "09:00";
+    const en = v.endTime || addMinutesToTimeStr(st, 60);
+    const startISO = zonedTimeToUtcISO(dateStr, st, state.timezone);
+    const endISO = zonedTimeToUtcISO(dateStr, en, state.timezone);
+
+    await API.createEvent({title: v.title, start_dt: startISO, end_dt: endISO, color: "#6EA8FF", source:"voice"});
+    await refreshAll();
+    if(state.tab==="calendar") await refreshWeekScreen();
+    closeVoiceModal();
+    try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
+  }catch(err){
+    console.error(err);
+    if(status) status.textContent = "Не удалось добавить. Попробуй ещё раз.";
+    uiAlert(err?.message || String(err));
+    try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("error"); }catch(_){}
+  }finally{
+    addBtn?.classList.remove("is-loading");
+    addBtn?.removeAttribute("aria-busy");
+    editBtn?.classList.remove("is-disabled");
+    editBtn?.removeAttribute("aria-disabled");
+  }
 }
 
 function voiceEdit(){
@@ -2100,3 +2154,59 @@ boot().catch(err=>{
   console.error(err);
   alert("Ошибка: " + (err?.message || err));
 });
+
+
+// ===== VOICE_MODAL_V2_OVERRIDES =====
+function tgBackShow(handler){
+  const tg = window.Telegram?.WebApp;
+  if(!tg || !tg.BackButton) return;
+  try{
+    tg.BackButton.show();
+    tg.BackButton.onClick(handler);
+  }catch(_){}
+}
+function tgBackHide(handler){
+  const tg = window.Telegram?.WebApp;
+  if(!tg || !tg.BackButton) return;
+  try{
+    tg.BackButton.offClick(handler);
+    tg.BackButton.hide();
+  }catch(_){}
+}
+
+(function(){
+  let backHandler = null;
+
+  // Override with stable close behavior
+  window.openVoiceModal = function openVoiceModal(autoStart=true){
+    const modal = document.getElementById("voiceModal");
+    if(!modal) return;
+
+    modal.setAttribute("aria-hidden","false");
+    document.documentElement.classList.add("modal-open");
+
+    backHandler = ()=> window.closeVoiceModal();
+    tgBackShow(backHandler);
+
+    if(typeof voiceUIReset === "function") voiceUIReset();
+    try{ window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light"); }catch(_){}
+
+    if(autoStart && typeof startVoiceListening === "function") startVoiceListening();
+  };
+
+  window.closeVoiceModal = function closeVoiceModal(){
+    try{ if(typeof stopVoiceListening === "function") stopVoiceListening(); }catch(_){}
+    const modal = document.getElementById("voiceModal");
+    if(!modal) return;
+
+    modal.setAttribute("aria-hidden","true");
+    document.documentElement.classList.remove("modal-open");
+
+    if(backHandler){
+      tgBackHide(backHandler);
+      backHandler = null;
+    }
+
+    try{ if(typeof voiceUIReset === "function") voiceUIReset(true); }catch(_){}
+  };
+})();
