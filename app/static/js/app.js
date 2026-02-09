@@ -212,7 +212,11 @@ function setTab(tab){
   updateFabForTab();
   moveTabIndicator();
 
-  if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.selectionChanged();
+  if(window.Telegram?.WebApp){
+    const h = window.Telegram.WebApp.HapticFeedback;
+    try{ h?.selectionChanged(); }catch(e){}
+    try{ h?.impactOccurred?.('light'); }catch(e){}
+  }
 
   const screen = (tab==="schedule") ? sc : (tab==="tasks") ? ts : wk;
   animateIn(screen, {y: 6, duration: 200});
@@ -227,6 +231,13 @@ function updateFabForTab(){
   if(!fab) return;
   fab.style.display = "block";
   fab.title = (state.tab === "calendar") ? "Add event" : "Add task";
+}
+
+
+function updateTasksDot(count){
+  const tab = document.getElementById("tabTasks");
+  if(!tab) return;
+  tab.classList.toggle("has-dot", (count||0) > 0);
 }
 
 /* ---------------- Schedule UI ---------------- */
@@ -668,6 +679,16 @@ async function refreshAll(){
   state.events = await API.scheduleDay(state.dateStr);
   state.tasks = await API.listTasks("inbox");
 
+  // Update Tasks dot (undone count)
+  try{
+    const r = await API.tasksUndoneCount();
+    updateTasksDot(r.count || 0);
+  }catch(e){
+    // fallback: count inbox as approximation
+    const approx = (state.tasks||[]).filter(t=>t.status!=="done").length;
+    updateTasksDot(approx);
+  }
+
   renderEventsOnGrid();
   updateNowLine();
   renderTasksTo(document.getElementById("taskList"), state.tasks);
@@ -683,6 +704,8 @@ async function refreshTasksScreen(){
   if(!listEl) return;
 
   const raw = await API.listTasks(state.tasksFilter);
+  // refresh dot too
+  try{ const r = await API.tasksUndoneCount(); updateTasksDot(r.count||0); }catch(e){}
   const q = (state.tasksSearch||"").trim().toLowerCase();
   const tasks = q ? raw.filter(t => (t.title||"").toLowerCase().includes(q)) : raw;
 

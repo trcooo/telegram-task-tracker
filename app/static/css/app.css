@@ -241,6 +241,7 @@
 }
 
 .tab{
+  position: relative;
   flex: 1 1 0;
   min-width: 0;
   height: 54px;
@@ -265,7 +266,7 @@
 .fab{
   position: fixed;
   left: 50%;
-  bottom: calc(76px + 14px + env(safe-area-inset-bottom));
+  bottom: calc(10px + var(--bottom-h) + 14px);
   transform: translateX(-50%);
   transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;
   width: 56px;
@@ -366,7 +367,8 @@
 }
 
 @media (max-width: 380px){
-  .tab{width: 96px}
+  .tab{
+  position: relative;width: 96px}
 }
 
 
@@ -617,6 +619,7 @@
   transition: transform .22s cubic-bezier(.2,.9,.2,1), width .22s cubic-bezier(.2,.9,.2,1);
 }
 .tab{
+  position: relative;
   transition: transform .16s ease, background .16s ease, box-shadow .16s ease, border-color .16s ease;
   user-select:none;
   -webkit-tap-highlight-color: transparent;
@@ -670,7 +673,7 @@
 .frame{
   position: fixed;
   top: 10px; left: 10px; right: 10px;
-  bottom: calc(10px + 76px + var(--safe-bot));
+  bottom: calc(10px + var(--bottom-h));
   border: 1px solid var(--line2);
   border-radius: 28px;
   pointer-events: none;
@@ -812,4 +815,31 @@
   border-radius: 999px;
   background: rgba(255,59,79,.95);
   box-shadow: 0 8px 18px rgba(255,59,79,.28);
+}
+
+@keyframes tabBounce{
+  0%{ transform: translateY(0) scale(1); }
+  45%{ transform: translateY(-3px) scale(1.02); }
+  100%{ transform: translateY(0) scale(1); }
+}
+.tab.active .navicon{
+  animation: tabBounce .32s cubic-bezier(.2,.9,.2,1);
+}
+
+.dotbadge{
+  position: absolute;
+  top: 10px;
+  right: calc(50% - 16px);
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,59,79,.95);
+  box-shadow: 0 8px 18px rgba(255,59,79,.22);
+  opacity: 0;
+  transform: scale(.8);
+  transition: opacity .16s ease, transform .16s ease;
+}
+.tab.has-dot .dotbadge{
+  opacity: 1;
+  transform: scale(1);
 }

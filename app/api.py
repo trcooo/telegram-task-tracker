@@ -84,6 +84,17 @@ def create_project(body: ProjectCreate, user: User = Depends(get_current_user), 
     db.refresh(p)
     return p
 
+
+@router.get("/tasks/undone_count")
+def tasks_undone_count(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    cnt = (
+        db.query(Task)
+        .filter(Task.user_id == user.id, Task.is_deleted == False)
+        .filter(Task.status != "done")
+        .count()
+    )
+    return {"count": cnt}
+
 # ---- Tasks ----
 def _task_to_out(t: Task) -> dict:
     proj = None
