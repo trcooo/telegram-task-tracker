@@ -219,6 +219,7 @@ function setTab(tab){
 
   if(tab==="tasks") refreshTasksScreen();
   if(tab==="calendar") refreshWeekScreen();
+  if(tab==="schedule") updateNowLine();
 }
 
 function updateFabForTab(){
@@ -328,6 +329,12 @@ function buildDayGrid(){
       content.appendChild(slot);
     }
   }
+
+  const nowLayer = document.createElement("div");
+  nowLayer.id = "nowLayer";
+  nowLayer.className = "now-layer";
+  nowLayer.innerHTML = `<div class="nowline" id="nowLine"><span class="nowdot"></span></div>`;
+  content.appendChild(nowLayer);
 
   const layer = document.createElement("div");
   layer.id = "eventsLayer";
@@ -459,6 +466,71 @@ function renderEventsOnGrid(){
   }
 
   animateList(layer, ".eventblock");
+}
+
+
+let nowTicker = null;
+
+function isTodaySelected(){
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-CA", {timeZone: state.timezone, year:"numeric", month:"2-digit", day:"2-digit"}).formatToParts(now);
+  const map = {};
+  for(const p of parts){ if(p.type !== "literal") map[p.type] = p.value; }
+  const todayStr = `${map.year}-${map.month}-${map.day}`;
+  return todayStr === state.dateStr;
+}
+
+function updateNowLine(){
+  const content = document.getElementById("gridContent");
+  const nowLine = document.getElementById("nowLine");
+  if(!content || !nowLine) return;
+
+  if(state.tab !== "schedule" || !isTodaySelected()){
+    nowLine.style.display = "none";
+    return;
+  }
+
+  const startH = 7, endH = 23, step = 30;
+
+  const drop0 = content.querySelector(`.sdrop[data-hour="${startH}"][data-min="0"]`);
+  const drop1 = content.querySelector(`.sdrop[data-hour="${startH}"][data-min="${step}"]`);
+  if(!drop0 || !drop1){
+    nowLine.style.display = "none";
+    return;
+  }
+
+  const r0 = rectRel(drop0, content);
+  const r1 = rectRel(drop1, content);
+  const pxPerMin = Math.max(1.2, (r1.top - r0.top) / step);
+  const baseTop = r0.top;
+
+  const parts = new Intl.DateTimeFormat("en-US", {timeZone: state.timezone, hour:"2-digit", minute:"2-digit", hour12:false}).formatToParts(new Date());
+  let hh=0, mm=0;
+  for(const p of parts){
+    if(p.type==="hour") hh = Number(p.value);
+    if(p.type==="minute") mm = Number(p.value);
+  }
+  const minOfDay = hh*60 + mm;
+
+  if(minOfDay < startH*60 || minOfDay > endH*60){
+    nowLine.style.display = "none";
+    return;
+  }
+
+  const top = baseTop + (minOfDay - startH*60) * pxPerMin;
+
+  const left = r0.left;
+  const width = Math.max(60, content.getBoundingClientRect().width - left);
+
+  nowLine.style.display = "block";
+  nowLine.style.transform = `translateY(${top}px)`;
+  nowLine.style.left = `${left}px`;
+  nowLine.style.width = `${width}px`;
+}
+
+function startNowTicker(){
+  if(nowTicker) clearInterval(nowTicker);
+  nowTicker = setInterval(()=> updateNowLine(), 30_000);
 }
 
 /* ---------------- Swipe to delete ---------------- */
@@ -597,6 +669,7 @@ async function refreshAll(){
   state.tasks = await API.listTasks("inbox");
 
   renderEventsOnGrid();
+  updateNowLine();
   renderTasksTo(document.getElementById("taskList"), state.tasks);
 
   const pill = document.getElementById("selectedDatePill");
@@ -1058,6 +1131,8 @@ async function boot(){
   }
 
   await API.authTelegram(initData);
+
+  startNowTicker();
 
   // sync timezone to backend
   try{ await API.setTimezone(state.timezone); }catch(e){}

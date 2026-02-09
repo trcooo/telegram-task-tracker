@@ -230,8 +230,8 @@
   left: 10px; right: 10px; bottom: 10px;
   padding: 10px 12px calc(10px + var(--safe-bot));
   display:flex;
-  gap: 10px;
-  justify-content:center;
+  gap: 0;
+  justify-content: space-between;
   background: rgba(255,255,255,.94);
   backdrop-filter: blur(10px);
   border: 1px solid var(--line2);
@@ -241,21 +241,23 @@
 }
 
 .tab{
-  width: 110px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 54px;
   border-radius: 18px;
-  border: 1px solid rgba(16,22,42,.08);
-  background: var(--glass);
-  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  padding: 6px 6px 4px;
   display:flex;
   flex-direction:column;
   align-items:center;
-  gap: 2px;
+  justify-content:center;
+  gap: 3px;
   font-size: 11px;
-  color: rgba(16,22,42,.75);
+  color: rgba(16,22,42,.65);
 }
 .tab.active{
-  border-color: rgba(59,108,255,.25);
-  box-shadow: 0 10px 22px rgba(59,108,255,.10);
+  color: rgba(59,108,255,1);
 }
 .ico{font-size: 16px}
 .lbl{font-weight:700}
@@ -604,9 +606,9 @@
 }
 .tab-indicator{
   position:absolute;
-  top: 6px;
+  top: 8px;
   height: 3px;
-  width: 80px;
+  width: 72px;
   border-radius: 999px;
   background: rgba(59,108,255,.85);
   box-shadow: var(--shadow3);
@@ -621,9 +623,7 @@
 }
 .tab:active{ transform: scale(.98); }
 .tab.active{
-  border-color: rgba(59,108,255,.28);
-  background: rgba(255,255,255,.86);
-  box-shadow: var(--shadow3);
+  color: rgba(59,108,255,1);
 }
 
 @keyframes pop{
@@ -721,6 +721,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
+  z-index: 2;
 }
 .eventblock{
   pointer-events: auto;
@@ -771,3 +772,44 @@
 }
 .eventblock:active{ transform: scale(.995); }
 
+
+.navicon{
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .95;
+}
+.bottom .lbl{
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: .2px;
+}
+
+.now-layer{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  z-index: 3;
+}
+.nowline{
+  position:absolute;
+  top: 0;
+  left: 0;
+  height: 0;
+  border-top: 2px solid rgba(255,59,79,.95);
+  transform: translateY(-9999px);
+}
+.nowdot{
+  position:absolute;
+  left: -6px;
+  top: -6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255,59,79,.95);
+  box-shadow: 0 8px 18px rgba(255,59,79,.28);
+}
