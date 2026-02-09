@@ -144,6 +144,21 @@ function weekdayShort(dateStr, tz){
 }
 
 /* ---------------- UI: header + tabs ---------------- */
+
+const TAB_ORDER = ["schedule","tasks","calendar"];
+function tabIndex(tab){ return TAB_ORDER.indexOf(tab); }
+function tabByDelta(delta){
+  const i = tabIndex(state.tab);
+  const ni = i + delta;
+  if(ni < 0 || ni >= TAB_ORDER.length) return null;
+  return TAB_ORDER[ni];
+}
+function getScreenEl(tab){
+  if(tab==="schedule") return document.getElementById("screenSchedule");
+  if(tab==="tasks") return document.getElementById("screenTasks");
+  return document.getElementById("screenWeek");
+}
+
 function setHeaderForTab(){
   const titleEl = document.querySelector(".title");
   const subEl = document.getElementById("subtitle");
@@ -159,6 +174,76 @@ function setHeaderForTab(){
     titleEl.textContent = "Week";
     subEl.textContent = "Обзор недели";
   }
+}
+
+
+function slideSwap(fromTab, toTab, dir){
+  const content = document.querySelector(".content");
+  const fromEl = getScreenEl(fromTab);
+  const toEl = getScreenEl(toTab);
+  if(!content || !fromEl || !toEl || prefersReducedMotion()){
+    return false;
+  }
+
+  // Ensure both visible
+  fromEl.classList.add("swap");
+  toEl.classList.add("swap");
+  fromEl.style.display = "block";
+  toEl.style.display = "block";
+
+  // Lock container height to avoid jump
+  const h1 = fromEl.getBoundingClientRect().height;
+  const h2 = toEl.getBoundingClientRect().height;
+  content.style.height = Math.max(h1, h2) + "px";
+
+  // Absolute overlay
+  const common = "position:absolute;left:0;right:0;top:0;width:100%;";
+  fromEl.style.cssText += ";" + common;
+  toEl.style.cssText += ";" + common;
+
+  const w = content.getBoundingClientRect().width || window.innerWidth;
+  const offset = Math.max(44, Math.min(90, w * 0.18));
+  const inFrom = dir > 0 ? -offset : offset;   // where new screen comes from
+  const outTo = dir > 0 ? offset : -offset;    // where old screen goes
+
+  // Set start positions
+  toEl.style.opacity = "0";
+  toEl.style.transform = `translateX(${inFrom}px)`;
+  fromEl.style.opacity = "1";
+  fromEl.style.transform = "translateX(0px)";
+
+  const a1 = fromEl.animate(
+    [{opacity:1, transform:"translateX(0px)"},{opacity:0, transform:`translateX(${outTo}px)`}],
+    {duration: 200, easing:"cubic-bezier(.2,.9,.2,1)", fill:"forwards"}
+  );
+  const a2 = toEl.animate(
+    [{opacity:0, transform:`translateX(${inFrom}px)`},{opacity:1, transform:"translateX(0px)"}],
+    {duration: 220, easing:"cubic-bezier(.2,.9,.2,1)", fill:"forwards"}
+  );
+
+  const cleanup = ()=>{
+    // Clear temporary styles
+    content.style.height = "";
+    fromEl.classList.remove("swap");
+    toEl.classList.remove("swap");
+    fromEl.style.position = "";
+    fromEl.style.left = "";
+    fromEl.style.right = "";
+    fromEl.style.top = "";
+    fromEl.style.width = "";
+    fromEl.style.transform = "";
+    fromEl.style.opacity = "";
+    toEl.style.position = "";
+    toEl.style.left = "";
+    toEl.style.right = "";
+    toEl.style.top = "";
+    toEl.style.width = "";
+    toEl.style.transform = "";
+    toEl.style.opacity = "";
+  };
+
+  a2.onfinish = cleanup;
+  return true;
 }
 
 function moveTabIndicator(){
@@ -193,7 +278,19 @@ function updateLayoutVars(){
   }
 }
 
-function setTab(tab){
+function setTab(tab, opts={}){
+  const prevTab = state.tab;
+  if(tab === prevTab) return;
+
+  const transition = opts.transition || "fade"; // fade | slide
+  const dir = (typeof opts.dir === "number") ? opts.dir : 0;
+
+  // If slide requested, show the new screen before swapping classes, then animate
+  if(transition === "slide"){
+    const did = slideSwap(prevTab, tab, dir || (tabIndex(tab) > tabIndex(prevTab) ? -1 : 1));
+    // classes will be set below (after we make both visible)
+  }
+
   state.tab = tab;
 
   const sc = document.getElementById("screenSchedule");
@@ -218,13 +315,18 @@ function setTab(tab){
     try{ h?.impactOccurred?.('light'); }catch(e){}
   }
 
-  const screen = (tab==="schedule") ? sc : (tab==="tasks") ? ts : wk;
-  animateIn(screen, {y: 6, duration: 200});
+  if(transition === "fade"){
+    const screen = (tab==="schedule") ? sc : (tab==="tasks") ? ts : wk;
+    animateIn(screen, {y: 6, duration: 200});
+  }
 
+  // lazy refresh
   if(tab==="tasks") refreshTasksScreen();
   if(tab==="calendar") refreshWeekScreen();
   if(tab==="schedule") updateNowLine();
 }
+
+
 
 function updateFabForTab(){
   const fab = document.getElementById("fab");
@@ -1020,6 +1122,66 @@ async function applyTimezone(tz){
 }
 
 /* ---------------- Boot ---------------- */
+
+function initTabSwipe(){
+  const root = document.querySelector(".content");
+  if(!root) return;
+
+  let sx=0, sy=0, st=0;
+  let tracking=false;
+
+  const shouldIgnore = (target) => {
+    if(!target) return true;
+    // ignore when modal open or interacting with inputs/buttons
+    const openModal = document.querySelector('.modal[aria-hidden="false"]');
+    if(openModal) return true;
+    if(target.closest("input,textarea,select,button")) return true;
+    // ignore when swiping task delete
+    if(target.closest(".swipe")) return true;
+    return false;
+  };
+
+  root.addEventListener("touchstart", (e)=>{
+    if(e.touches.length !== 1) return;
+    if(shouldIgnore(e.target)) return;
+    tracking = true;
+    sx = e.touches[0].clientX;
+    sy = e.touches[0].clientY;
+    st = Date.now();
+  }, {passive:true});
+
+  root.addEventListener("touchmove", (e)=>{
+    if(!tracking) return;
+    const dx = e.touches[0].clientX - sx;
+    const dy = e.touches[0].clientY - sy;
+    if(Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy)*1.2){
+      // horizontal intent; prevent vertical scroll bounce
+      e.preventDefault();
+    }
+  }, {passive:false});
+
+  root.addEventListener("touchend", (e)=>{
+    if(!tracking) return;
+    tracking = false;
+
+    const dx = (e.changedTouches[0].clientX - sx);
+    const dy = (e.changedTouches[0].clientY - sy);
+    if(Math.abs(dx) < 60) return;
+    if(Math.abs(dx) < Math.abs(dy)*1.3) return;
+
+    const dt = Math.max(1, Date.now() - st);
+    const vel = Math.abs(dx) / dt; // px/ms
+
+    // dx < 0 => swipe left => next tab
+    const delta = dx < 0 ? +1 : -1;
+    const next = tabByDelta(delta);
+    if(!next) return;
+
+    const dir = dx < 0 ? -1 : 1; // for slide animation: new comes from right on left swipe
+    setTab(next, {transition:"slide", dir});
+  }, {passive:true});
+}
+
 function bindUI(){
   // Bottom tabs
   const map = [
@@ -1116,6 +1278,7 @@ function bindUI(){
   setHeaderForTab();
   updateFabForTab();
   moveTabIndicator();
+  initTabSwipe();
 
   window.addEventListener("resize", ()=> { updateLayoutVars(); moveTabIndicator(); });
   window.addEventListener("orientationchange", ()=> { setTimeout(()=> { updateLayoutVars(); moveTabIndicator(); }, 80); });

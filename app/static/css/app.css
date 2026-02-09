@@ -53,6 +53,7 @@
 }
 .daychip.active .dnum{color: var(--blue)}
 .content{
+  position: relative;
   padding: 0 14px;
   display:flex;
   flex-direction:column;
@@ -232,8 +233,8 @@
   display:flex;
   gap: 0;
   justify-content: space-between;
-  background: rgba(255,255,255,.94);
-  backdrop-filter: blur(10px);
+  background: rgba(255,255,255,.99);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--line2);
   border-radius: 22px;
   box-shadow: 0 18px 40px rgba(16,22,42,.12);
@@ -673,7 +674,7 @@
 .frame{
   position: fixed;
   top: 10px; left: 10px; right: 10px;
-  bottom: calc(10px + var(--bottom-h));
+  bottom: calc(10px + var(--bottom-h) + 8px);
   border: 1px solid var(--line2);
   border-radius: 28px;
   pointer-events: none;
@@ -842,4 +843,45 @@
 .tab.has-dot .dotbadge{
   opacity: 1;
   transform: scale(1);
+}
+
+/* --- iOS-like active capsule highlight --- */
+.tab::before{
+  content:"";
+  position:absolute;
+  inset: 4px 10px 4px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.62);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(59,108,255,.14);
+  box-shadow: 0 12px 26px rgba(16,22,42,.10);
+  opacity: 0;
+  transform: scale(.96);
+  transition: opacity .18s ease, transform .18s cubic-bezier(.2,.9,.2,1);
+}
+.tab .navicon, .tab .lbl, .tab .dotbadge{
+  position: relative;
+  z-index: 1;
+}
+.tab.active::before{
+  opacity: 1;
+  transform: scale(1);
+}
+.tab .lbl{
+  opacity: .85;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.tab.active .lbl{ opacity: 1; transform: translateY(-.5px); }
+.tab .navicon{
+  transition: transform .18s ease;
+}
+.tab.active .navicon{
+  transform: translateY(-1px);
+}
+
+/* --- Slide transition helpers --- */
+.screen.swap{
+  display:block !important;
+  opacity: 1 !important;
+  transform: none !important;
 }
