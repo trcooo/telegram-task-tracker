@@ -28,6 +28,28 @@ function addDays(dateStr, delta){
   dt.setUTCDate(dt.getUTCDate() + delta);
   return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth()+1)}-${pad2(dt.getUTCDate())}`;
 }
+
+function hexToRgb(hex){
+  if(!hex) return {r:110,g:168,b:255};
+  const h = hex.replace("#","").trim();
+  if(h.length === 3){
+    const r = parseInt(h[0]+h[0],16);
+    const g = parseInt(h[1]+h[1],16);
+    const b = parseInt(h[2]+h[2],16);
+    return {r,g,b};
+  }
+  if(h.length >= 6){
+    const r = parseInt(h.slice(0,2),16);
+    const g = parseInt(h.slice(2,4),16);
+    const b = parseInt(h.slice(4,6),16);
+    return {r,g,b};
+  }
+  return {r:110,g:168,b:255};
+}
+function rgba({r,g,b}, a){
+  return `rgba(${r},${g},${b},${a})`;
+}
+
 function escapeHtml(s){
   return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 }
@@ -578,6 +600,12 @@ function renderEventsOnGrid(){
 
     const block = document.createElement("div");
     block.className = "eventblock";
+
+    // tint based on event color
+    const rgb = hexToRgb(ev.color || "#6EA8FF");
+    block.style.borderColor = rgba(rgb, 0.22);
+    block.style.boxShadow = `0 14px 30px rgba(16,22,42,.14), 0 10px 24px ${rgba(rgb,0.14)}`;
+    block.style.background = `linear-gradient(180deg, rgba(255,255,255,.94), rgba(255,255,255,.74)), radial-gradient(circle at 20% 10%, ${rgba(rgb,0.16)}, transparent 58%)`;
     block.style.top = `${top}px`;
     block.style.left = `${left}px`;
     block.style.width = `${width}px`;
