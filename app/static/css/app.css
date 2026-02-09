@@ -259,10 +259,11 @@
 .lbl{font-weight:700}
 
 .fab{
-  transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;
   position: fixed;
-  right: 18px;
-  bottom: calc(84px + var(--safe-bot));
+  left: 50%;
+  bottom: calc(76px + 14px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;
   width: 56px;
   height: 56px;
   border: none;
@@ -273,6 +274,7 @@
   z-index: 25;
   box-shadow: 0 18px 32px rgba(59,108,255,.28);
 }
+
 
 .modal{
   position: fixed;
@@ -660,4 +662,15 @@
   opacity: 1;
 }
 
-.fab:active{ transform: scale(.98); }
+.fab:active{ transform: translateX(-50%) scale(.98); }
+
+/* --- Static app frame/borders --- */
+.frame{
+  position: fixed;
+  inset: 10px;
+  border: 1px solid var(--line2);
+  border-radius: 28px;
+  pointer-events: none;
+  z-index: 8;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.35) inset;
+}
