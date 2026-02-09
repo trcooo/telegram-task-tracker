@@ -1541,3 +1541,34 @@ nav.bottom > .tab.active .navicon{
 }
 .voice-actions .ghost{ flex: 1; }
 .voice-actions .primary{ flex: 1.2; }
+
+
+/* Top voice button (always visible) */
+.voiceTopBtn{
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.60);
+  background: rgba(255,255,255,.72);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 14px 30px rgba(16,22,42,.10);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  -webkit-tap-highlight-color: transparent;
+}
+.voiceTopBtn:active{ transform: scale(.98); }
+.voiceTopIcon{
+  width: 20px;
+  height: 20px;
+  stroke: rgba(16,22,42,.82);
+  stroke-width: 2.2;
+  fill:none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* If floating mic button is off-screen on some devices, keep it as optional */
+@media (max-height: 680px){
+  .micfab{ display:none; }
+}

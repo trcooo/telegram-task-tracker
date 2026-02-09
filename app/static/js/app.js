@@ -820,9 +820,9 @@ function updateLayoutVars(){
 
   // Voice support hint
   const mf = document.getElementById("micFab");
-  if(mf){
-    mf.style.opacity = supportsSpeech() ? "1" : ".55";
-  }
+  const mt = document.getElementById("voiceTopBtn");
+  if(mf){ mf.style.opacity = supportsSpeech() ? "1" : ".55"; }
+  if(mt){ mt.style.opacity = supportsSpeech() ? "1" : ".55"; }
 }
 
 function setTab(tab, opts={}){
@@ -2040,6 +2040,9 @@ function bindUI(){
   document.getElementById("voiceMicBtn")?.addEventListener("click", ()=> { if(voiceListening) stopVoiceListening(); else startVoiceListening(); });
   document.getElementById("voiceAdd")?.addEventListener("click", ()=> voiceAddNow().catch(err=>alert(err?.message||String(err))));
   document.getElementById("voiceEdit")?.addEventListener("click", voiceEdit);
+
+
+  document.getElementById("voiceTopBtn")?.addEventListener("click", ()=> openVoiceModal(true));
 
 }
 
