@@ -2,7 +2,7 @@
   position: relative;
   max-width: 520px;
   margin: 0 auto;
-  padding-bottom: calc(76px + var(--safe-bot));
+  padding-bottom: calc(76px + 10px + var(--safe-bot));
   min-height: 100%;
 }
 
@@ -227,14 +227,16 @@
 
 .bottom{
   position: fixed;
-  left: 0; right: 0; bottom: 0;
+  left: 10px; right: 10px; bottom: 10px;
   padding: 10px 12px calc(10px + var(--safe-bot));
   display:flex;
   gap: 10px;
   justify-content:center;
-  background: rgba(244,247,255,.75);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(16,22,42,.06);
+  background: rgba(255,255,255,.80);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--line2);
+  border-radius: 22px;
+  box-shadow: 0 18px 40px rgba(16,22,42,.12);
   z-index: 20;
 }
 
@@ -667,7 +669,8 @@
 /* --- Static app frame/borders --- */
 .frame{
   position: fixed;
-  inset: 10px;
+  top: 10px; left: 10px; right: 10px;
+  bottom: calc(10px + 76px + var(--safe-bot));
   border: 1px solid var(--line2);
   border-radius: 28px;
   pointer-events: none;

@@ -61,15 +61,28 @@ function deviceTimezone(){
   }
 }
 function tzButtonLabel(tz){
-  // show short label like UTC+03 or last segment
   const now = new Date();
   const offMin = getTimeZoneOffsetMinutes(tz, now);
-  const sign = offMin <= 0 ? "+" : "-"; // offset minutes is tz - UTC; could be negative for UTC+X
+  const sign = offMin >= 0 ? "+" : "-";
   const abs = Math.abs(offMin);
   const hh = pad2(Math.floor(abs/60));
   const mm = pad2(abs%60);
-  const short = tz.split("/").pop();
-  return `UTC${sign}${hh}${mm==="00" ? "" : ":"+mm} • ${short}`;
+  const off = mm==="00" ? `${sign}${hh}` : `${sign}${hh}:${mm}`;
+  const short = tz === "UTC" ? "" : tz.split("/").pop();
+  return short ? `${off} • ${short}` : `${off}`;
+}
+
+function tzOptionLabel(tz){
+  // No "UTC" text in UI
+  const now = new Date();
+  const offMin = getTimeZoneOffsetMinutes(tz, now);
+  const sign = offMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offMin);
+  const hh = pad2(Math.floor(abs/60));
+  const mm = pad2(abs%60);
+  const off = mm==="00" ? `${sign}${hh}` : `${sign}${hh}:${mm}`;
+  const short = tz === "UTC" ? "" : tz.replace("_", " ").split("/").pop();
+  return short ? `${off} • ${short}` : `${off}`;
 }
 
 // Get TZ offset (minutes) for tz at given Date instant
@@ -762,7 +775,7 @@ function fillTZSelect(){
   for(const tz of list){
     const opt = document.createElement("option");
     opt.value = tz;
-    opt.textContent = tz;
+    opt.textContent = tzOptionLabel(tz);
     sel.appendChild(opt);
   }
   sel.value = state.timezone;
