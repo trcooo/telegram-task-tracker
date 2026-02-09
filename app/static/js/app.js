@@ -228,10 +228,21 @@ function buildWeekStrip(){
   if(pill) pill.textContent = fmtDayPill(state.dateStr, state.timezone);
 }
 
+function rectRel(el, rel){
+  const r1 = el.getBoundingClientRect();
+  const r2 = rel.getBoundingClientRect();
+  return {left: r1.left - r2.left, top: r1.top - r2.top, width: r1.width, height: r1.height};
+}
+
 function buildDayGrid(){
   const grid = document.getElementById("dayGrid");
   if(!grid) return;
   grid.innerHTML = "";
+
+  const content = document.createElement("div");
+  content.className = "grid-content";
+  content.id = "gridContent";
+  grid.appendChild(content);
 
   const startH = 7, endH = 23, step = 30;
 
@@ -253,15 +264,23 @@ function buildDayGrid(){
 
       // click empty slot -> add event
       drop.addEventListener("click", (e)=>{
-        const isOnCard = e.target.closest(".card");
-        if(isOnCard) return;
+        // clicking on an existing block should be handled by the block itself
+        if(e.target.closest(".eventblock")) return;
+        e.preventDefault();
+        e.stopPropagation();
+
         setMode("event");
         openModal();
+
+        document.getElementById("saveBtn").dataset.editEventId = "";
+        document.getElementById("sheetTitle").textContent = "Добавить событие";
+
         document.getElementById("inpDate").value = state.dateStr;
         const st = `${pad2(h)}:${pad2(m)}`;
         document.getElementById("inpTime").value = st;
-        // default end = start + 30m
         document.getElementById("inpEndTime").value = addMinutesToTimeStr(st, 30);
+
+        try{ document.getElementById("inpTitle")?.focus({preventScroll:true}); }catch(err){}
       });
 
       drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
@@ -286,33 +305,91 @@ function buildDayGrid(){
 
       slot.appendChild(label);
       slot.appendChild(drop);
-      grid.appendChild(slot);
+      content.appendChild(slot);
     }
   }
+
+  const layer = document.createElement("div");
+  layer.id = "eventsLayer";
+  layer.className = "events-layer";
+  content.appendChild(layer);
 }
 
 function renderEventsOnGrid(){
   const grid = document.getElementById("dayGrid");
-  if(!grid) return;
-  const drops = grid.querySelectorAll(".sdrop");
-  drops.forEach(d => d.innerHTML = "");
+  const content = document.getElementById("gridContent");
+  const layer = document.getElementById("eventsLayer");
+  if(!grid || !content || !layer) return;
 
-  const evs = state.events.slice().sort((a,b)=> new Date(a.start_dt) - new Date(b.start_dt));
+  layer.innerHTML = "";
 
-  for(const ev of evs){
-    const sHM = zonedHourMin(ev.start_dt, state.timezone);
-    const eHM = zonedHourMin(ev.end_dt, state.timezone);
+  const startH = 7;
+  const step = 30;
 
-    const snappedM = (sHM.m<15)?0:(sHM.m<45)?30:0;
-    const snappedH = (sHM.m<45)?sHM.h:sHM.h+1;
+  const drop0 = content.querySelector(`.sdrop[data-hour="${startH}"][data-min="0"]`);
+  const drop1 = content.querySelector(`.sdrop[data-hour="${startH}"][data-min="${step}"]`);
+  if(!drop0 || !drop1) return;
 
-    const drop = grid.querySelector(`.sdrop[data-hour="${snappedH}"][data-min="${snappedM}"]`);
-    if(!drop) continue;
+  const r0 = rectRel(drop0, content);
+  const r1 = rectRel(drop1, content);
+  const pxPerMin = Math.max(1.2, (r1.top - r0.top) / step);
+  const baseTop = r0.top;
+  const baseLeft = r0.left;
+  const baseWidth = r0.width;
 
-    const card = document.createElement("div");
-    card.className = "card";
-    card.addEventListener("click", ()=>{
-      // Edit existing event
+  // Prepare events in local minutes
+  const evs = state.events
+    .map(ev=>{
+      const sHM = zonedHourMin(ev.start_dt, state.timezone);
+      const eHM = zonedHourMin(ev.end_dt, state.timezone);
+      const startMin = sHM.h*60 + sHM.m;
+      const endMin = eHM.h*60 + eHM.m;
+      return {ev, sHM, eHM, startMin, endMin};
+    })
+    .filter(x => x.endMin > x.startMin)
+    .sort((a,b)=> a.startMin - b.startMin);
+
+  // Greedy lane assignment for overlaps
+  const laneEnds = []; // minutes
+  let maxLanes = 1;
+  for(const item of evs){
+    let lane = -1;
+    for(let i=0;i<laneEnds.length;i++){
+      if(laneEnds[i] <= item.startMin){
+        lane = i;
+        break;
+      }
+    }
+    if(lane === -1){
+      lane = laneEnds.length;
+      laneEnds.push(item.endMin);
+    }else{
+      laneEnds[lane] = item.endMin;
+    }
+    item.lane = lane;
+    maxLanes = Math.max(maxLanes, laneEnds.length);
+  }
+
+  const gap = 6;
+  const laneW = (baseWidth - gap*(maxLanes-1)) / maxLanes;
+
+  for(const item of evs){
+    const {ev, sHM, eHM, startMin, endMin} = item;
+    const top = baseTop + (startMin - startH*60) * pxPerMin;
+    const height = Math.max(44, (endMin - startMin) * pxPerMin);
+    const left = baseLeft + item.lane * (laneW + gap);
+    const width = Math.max(60, laneW);
+
+    const block = document.createElement("div");
+    block.className = "eventblock";
+    block.style.top = `${top}px`;
+    block.style.left = `${left}px`;
+    block.style.width = `${width}px`;
+    block.style.height = `${height}px`;
+
+    block.addEventListener("click", (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
       setMode("event");
       openModal();
       document.getElementById("inpTitle").value = ev.title;
@@ -322,43 +399,46 @@ function renderEventsOnGrid(){
       document.getElementById("inpColor").value = ev.color || "#6EA8FF";
       document.getElementById("saveBtn").dataset.editEventId = String(ev.id);
       document.getElementById("sheetTitle").textContent = "Редактировать событие";
+      try{ document.getElementById("inpTitle")?.focus({preventScroll:true}); }catch(err){}
     });
 
     const bar = document.createElement("div");
-    bar.className = "bar";
+    bar.className = "ebar";
     bar.style.background = ev.color || "#6EA8FF";
+    bar.style.height = "100%";
 
     const body = document.createElement("div");
-    body.className = "cbody";
-    const t1 = `${fmtTime(ev.start_dt, state.timezone)}–${fmtTime(ev.end_dt, state.timezone)}`;
+    body.className = "ebody";
+    const t1 = `${pad2(sHM.h)}:${pad2(sHM.m)}–${pad2(eHM.h)}:${pad2(eHM.m)}`;
     body.innerHTML = `
-      <div class="ctime">${t1}</div>
-      <div class="ctitle">${escapeHtml(ev.title)}</div>
-      <div class="cmeta">${ev.source === "task" ? "Task block" : "Event"}</div>
+      <div class="etime">${t1}</div>
+      <div class="etitle">${escapeHtml(ev.title)}</div>
+      <div class="emeta">${ev.source === "task" ? "Task block" : "Event"}</div>
     `;
 
     const actions = document.createElement("div");
-    actions.className = "cactions";
+    actions.className = "eactions";
     const btnDel = document.createElement("button");
     btnDel.className = "iconbtn";
     btnDel.type = "button";
     btnDel.textContent = "🗑️";
-    btnDel.onclick = async (e) => {
+    btnDel.onclick = async (e)=>{
       e.stopPropagation();
-      if(!confirm("Удалить блок?")) return;
+      if(!confirm("Удалить событие?")) return;
       await API.deleteEvent(ev.id);
       await refreshAll();
       if(state.tab==="calendar") refreshWeekScreen();
     };
     actions.appendChild(btnDel);
 
-    card.appendChild(bar);
-    card.appendChild(body);
-    card.appendChild(actions);
-    drop.appendChild(card);
+    block.appendChild(bar);
+    block.appendChild(body);
+    block.appendChild(actions);
+
+    layer.appendChild(block);
   }
 
-  animateList(document.getElementById("dayGrid"), ".card");
+  animateList(layer, ".eventblock");
 }
 
 /* ---------------- Swipe to delete ---------------- */
@@ -610,7 +690,7 @@ function openModal(){
     );
   }
 
-  setTimeout(()=> document.getElementById("inpTitle")?.focus(), 40);
+  try{ document.getElementById("inpTitle")?.focus({preventScroll:true}); }catch(e){}
 }
 
 function closeModal(){
@@ -675,7 +755,7 @@ function fillProjects(){
   }
 }
 
-async function saveFromModal(){
+async function saveFromModal(keepOpen=false){
   const title = document.getElementById("inpTitle").value.trim();
   if(!title){ alert("Введите название"); return; }
 
@@ -691,14 +771,24 @@ async function saveFromModal(){
 
     if(editId){
       await API.updateTask(Number(editId), {title, priority, estimate_min, project_id});
+      keepOpen = false; // editing task: just save & close
     }else{
       await API.createTask({title, priority, estimate_min, project_id});
     }
 
-    closeModal();
     await refreshAll();
     if(state.tab==="tasks") await refreshTasksScreen();
     if(state.tab==="calendar") await refreshWeekScreen();
+
+    if(keepOpen){
+      // prepare next task
+      document.getElementById("inpTitle").value = "";
+      document.getElementById("saveBtn").dataset.editTaskId = "";
+      document.getElementById("sheetTitle").textContent = "Добавить задачу";
+      try{ document.getElementById("inpTitle")?.focus({preventScroll:true}); }catch(e){}
+    }else{
+      closeModal();
+    }
     return;
   }
 
@@ -719,14 +809,28 @@ async function saveFromModal(){
   const editEventId = document.getElementById("saveBtn").dataset.editEventId;
   if(editEventId){
     await API.updateEvent(Number(editEventId), {title, start_dt: startISO, end_dt: endISO, color});
+    keepOpen = false; // editing event: just save & close
   }else{
     await API.createEvent({title, start_dt: startISO, end_dt: endISO, color, source:"manual"});
   }
 
-  closeModal();
   await refreshAll();
   if(state.tab==="calendar") await refreshWeekScreen();
+
+  if(keepOpen){
+    // next event: start at previous end
+    document.getElementById("inpTitle").value = "";
+    document.getElementById("saveBtn").dataset.editEventId = "";
+    document.getElementById("sheetTitle").textContent = "Добавить событие";
+    document.getElementById("inpTime").value = endTime;
+    document.getElementById("inpEndTime").value = addMinutesToTimeStr(endTime, 30);
+    try{ document.getElementById("inpTitle")?.focus({preventScroll:true}); }catch(e){}
+  }else{
+    closeModal();
+  }
 }
+
+
 
 /* ---------------- Tasks edit ---------------- */
 function openEditTask(t){
@@ -860,7 +964,8 @@ function bindUI(){
   document.getElementById("backdrop")?.addEventListener("click", closeModal);
   document.getElementById("segTask")?.addEventListener("click", ()=>setMode("task"));
   document.getElementById("segEvent")?.addEventListener("click", ()=>setMode("event"));
-  document.getElementById("saveBtn")?.addEventListener("click", saveFromModal);
+  document.getElementById("saveBtn")?.addEventListener("click", ()=> saveFromModal(false));
+  document.getElementById("saveNextBtn")?.addEventListener("click", ()=> saveFromModal(true));
 
   // start time change -> adjust end time if needed
   document.getElementById("inpTime")?.addEventListener("change", ()=>{
