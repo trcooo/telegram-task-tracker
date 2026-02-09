@@ -21,6 +21,7 @@
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bot: env(safe-area-inset-bottom, 0px);
+  --bottom-h: 76px;
 }
 
 *{box-sizing:border-box}

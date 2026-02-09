@@ -170,6 +170,34 @@ def delete_task(task_id: int, user: User = Depends(get_current_user), db: Sessio
     return {"ok": True}
 
 # ---- Events / Schedule ----
+
+@router.get("/schedule/range", response_model=list[EventOut])
+def schedule_range(start_date: str, end_date: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Return events in [start_date, end_date] inclusive, interpreted in user's timezone."""
+    try:
+        d1 = date.fromisoformat(start_date)
+        d2 = date.fromisoformat(end_date)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid date")
+    if d2 < d1:
+        raise HTTPException(status_code=400, detail="Invalid range")
+
+    tz = ZoneInfo(user.timezone or "UTC")
+    start_local = datetime(d1.year, d1.month, d1.day, tzinfo=tz)
+    end_local = datetime(d2.year, d2.month, d2.day, tzinfo=tz) + timedelta(days=1)
+
+    start = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    end = end_local.astimezone(timezone.utc).replace(tzinfo=None)
+
+    evs = (
+        db.query(Event)
+        .filter(Event.user_id == user.id, Event.is_deleted == False)
+        .filter(Event.start_dt >= start, Event.start_dt < end)
+        .order_by(Event.start_dt.asc())
+        .all()
+    )
+    return evs
+
 @router.get("/schedule/day", response_model=list[EventOut])
 def schedule_day(date_str: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:

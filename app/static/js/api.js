@@ -43,6 +43,10 @@ const API = {
   async scheduleDay(dateStr){
     return this._get(`/api/schedule/day?date_str=${encodeURIComponent(dateStr)}`);
   },
+
+  async scheduleRange(startDate, endDate){
+    return this._get(`/api/schedule/range?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`);
+  },
   async createEvent(body){
     return this._post("/api/events", body);
   },

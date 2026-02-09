@@ -102,7 +102,7 @@ function getTimeZoneOffsetMinutes(tz, date){
     Number(map.year), Number(map.month)-1, Number(map.day),
     Number(map.hour), Number(map.minute), Number(map.second)
   );
-  return (asUTC - date.getTime()) / 60000;
+  return Math.round((asUTC - date.getTime()) / 60000);
 }
 
 // Convert civil time in tz (dateStr + HH:MM) into UTC ISO string with Z
@@ -171,6 +171,26 @@ function moveTabIndicator(){
   const x = (r1.left - r2.left) + (r1.width - w)/2;
   ind.style.width = `${w}px`;
   ind.style.transform = `translateX(${x}px)`;
+}
+
+
+function updateLayoutVars(){
+  // Freeze safe-area inset so borders don't "float" when WebView UI changes
+  try{
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:fixed;left:0;right:0;bottom:0;height:0;padding-bottom:env(safe-area-inset-bottom, 0px);visibility:hidden;pointer-events:none;";
+    document.body.appendChild(probe);
+    const safe = Math.round(parseFloat(getComputedStyle(probe).paddingBottom) || 0);
+    probe.remove();
+    document.documentElement.style.setProperty("--safe-bot", safe + "px");
+  }catch(e){}
+
+  // Measure bottom bar height and use it for frame/FAB positioning
+  const bottom = document.querySelector(".bottom");
+  if(bottom){
+    const h = Math.round(bottom.getBoundingClientRect().height);
+    if(h > 0) document.documentElement.style.setProperty("--bottom-h", h + "px");
+  }
 }
 
 function setTab(tab){
@@ -611,19 +631,24 @@ async function refreshWeekScreen(){
   if(!box) return;
   box.innerHTML = "";
 
-  const days = [];
-  for(let i=0;i<7;i++) days.push(addDays(state.dateStr, i));
+  const start = state.dateStr;
+  const end = addDays(start, 6);
 
-  const results = await Promise.all(days.map(async (ds)=>{
-    try{
-      const evs = await API.scheduleDay(ds);
-      return {ds, evs};
-    }catch(e){
-      return {ds, evs: []};
-    }
-  }));
+  // One request for the whole week
+  const all = await API.scheduleRange(start, end);
 
-  for(const {ds, evs} of results){
+  // Group by local dateStr in selected timezone
+  const fmt = new Intl.DateTimeFormat("en-CA", {timeZone: state.timezone, year:"numeric", month:"2-digit", day:"2-digit"});
+  const groups = {};
+  for(const ev of all){
+    const ds = fmt.format(new Date(ev.start_dt));
+    (groups[ds] ||= []).push(ev);
+  }
+
+  for(let i=0;i<7;i++){
+    const ds = addDays(start, i);
+    const evs = (groups[ds] || []).slice().sort((a,b)=> new Date(a.start_dt) - new Date(b.start_dt));
+
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "week-item";
@@ -635,9 +660,7 @@ async function refreshWeekScreen(){
 
     const preview = document.createElement("div");
     preview.className = "week-preview";
-    const sorted = evs.slice().sort((a,b)=> new Date(a.start_dt) - new Date(b.start_dt));
-    const top = sorted.slice(0,2);
-
+    const top = evs.slice(0,2);
     if(top.length === 0){
       preview.innerHTML = `<div class="ev"><span class="dot"></span><span class="n">Нет событий</span></div>`;
     }else{
@@ -998,11 +1021,15 @@ function bindUI(){
   updateFabForTab();
   moveTabIndicator();
 
-  window.addEventListener("resize", ()=> moveTabIndicator());
+  window.addEventListener("resize", ()=> { updateLayoutVars(); moveTabIndicator(); });
+  window.addEventListener("orientationchange", ()=> { setTimeout(()=> { updateLayoutVars(); moveTabIndicator(); }, 80); });
 }
 
 async function boot(){
   bindUI();
+
+  // layout variables
+  updateLayoutVars();
 
   // timezone init
   const savedTZ = localStorage.getItem("planner_tz");
