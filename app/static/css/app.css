@@ -57,7 +57,7 @@
 .daychip.active .dnum{color: var(--blue)}
 .content{
   position: relative;
-  padding: 0 14px calc(var(--bottom-h) + 18px);
+  padding: 0 14px 16px;
   display:flex;
   flex-direction:column;
   gap: 12px;
@@ -66,6 +66,9 @@
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   touch-action: pan-y;
+}
+.content.pad-bottom{
+  padding-bottom: calc(var(--bottom-h) + 18px);
 }
 
 
@@ -238,7 +241,7 @@
 .bottom{
   position: fixed;
   left: 10px; right: 10px; bottom: calc(10px - var(--vv-extra));
-  padding: 10px 12px calc(10px + var(--safe-bot));
+  padding: 8px 12px calc(8px + var(--safe-bot));
   display:flex;
   gap: 0;
   justify-content: space-between;
@@ -248,6 +251,8 @@
   border-radius: 22px;
   box-shadow: 0 22px 56px rgba(16,22,42,.20);
   z-index: 20;
+
+  align-items: center;
 }
 
 .tab{

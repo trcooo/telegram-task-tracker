@@ -288,10 +288,26 @@ function moveTabIndicator(){
 }
 
 
+
+function updateBottomPad(){
+  const content = document.querySelector(".content");
+  if(!content) return;
+
+  // Default: enable padding for schedule/week (grid + lists)
+  if(state.tab !== "tasks"){
+    content.classList.add("pad-bottom");
+    return;
+  }
+
+  // For Tasks tab: add bottom pad only when there are tasks to scroll
+  const hasTasks = (state.tasks && state.tasks.filter(t=>t.status!=="done").length > 0);
+  content.classList.toggle("pad-bottom", !!hasTasks);
+}
+
 function updateLayoutVars(){
   // VisualViewport extra height (when WebView chrome hides/shows)
   try{
-    const layoutH = document.documentElement.clientHeight || window.innerHeight;
+    const layoutH = window.innerHeight || document.documentElement.clientHeight;
     const visualH = (window.visualViewport && window.visualViewport.height) ? window.visualViewport.height : window.innerHeight;
     const extra = Math.max(0, Math.round(visualH - layoutH));
     document.documentElement.style.setProperty("--vv-extra", extra + "px");
@@ -345,6 +361,7 @@ function setTab(tab, opts={}){
   setHeaderForTab();
   updateFabForTab();
   moveTabIndicator();
+  updateBottomPad();
 
   if(window.Telegram?.WebApp){
     const h = window.Telegram.WebApp.HapticFeedback;
@@ -832,6 +849,7 @@ async function refreshAll(){
 
   renderEventsOnGrid();
   updateNowLine();
+  updateBottomPad();
   renderTasksTo(document.getElementById("taskList"), state.tasks);
 
   const pill = document.getElementById("selectedDatePill");
@@ -1481,11 +1499,15 @@ function bindUI(){
   moveTabIndicator();
   initTabSwipe();
 
-  window.addEventListener("resize", ()=> { updateLayoutVars(); moveTabIndicator(); });
-  window.addEventListener("orientationchange", ()=> { setTimeout(()=> { updateLayoutVars(); moveTabIndicator(); }, 80); });
+  window.addEventListener("resize", ()=> { updateLayoutVars();
+  updateBottomPad(); moveTabIndicator(); });
+  window.addEventListener("orientationchange", ()=> { setTimeout(()=> { updateLayoutVars();
+  updateBottomPad(); moveTabIndicator(); }, 80); });
   if(window.visualViewport){
-    window.visualViewport.addEventListener("resize", ()=> { updateLayoutVars(); moveTabIndicator(); });
-    window.visualViewport.addEventListener("scroll", ()=> { updateLayoutVars(); });
+    window.visualViewport.addEventListener("resize", ()=> { updateLayoutVars();
+  updateBottomPad(); moveTabIndicator(); });
+    window.visualViewport.addEventListener("scroll", ()=> { updateLayoutVars();
+  updateBottomPad(); });
   }
 }
 
@@ -1494,6 +1516,7 @@ async function boot(){
 
   // layout variables
   updateLayoutVars();
+  updateBottomPad();
 
   // timezone init
   const savedTZ = localStorage.getItem("planner_tz");
