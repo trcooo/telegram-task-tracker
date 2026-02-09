@@ -91,3 +91,10 @@ https://api.telegram.org/bot<BOT_TOKEN>/getWebhookInfo
 ## Ошибка libpq.so.5 на Railway (Python 3.13)
 Если видишь `ImportError: libpq.so.5`, значит `psycopg2` поставился из исходников и не нашёл системный libpq.
 В этом фикс-пакете используется `psycopg[binary]` (psycopg v3), а `DATABASE_URL` автоматически переводится в `postgresql+psycopg://`.
+
+
+## Ошибка `integer out of range` при входе через Telegram
+Telegram `user.id` может быть больше 2^31-1. Поэтому в БД нужно хранить `users.telegram_id` как BIGINT.
+В этом пакете модель уже исправлена и при старте приложение пытается выполнить миграцию:
+`ALTER TABLE users ALTER COLUMN telegram_id TYPE BIGINT`.
+Если миграция не прошла, можно сбросить таблицы (см. ниже).
