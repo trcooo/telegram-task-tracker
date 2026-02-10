@@ -21,6 +21,14 @@ let openSwipeEl = null;
 let isBooted = false;
 
 function pad2(n){ return String(n).padStart(2,"0"); }
+function clampInt(v, min, max){
+  v = Number(v);
+  if(!Number.isFinite(v)) return min;
+  v = Math.floor(v);
+  if(v < min) return min;
+  if(v > max) return max;
+  return v;
+}
 function parseISODate(dateStr){
   const [y,m,d] = dateStr.split("-").map(Number);
   return {y, m, d};
