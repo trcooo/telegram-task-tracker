@@ -270,10 +270,22 @@ function parseDateISO(txt, baseIso){
     }
   }
 
-  // Relative keywords
-  if(/\bсегодня\b/.test(t)){ specified = true; return {dateISO: baseIso, cleanedText: t.replace(/\bсегодня\b/g," "), specified}; }
-  if(/\bпослезавтра\b/.test(t)){ specified = true; return {dateISO: addDaysISO(baseIso, 2), cleanedText: t.replace(/\bпослезавтра\b/g," "), specified}; }
-  if(/\bзавтра\b/.test(t)){ specified = true; return {dateISO: addDaysISO(baseIso, 1), cleanedText: t.replace(/\bзавтра\b/g," "), specified}; }
+  // Relative keywords (support: 'сегодня', 'на сегодня', 'завтра', 'на завтра', 'послезавтра', 'после завтра')
+  // normalize variants like 'после завтра' / 'после-завтра'
+  t = t.replace(/\bпосле\s*-?\s*завтра\b/g, "послезавтра");
+
+  if(/\b(на\s+)?сегодня\b/.test(t)){
+    specified = true;
+    return {dateISO: baseIso, cleanedText: t.replace(/\b(на\s+)?сегодня\b/g," "), specified};
+  }
+  if(/\b(на\s+)?послезавтра\b/.test(t)){
+    specified = true;
+    return {dateISO: addDaysISO(baseIso, 2), cleanedText: t.replace(/\b(на\s+)?послезавтра\b/g," "), specified};
+  }
+  if(/\b(на\s+)?завтра\b/.test(t)){
+    specified = true;
+    return {dateISO: addDaysISO(baseIso, 1), cleanedText: t.replace(/\b(на\s+)?завтра\b/g," "), specified};
+  }
 
   const wd = [
     {re:/\b(в\s+)?пн\b|\bпонедельник\b/, dow:1},
@@ -440,7 +452,7 @@ function parseVoiceCommand(rawText, baseIso, tz){
 
   const mentionDateLike = /\b([0-3]?\d)[.\-\/]([01]?\d)(?:[.\-\/]\d{2,4})?\b/.test(txt0) ||
     /\b(январ|янв|феврал|фев|март|мар|апрел|апр|май|мая|июн|июл|август|авг|сентябр|сен|октябр|окт|ноябр|ноя|декабр|дек)\b/.test(txt0) ||
-    /\b(сегодня|завтра|послезавтра|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье|пн|вт|ср|чт|пт|сб|вс)\b/.test(txt0);
+    /\b(сегодня|завтра|послезавтра|после\s+завтра|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье|пн|вт|ср|чт|пт|сб|вс)\b/.test(txt0);
 
   const mentionTimeLike = /\b([01]?\d|2[0-3])[:. ]([0-5]\d)\b/.test(txt0) ||
     /\b(с|в|до)\s+(один|одного|два|двух|три|трех|трёх|четыре|четырех|четырёх|пять|пяти|шесть|шести|семь|семи|восемь|восьми|девять|девяти|десять|десяти|одиннадцать|одиннадцати|двенадцать|двенадцати|тринадцать|тринадцати|четырнадцать|четырнадцати|пятнадцать|пятнадцати|шестнадцать|шестнадцати|семнадцать|семнадцати|восемнадцать|восемнадцати|девятнадцать|девятнадцати|двадцать|двадцати|полдень|полночь|час)\b/.test(txt0) ||
