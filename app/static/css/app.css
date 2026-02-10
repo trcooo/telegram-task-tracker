@@ -1428,6 +1428,8 @@ nav.bottom > .tab.active .navicon{
   padding: 8px 4px 10px;
 }
 .voice-status{
+  transition: transform .22s cubic-bezier(.2,.9,.2,1), opacity .22s cubic-bezier(.2,.9,.2,1);
+
   font-weight: 950;
   color: rgba(16,22,42,.82);
   text-align:center;
@@ -1909,4 +1911,19 @@ body.dragging-task .content{
   padding: 10px 12px 12px;
   color: rgba(16,22,42,.46);
   font-weight: 850;
+}
+
+
+/* Voice sheet tones */
+.voice-sheet.tone-listen .voice-micbtn{
+  box-shadow: 0 30px 80px rgba(59,108,255,.25), 0 22px 60px rgba(16,22,42,.18);
+}
+.voice-sheet.tone-good .voice-status{
+  color: rgba(16,22,42,.86);
+}
+.voice-sheet.tone-warn .voice-status{
+  color: rgba(16,22,42,.86);
+}
+.voice-sheet.tone-bad .voice-status{
+  color: rgba(255,59,79,.95);
 }

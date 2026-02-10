@@ -137,9 +137,56 @@ function parseDurationMin(txt){
   return null;
 }
 
+function nowPartsInTz(tz){
+  const d = new Date();
+  const fmt = new Intl.DateTimeFormat("en-CA", {timeZone: tz, year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false});
+  const parts = fmt.formatToParts(d);
+  const map = {};
+  for(const p of parts){
+    if(p.type !== "literal") map[p.type] = p.value;
+  }
+  return {
+    dateISO: `${map.year}-${map.month}-${map.day}`,
+    hh: Number(map.hour||"0"),
+    mm: Number(map.minute||"0")
+  };
+}
+
+function parseRelativeStart(txt, tz){
+  // examples: "через 30 минут", "через 2 часа", "через полчаса", "через полтора часа"
+  if(!txt) return null;
+  const t = txt;
+  let addMin = null;
+
+  if(/\bчерез\s+полчаса\b/.test(t)) addMin = 30;
+  if(/\bчерез\s+полтора\s+часа\b/.test(t)) addMin = 90;
+
+  let m = t.match(/\bчерез\s+(\d+)\s*(мин|минута|минуты|минут)\b/);
+  if(m) addMin = Number(m[1]);
+
+  let h = t.match(/\bчерез\s+(\d+)\s*(час|часа|часов)\b/);
+  if(h) addMin = Number(h[1]) * 60;
+
+  if(addMin == null || !Number.isFinite(addMin) || addMin <= 0) return null;
+
+  const target = new Date(Date.now() + addMin*60000);
+  const fmtD = new Intl.DateTimeFormat("en-CA", {timeZone: tz, year:"numeric", month:"2-digit", day:"2-digit"});
+  const fmtT = new Intl.DateTimeFormat("en-CA", {timeZone: tz, hour:"2-digit", minute:"2-digit", hour12:false});
+  const dateISO = fmtD.format(target);
+  const time = fmtT.format(target);
+  return {dateISO, startTime: time, addMin};
+}
+
+
 function parseDateISO(txt, baseIso){
   // Supports: today/tomorrow, weekdays, DD.MM.YYYY, DD.MM, DD/MM/YYYY, and "10 февраля 2026"
-  let t = txt;
+  // Returns: {dateISO, cleanedText, specified}
+  let t = txt || "";
+  let specified = false;
+
+  // Normalize spoken year like "две тысячи 26-е" -> "2026"
+  t = t.replace(/\bдве\s+тысячи\s+(\d{2})(?:-?е)?\b/g, (_m, yy)=>`202${yy}`);
+  t = t.replace(/\bдве\s+тысячи\s+(\d{4})\b/g, (_m, y)=>String(y));
 
   // Absolute numeric date: 10.02.2026 / 10-02-2026 / 10/02/2026
   let m = t.match(/\b([0-3]?\d)[.\-\/]([01]?\d)(?:[.\-\/](\d{2,4}))\b/);
@@ -147,11 +194,12 @@ function parseDateISO(txt, baseIso){
     const dd = Number(m[1]);
     const mm = Number(m[2]);
     let yy = Number(m[3]);
-    if(yy < 100) yy = 2000 + yy; // simple heuristic for MVP
+    if(yy < 100) yy = 2000 + yy; // heuristic
     if(dd>=1 && dd<=31 && mm>=1 && mm<=12 && yy>=1970 && yy<=2100){
       const dateISO = `${String(yy).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
       t = t.replace(m[0], " ");
-      return {dateISO, cleanedText: t};
+      specified = true;
+      return {dateISO, cleanedText: t, specified};
     }
   }
 
@@ -164,42 +212,47 @@ function parseDateISO(txt, baseIso){
     if(dd>=1 && dd<=31 && mm>=1 && mm<=12){
       const dateISO = `${String(baseYear).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
       t = t.replace(m[0], " ");
-      return {dateISO, cleanedText: t};
+      specified = true;
+      return {dateISO, cleanedText: t, specified};
     }
   }
 
   // Month names: "10 февраля 2026", "10 фев", "10 февраля"
-  const months = {
-    "янв":1,"январ":1,
-    "фев":2,"феврал":2,
-    "мар":3,"март":3,
-    "апр":4,"апрел":4,
-    "мая":5,"май":5,
-    "июн":6,"июнь":6,
-    "июл":7,"июль":7,
-    "авг":8,"август":8,
-    "сен":9,"сентябр":9,
-    "окт":10,"октябр":10,
-    "ноя":11,"ноябр":11,
-    "дек":12,"декабр":12
+  const monthMap = {
+    "янв":1,"январ":1,"январь":1,"января":1,
+    "фев":2,"феврал":2,"февраль":2,"февраля":2,
+    "мар":3,"март":3,"марта":3,
+    "апр":4,"апрел":4,"апрель":4,"апреля":4,
+    "май":5,"мая":5,
+    "июн":6,"июнь":6,"июня":6,
+    "июл":7,"июль":7,"июля":7,
+    "авг":8,"август":8,"августа":8,
+    "сен":9,"сентябр":9,"сентябрь":9,"сентября":9,
+    "окт":10,"октябр":10,"октябрь":10,"октября":10,
+    "ноя":11,"ноябр":11,"ноябрь":11,"ноября":11,
+    "дек":12,"декабр":12,"декабрь":12,"декабря":12
   };
+
   m = t.match(/\b([0-3]?\d)\s+(январ[ья]?|янв|феврал[ья]?|фев|март[а]?|мар|апрел[ья]?|апр|май[а]?|мая|июн[ья]?|июль|июл|июн|август[а]?|авг|сентябр[ья]?|сен|октябр[ья]?|окт|ноябр[ья]?|ноя|декабр[ья]?|дек)\s*(\d{2,4})?\b/);
   if(m){
     const dd = Number(m[1]);
-    const key = m[2].slice(0,5);
-    const mm = months[key] || months[m[2].slice(0,3)] || months[m[2].slice(0,6)];
+    const token = m[2];
+    // pick key by checking prefixes
+    const mm = monthMap[token] || monthMap[token.slice(0,3)] || monthMap[token.slice(0,5)] || monthMap[token.slice(0,6)];
     let yy = m[3] ? Number(m[3]) : (Number((baseIso||"").slice(0,4)) || (new Date()).getFullYear());
     if(yy < 100) yy = 2000 + yy;
     if(dd>=1 && dd<=31 && mm>=1 && mm<=12){
       const dateISO = `${String(yy).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
       t = t.replace(m[0], " ");
-      return {dateISO, cleanedText: t};
+      specified = true;
+      return {dateISO, cleanedText: t, specified};
     }
   }
 
-  if(/\bсегодня\b/.test(t)) return {dateISO: baseIso, cleanedText: t.replace(/\bсегодня\b/g," ")};
-  if(/\bпослезавтра\b/.test(t)) return {dateISO: addDaysISO(baseIso, 2), cleanedText: t.replace(/\bпослезавтра\b/g," ")};
-  if(/\bзавтра\b/.test(t)) return {dateISO: addDaysISO(baseIso, 1), cleanedText: t.replace(/\bзавтра\b/g," ")};
+  // Relative keywords
+  if(/\bсегодня\b/.test(t)){ specified = true; return {dateISO: baseIso, cleanedText: t.replace(/\bсегодня\b/g," "), specified}; }
+  if(/\bпослезавтра\b/.test(t)){ specified = true; return {dateISO: addDaysISO(baseIso, 2), cleanedText: t.replace(/\bпослезавтра\b/g," "), specified}; }
+  if(/\bзавтра\b/.test(t)){ specified = true; return {dateISO: addDaysISO(baseIso, 1), cleanedText: t.replace(/\bзавтра\b/g," "), specified}; }
 
   const wd = [
     {re:/\b(в\s+)?пн\b|\bпонедельник\b/, dow:1},
@@ -211,9 +264,13 @@ function parseDateISO(txt, baseIso){
     {re:/\b(в\s+)?вс\b|\bвоскресенье\b/, dow:0},
   ];
   for(const w of wd){
-    if(w.re.test(t)) return {dateISO: nextWeekdayISO(baseIso, w.dow), cleanedText: t.replace(w.re," ")};
+    if(w.re.test(t)){
+      specified = true;
+      return {dateISO: nextWeekdayISO(baseIso, w.dow), cleanedText: t.replace(w.re," "), specified};
+    }
   }
-  return {dateISO: baseIso, cleanedText: t};
+
+  return {dateISO: baseIso, cleanedText: t, specified: false};
 }
 
 function extractTimes(txt){
@@ -278,35 +335,80 @@ function cleanTitle(txt){
   return t;
 }
 
-function parseVoiceCommand(rawText, baseIso){
+function parseVoiceCommand(rawText, baseIso, tz){
   const txt0 = normalizeVoiceText(rawText);
+
+  // Relative "через N минут/часов"
+  const rel = parseRelativeStart(txt0, tz);
 
   // Parse date first and remove it from text, so DD.MM doesn't become time like 10:02
   const dres = parseDateISO(txt0, baseIso);
-  const dateISO = dres.dateISO;
-  const txt = normalizeVoiceText(dres.cleanedText);
+  let dateISO = dres.dateISO;
+  let dateSpecified = dres.specified;
+  let cleaned = normalizeVoiceText(dres.cleanedText);
 
-  const {start, end} = extractTimes(txt);
-  const dur = parseDurationMin(txt);
+  // If relative start is present, override date & start
+  let relStart = null;
+  if(rel){
+    relStart = rel.startTime;
+    dateISO = rel.dateISO;
+    dateSpecified = true;
+    cleaned = cleaned.replace(/\bчерез\b[^\d]*(\d+|полчаса|полтора)\s*(мин|минута|минуты|минут|час|часа|часов)?\b/g, " ");
+  }
 
-  let kind = "task";
-  if(start) kind = "event";
+  const {start, end} = extractTimes(cleaned);
+  const dur = parseDurationMin(cleaned);
 
-  let title = cleanTitle(txt);
-  if(!title) title = (kind==="event" ? "Событие" : "Задача");
+  const mentionDateLike = /\b([0-3]?\d)[.\-\/]([01]?\d)(?:[.\-\/]\d{2,4})?\b/.test(txt0) ||
+    /\b(январ|янв|феврал|фев|март|мар|апрел|апр|май|мая|июн|июл|август|авг|сентябр|сен|октябр|окт|ноябр|ноя|декабр|дек)\b/.test(txt0) ||
+    /\b(сегодня|завтра|послезавтра|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье|пн|вт|ср|чт|пт|сб|вс)\b/.test(txt0);
 
-  let startTime = start || null;
+  const mentionTimeLike = /\b([01]?\d|2[0-3])[:. ]([0-5]\d)\b/.test(txt0) ||
+    /\b([01]?\d|2[0-3])\s*-\s*([01]?\d|2[0-3])\b/.test(txt0) ||
+    /\bс\s*([01]?\d|2[0-3])\b/.test(txt0) ||
+    /\bдо\s*([01]?\d|2[0-3])\b/.test(txt0) ||
+    /\bчерез\s+/.test(txt0);
+
+  let startTime = start || relStart || null;
   let endTime = end || null;
 
-  if(kind==="event" && startTime){
-    if(!endTime){
-      const mins = dur ?? 60;
-      endTime = addMinutesToTimeStr(startTime, mins);
-      if(endTime < startTime) endTime = "23:59";
-    }else{
-      if(endTime <= startTime) endTime = "23:59";
+  // Determine intent: event vs task
+  const eventKeywords = /\b(встреча|созвон|звонок|урок|школа|репетитор|занятие|тренировка|событие|вебинар|интервью|приём|прием)\b/;
+  let kind = "task";
+
+  if(startTime || endTime || relStart) kind = "event";
+  else if(eventKeywords.test(cleaned) || dur) kind = "event";
+
+  let title = cleanTitle(cleaned);
+  if(!title) title = (kind==="event" ? "Событие" : "Задача");
+
+  // missing detection
+  let missingDate = false;
+  let missingStart = false;
+  let missingEnd = false;
+
+  if(mentionDateLike && !dateSpecified) missingDate = true;
+
+  if(kind==="event"){
+    if(!startTime) missingStart = true;
+
+    if(startTime){
+      if(endTime){
+        if(endTime <= startTime) endTime = "23:59";
+      }else{
+        // if duration provided — compute end, otherwise ask for it
+        if(dur != null){
+          endTime = addMinutesToTimeStr(startTime, dur);
+          if(endTime < startTime) endTime = "23:59";
+        }else{
+          missingEnd = true;
+        }
+      }
     }
   }
+
+  // If time-like tokens exist but we couldn't parse start, prompt time
+  if(kind==="event" && mentionTimeLike && !startTime) missingStart = true;
 
   return {
     kind,
@@ -314,11 +416,103 @@ function parseVoiceCommand(rawText, baseIso){
     dateISO,
     startTime,
     endTime,
+    missingDate,
+    missingStart,
+    missingEnd,
     confidenceHint: txt0
   };
 }
 
 let modalBackHandler = null;
+
+const voiceFlow = {
+  mode: "idle", // idle | need_date | need_start | need_end
+  draft: null
+};
+
+let voiceBackHandler = null;
+
+function voiceSetStatus(text, tone="neutral"){
+  const status = document.getElementById("voiceStatus");
+  if(status) status.textContent = text;
+  const sheet = document.querySelector(".voice-sheet");
+  if(sheet){
+    sheet.classList.remove("tone-neutral","tone-good","tone-warn","tone-bad","tone-listen");
+    sheet.classList.add(
+      tone==="good" ? "tone-good" :
+      tone==="warn" ? "tone-warn" :
+      tone==="bad" ? "tone-bad" :
+      tone==="listen" ? "tone-listen" : "tone-neutral"
+    );
+  }
+}
+
+function voiceSetHint(text){
+  const hint = document.getElementById("voiceHint");
+  if(hint) hint.textContent = text;
+}
+
+function voiceResetFlow(){
+  voiceFlow.mode = "idle";
+  voiceFlow.draft = null;
+}
+
+function voicePromptNext(missing){
+  // missing: "date" | "start" | "end"
+  if(missing === "date"){
+    voiceFlow.mode = "need_date";
+    voiceSetStatus("На какую дату? 🎙️", "warn");
+    voiceSetHint("Скажи: «10 февраля», «11.02.2026», «завтра» или «в пятницу».");
+    try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("warning"); }catch(_){}
+    return;
+  }
+  if(missing === "start"){
+    voiceFlow.mode = "need_start";
+    voiceSetStatus("Во сколько начать? 🎙️", "warn");
+    voiceSetHint("Скажи: «в 14:00», «в 8», или «через 30 минут».");
+    try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("warning"); }catch(_){}
+    return;
+  }
+  if(missing === "end"){
+    voiceFlow.mode = "need_end";
+    voiceSetStatus("Во сколько закончить? 🎙️", "warn");
+    voiceSetHint("Скажи: «до 15:00» или «на час» / «на 30 минут».");
+    try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("warning"); }catch(_){}
+    return;
+  }
+}
+
+function voiceUpdatePreview(v){
+  const prev = document.getElementById("voicePreview");
+  const chips = document.getElementById("voiceChips");
+  const tprev = document.getElementById("voiceTitlePrev");
+
+  if(chips){
+    const arr = [];
+    arr.push(v.kind==="event" ? "Событие" : "Задача");
+    if(v.dateISO) arr.push(v.dateISO);
+    if(v.startTime) arr.push(v.startTime + (v.endTime ? "–"+v.endTime : ""));
+    chips.innerHTML = arr.map(x=>`<span class="vchip">${escapeHtml(x)}</span>`).join("");
+  }
+  if(tprev) tprev.textContent = v.title;
+  if(prev) prev.hidden = false;
+
+  const add = document.getElementById("voiceAdd");
+  const edit = document.getElementById("voiceEdit");
+
+  const ready = !(v.missingDate || v.missingStart || v.missingEnd);
+  if(ready){
+    add?.removeAttribute("disabled");
+    add?.removeAttribute("aria-disabled");
+    add?.classList.remove("is-disabled");
+  }else{
+    add?.setAttribute("aria-disabled","true");
+    add?.classList.add("is-disabled");
+  }
+  // edit is allowed once we have a draft
+  edit?.removeAttribute("aria-disabled");
+  edit?.classList.remove("is-disabled");
+}
 let voiceRec = null;
 let voiceListening = false;
 let voiceLast = null;
@@ -326,11 +520,15 @@ let voiceLast = null;
 function openVoiceModal(autoStart=true){
   const modal = document.getElementById("voiceModal");
   modal?.setAttribute("aria-hidden","false");
+  document.documentElement.classList.add("modal-open");
   voiceUIReset();
+  voiceResetFlow();
 
-  if(window.Telegram?.WebApp){
-    try{ window.Telegram.WebApp.HapticFeedback?.impactOccurred?.("light"); }catch(e){}
-  }
+  // Telegram back button closes voice modal
+  voiceBackHandler = ()=> closeVoiceModal();
+  tgBackShow(voiceBackHandler);
+
+  try{ window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light"); }catch(e){}
 
   if(autoStart) startVoiceListening();
 }
@@ -340,11 +538,13 @@ function closeVoiceModal(){
   const modal = document.getElementById("voiceModal");
   if(!modal) return;
   modal.setAttribute("aria-hidden","true");
+  document.documentElement.classList.remove("modal-open");
+  if(voiceBackHandler){ tgBackHide(voiceBackHandler); voiceBackHandler = null; }
   voiceUIReset(true);
+  voiceResetFlow();
 }
 
 function voiceUIReset(keepText=false){
-  const status = document.getElementById("voiceStatus");
   const mic = document.getElementById("voiceMicBtn");
   const wave = document.getElementById("voiceWave");
   const text = document.getElementById("voiceText");
@@ -352,7 +552,9 @@ function voiceUIReset(keepText=false){
   const chips = document.getElementById("voiceChips");
   const tprev = document.getElementById("voiceTitlePrev");
 
-  if(status) status.textContent = supportsSpeech() ? "Скажи задачу или событие" : "Голосовой ввод недоступен на этом устройстве";
+  voiceSetStatus(supportsSpeech() ? "Скажи задачу или событие" : "Голосовой ввод недоступен на этом устройстве", "neutral");
+  voiceSetHint("Пример: «встреча 14:00–15:00 завтра» или «купить продукты завтра».");
+
   mic?.classList.remove("listening");
   wave?.classList.remove("on");
 
@@ -366,15 +568,10 @@ function voiceUIReset(keepText=false){
 
   const add = document.getElementById("voiceAdd");
   const edit = document.getElementById("voiceEdit");
-  add?.removeAttribute("disabled");
-  edit?.removeAttribute("disabled");
-  add?.removeAttribute("aria-disabled");
-  edit?.removeAttribute("aria-disabled");
-  add?.classList.remove("is-disabled");
-  edit?.classList.remove("is-disabled");
-add?.setAttribute("aria-disabled","true");
-  edit?.setAttribute("aria-disabled","true");
+  // disabled until we have a parsed draft
+  add?.setAttribute("aria-disabled","true");
   add?.classList.add("is-disabled");
+  edit?.setAttribute("aria-disabled","true");
   edit?.classList.add("is-disabled");
 }
 
@@ -409,7 +606,7 @@ function startVoiceListening(){
   voiceListening = true;
   mic?.classList.add("listening");
   wave?.classList.add("on");
-  if(status) status.textContent = "Слушаю…";
+  voiceSetStatus("Слушаю…", "listen");
 
   let finalText = "";
 
@@ -431,7 +628,7 @@ function startVoiceListening(){
     voiceListening = false;
     mic?.classList.remove("listening");
     wave?.classList.remove("on");
-    if(status) status.textContent = "Ошибка распознавания. Попробуй ещё раз.";
+    voiceSetStatus("Ошибка распознавания. Попробуй ещё раз.", "bad");
     try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("error"); }catch(_){}
   };
 
@@ -445,7 +642,7 @@ function startVoiceListening(){
     const text = (finalText || document.getElementById("voiceText")?.textContent || "").trim();
     if(!text){
       const status = document.getElementById("voiceStatus");
-      if(status) status.textContent = "Не расслышал. Нажми «🎙️» и повтори.";
+      voiceSetStatus("Не расслышал. Нажми «🎙️» и повтори.", "warn");
       return;
     }
     onVoiceRecognized(text);
@@ -472,67 +669,102 @@ function stopVoiceListening(){
 }
 
 function onVoiceRecognized(text){
-  const status = document.getElementById("voiceStatus");
-  if(status) status.textContent = "Понял. Проверь и добавь ✅";
-
   const baseIso = state.dateStr;
-  const parsed = parseVoiceCommand(text, baseIso);
+  const tz = state.timezone;
+
+  // If we're in a clarification step, parse only the missing part and merge into draft
+  if(voiceFlow.mode !== "idle" && voiceFlow.draft){
+    const patch = parseVoiceCommand(text, baseIso, tz);
+
+    // Merge heuristically
+    const d = voiceFlow.draft;
+
+    if(patch.missingDate === false && patch.dateISO) d.dateISO = patch.dateISO;
+    if(patch.startTime) d.startTime = patch.startTime;
+    if(patch.endTime) d.endTime = patch.endTime;
+
+    // If user said duration but no endTime, compute
+    const dur = parseDurationMin(normalizeVoiceText(text));
+    if(d.startTime && !d.endTime && dur != null){
+      d.endTime = addMinutesToTimeStr(d.startTime, dur);
+      if(d.endTime < d.startTime) d.endTime = "23:59";
+    }
+
+    // Re-evaluate missing flags
+    d.missingDate = false;
+    d.missingStart = false;
+    d.missingEnd = false;
+
+    if(!d.dateISO) d.missingDate = true;
+    if(d.kind==="event"){
+      if(!d.startTime) d.missingStart = true;
+      if(d.startTime && !d.endTime) d.missingEnd = true;
+    }
+
+    voiceLast = d;
+    voiceUpdatePreview(d);
+
+    if(d.missingDate){ voicePromptNext("date"); return; }
+    if(d.missingStart){ voicePromptNext("start"); return; }
+    if(d.missingEnd){ voicePromptNext("end"); return; }
+
+    voiceFlow.mode = "idle";
+    voiceSetStatus("Понял. Проверь и добавь ✅", "good");
+    voiceSetHint("Можно нажать «Добавить» или «Редактировать».");
+    try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
+    return;
+  }
+
+  // Normal parse
+  const parsed = parseVoiceCommand(text, baseIso, tz);
+  voiceFlow.draft = parsed;
   voiceLast = parsed;
 
-  const prev = document.getElementById("voicePreview");
-  const chips = document.getElementById("voiceChips");
-  const tprev = document.getElementById("voiceTitlePrev");
+  // Show preview
+  voiceUpdatePreview(parsed);
 
-  if(chips){
-    const arr = [];
-    arr.push(parsed.kind==="event" ? "Событие" : "Задача");
-    if(parsed.dateISO) arr.push(parsed.dateISO);
-    if(parsed.startTime) arr.push(parsed.startTime + (parsed.endTime ? "–"+parsed.endTime : ""));
-    chips.innerHTML = arr.map(x=>`<span class="vchip">${escapeHtml(x)}</span>`).join("");
-  }
-  if(tprev) tprev.textContent = parsed.title;
-  if(prev) prev.hidden = false;
+  // Decide if we need clarification
+  if(parsed.missingDate){ voicePromptNext("date"); return; }
+  if(parsed.missingStart){ voicePromptNext("start"); return; }
+  if(parsed.missingEnd){ voicePromptNext("end"); return; }
 
-  const add = document.getElementById("voiceAdd");
-  const edit = document.getElementById("voiceEdit");
-  add?.removeAttribute("disabled");
-  edit?.removeAttribute("disabled");
-  add?.removeAttribute("aria-disabled");
-  edit?.removeAttribute("aria-disabled");
-  add?.classList.remove("is-disabled");
-  edit?.classList.remove("is-disabled");
-try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
+  voiceSetStatus("Понял. Проверь и добавь ✅", "good");
+  voiceSetHint("Можно нажать «Добавить» или «Редактировать».");
+  try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
 }
 
 async function voiceAddNow(){
   const addBtn = document.getElementById("voiceAdd");
   const editBtn = document.getElementById("voiceEdit");
-  const status = document.getElementById("voiceStatus");
 
-  // If user taps Add before we parsed anything — start listening instead of "doing nothing"
   if(!voiceLast){
-    if(status) status.textContent = "Сначала продиктуй фразу 🎙️";
+    voiceSetStatus("Сначала продиктуй фразу 🎙️", "warn");
     try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("warning"); }catch(_){}
     startVoiceListening();
     return;
   }
+
+  const v = voiceLast;
+
+  if(v.missingDate){ voicePromptNext("date"); startVoiceListening(); return; }
+  if(v.missingStart){ voicePromptNext("start"); startVoiceListening(); return; }
+  if(v.missingEnd){ voicePromptNext("end"); startVoiceListening(); return; }
 
   // prevent double submit
   addBtn?.classList.add("is-loading");
   addBtn?.setAttribute("aria-busy","true");
   editBtn?.setAttribute("aria-disabled","true");
   editBtn?.classList.add("is-disabled");
-  if(status) status.textContent = "Добавляю…";
+  voiceSetStatus("Добавляю…", "listen");
 
   try{
-    const v = voiceLast;
-
     if(v.kind === "task"){
       await API.createTask({title: v.title, priority: 2, estimate_min: 30, project_id: null});
       await refreshAll();
       if(state.tab==="tasks") await refreshTasksScreen();
-      closeVoiceModal();
+      voiceSetStatus("Готово ✅", "good");
       try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
+      setTimeout(()=> closeVoiceModal(), 220);
       return;
     }
 
@@ -546,11 +778,12 @@ async function voiceAddNow(){
     await API.createEvent({title: v.title, start_dt: startISO, end_dt: endISO, color: "#6EA8FF", source:"voice"});
     await refreshAll();
     if(state.tab==="calendar") await refreshWeekScreen();
-    closeVoiceModal();
+    voiceSetStatus("Готово ✅", "good");
     try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
+    setTimeout(()=> closeVoiceModal(), 220);
   }catch(err){
     console.error(err);
-    if(status) status.textContent = "Не удалось добавить. Попробуй ещё раз.";
+    voiceSetStatus("Не удалось добавить. Попробуй ещё раз.", "bad");
     uiAlert(err?.message || String(err));
     try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("error"); }catch(_){}
   }finally{
@@ -562,10 +795,9 @@ async function voiceAddNow(){
 }
 
 function voiceEdit(){
-  if(!voiceLast) return;
-  const v = voiceLast;
+  const v = voiceLast || voiceFlow.draft;
+  if(!v) return;
 
-  // set modal mode and prefill
   if(v.kind === "task"){
     setMode("task");
     document.getElementById("inpTitle").value = v.title;
@@ -2632,7 +2864,7 @@ function bindUI(){
   document.getElementById("micFab")?.addEventListener("click", ()=> openVoiceModal(true));
   document.getElementById("voiceClose")?.addEventListener("click", closeVoiceModal);
   document.getElementById("voiceBackdrop")?.addEventListener("click", closeVoiceModal);
-  document.getElementById("voiceRetry")?.addEventListener("click", ()=> { voiceUIReset(); startVoiceListening(); });
+  document.getElementById("voiceRetry")?.addEventListener("click", ()=> { voiceUIReset(); voiceResetFlow(); startVoiceListening(); });
   document.getElementById("voiceMicBtn")?.addEventListener("click", ()=> { if(voiceListening) stopVoiceListening(); else startVoiceListening(); });
   document.getElementById("voiceAdd")?.addEventListener("click", ()=> voiceAddNow().catch(err=>alert(err?.message||String(err))));
   document.getElementById("voiceEdit")?.addEventListener("click", voiceEdit);
