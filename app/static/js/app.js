@@ -92,7 +92,9 @@ function normalizeVoiceText(t){
   return (t||"")
     .toLowerCase()
     .replace(/[–—]/g,"-")
-    .replace(/[.,]/g," ")
+    // keep dots for dates like 10.02.2026 and times like 14.30
+    .replace(/[,]/g," ")
+    .replace(/[ ]/g," ")
     .replace(/\s+/g," ")
     .trim();
 }
@@ -1441,6 +1443,167 @@ document.addEventListener("touchstart", (e)=>{
   }
 }, {passive:true});
 
+
+/* ---------------- Touch drag (mobile) - plan task ---------------- */
+const touchDrag = {
+  active:false,
+  taskId:null,
+  title:"",
+  ghost:null,
+  over:null,
+  pointerId:null,
+  pressTimer:null,
+  startX:0,
+  startY:0,
+  started:false
+};
+
+function tdClearOver(){
+  if(touchDrag.over){
+    touchDrag.over.classList.remove("over");
+    touchDrag.over = null;
+  }
+}
+
+function tdStop(){
+  try{ clearTimeout(touchDrag.pressTimer); }catch(e){}
+  touchDrag.pressTimer = null;
+
+  tdClearOver();
+  document.body.classList.remove("dragging-task");
+  if(touchDrag.ghost){
+    touchDrag.ghost.remove();
+    touchDrag.ghost = null;
+  }
+  touchDrag.active = false;
+  touchDrag.taskId = null;
+  touchDrag.title = "";
+  touchDrag.pointerId = null;
+  touchDrag.started = false;
+}
+
+function tdStart(pointerId, taskId, title, x, y){
+  touchDrag.active = true;
+  touchDrag.started = true;
+  touchDrag.pointerId = pointerId;
+  touchDrag.taskId = taskId;
+  touchDrag.title = title;
+
+  // Create ghost pill
+  const g = document.createElement("div");
+  g.className = "drag-ghost";
+  g.textContent = title || "Задача";
+  document.body.appendChild(g);
+  touchDrag.ghost = g;
+
+  document.body.classList.add("dragging-task");
+  tdMove(x,y);
+
+  try{ window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.(); }catch(_){}
+}
+
+function tdMove(x,y){
+  if(!touchDrag.active || !touchDrag.ghost) return;
+
+  touchDrag.ghost.style.left = x + "px";
+  touchDrag.ghost.style.top  = y + "px";
+
+  const el = document.elementFromPoint(x, y);
+  const drop = el?.closest?.(".sdrop") || null;
+
+  if(drop !== touchDrag.over){
+    tdClearOver();
+    if(drop){
+      drop.classList.add("over");
+      touchDrag.over = drop;
+    }
+  }
+}
+
+async function tdDrop(){
+  if(!touchDrag.active) { tdStop(); return; }
+  const over = touchDrag.over;
+  const taskId = touchDrag.taskId;
+  tdStop();
+
+  if(!over || !taskId) return;
+
+  const h = Number(over.dataset.hour || "0");
+  const m = Number(over.dataset.min || "0");
+  const startISO = zonedTimeToUtcISO(state.dateStr, `${pad2(h)}:${pad2(m)}`, state.timezone);
+
+  try{
+    await API.planTask(Number(taskId), startISO, 30);
+    await refreshAll();
+    if(state.tab==="calendar") await refreshWeekScreen();
+    try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
+  }catch(err){
+    try{ window.Telegram?.WebApp?.showAlert?.("Не удалось запланировать: " + (err?.message||String(err))); }catch(_){
+      alert("Не удалось запланировать: " + (err?.message||String(err)));
+    }
+  }
+}
+
+function attachTouchDragToTaskRow(row, task){
+  // iOS/Telegram WebView: HTML5 drag/drop often doesn't work -> use long-press touch drag
+  row.addEventListener("pointerdown", (e)=>{
+    if(e.pointerType !== "touch" && e.pointerType !== "pen") return;
+    if(task.status === "done") return;
+
+    // don't start drag if user taps on buttons inside row
+    if(e.target.closest("button")) return;
+
+    touchDrag.startX = e.clientX;
+    touchDrag.startY = e.clientY;
+    touchDrag.started = false;
+    touchDrag.taskId = task.id;
+    touchDrag.title = task.title;
+
+    // long-press to start drag (so scroll still works)
+    touchDrag.pressTimer = setTimeout(()=>{
+      tdStart(e.pointerId, task.id, task.title, e.clientX, e.clientY);
+      try{ row.setPointerCapture(e.pointerId); }catch(_){}
+    }, 180);
+  }, {passive:true});
+
+  row.addEventListener("pointermove", (e)=>{
+    if(e.pointerType !== "touch" && e.pointerType !== "pen") return;
+    if(!touchDrag.pressTimer && !touchDrag.active) return;
+
+    const dx = Math.abs(e.clientX - touchDrag.startX);
+    const dy = Math.abs(e.clientY - touchDrag.startY);
+
+    // if user started scrolling before long-press, cancel
+    if(!touchDrag.active && (dx > 10 || dy > 10)){
+      try{ clearTimeout(touchDrag.pressTimer); }catch(_){}
+      touchDrag.pressTimer = null;
+      return;
+    }
+
+    if(touchDrag.active){
+      e.preventDefault();
+      tdMove(e.clientX, e.clientY);
+    }
+  }, {passive:false});
+
+  row.addEventListener("pointerup", (e)=>{
+    if(e.pointerType !== "touch" && e.pointerType !== "pen") return;
+    try{ clearTimeout(touchDrag.pressTimer); }catch(_){}
+    touchDrag.pressTimer = null;
+
+    if(touchDrag.active){
+      e.preventDefault();
+      tdDrop();
+    }
+  }, {passive:false});
+
+  row.addEventListener("pointercancel", (e)=>{
+    if(e.pointerType !== "touch" && e.pointerType !== "pen") return;
+    tdStop();
+  }, {passive:true});
+}
+/* ---------------- End touch drag ---------------- */
+
 /* ---------------- Tasks rendering ---------------- */
 function renderTasksTo(listEl, tasks){
   listEl.innerHTML = "";
@@ -1456,6 +1619,9 @@ function renderTasksTo(listEl, tasks){
     const row = document.createElement("div");
     row.className = "task task-inner" + (t.status==="done" ? " done":"");
     row.draggable = t.status !== "done";
+
+    // Mobile touch drag (long-press)
+    attachTouchDragToTaskRow(row, t);
 
     row.addEventListener("dragstart", (e) => {
       row.classList.add("dragging");
