@@ -29,60 +29,6 @@ function clampInt(v, min, max){
   if(v > max) return max;
   return v;
 }
-
-const THEME_KEY = "sf_theme";
-
-function getTelegramScheme(){
-  try{
-    const scheme = window.Telegram?.WebApp?.colorScheme;
-    if(scheme) return scheme === "dark" ? "dark" : "light";
-  }catch(_){}
-  return null;
-}
-
-function applyTheme(theme, persist=false){
-  const t = (theme === "dark") ? "dark" : "light";
-  document.documentElement.setAttribute("data-theme", t);
-  if(persist){
-    try{ localStorage.setItem(THEME_KEY, t); }catch(_){}
-  }
-  try{
-    const tg = window.Telegram?.WebApp;
-    if(tg){
-      tg.setHeaderColor?.(t === "dark" ? "#0b1224" : "#f4f7ff");
-      tg.setBackgroundColor?.(t === "dark" ? "#0b1224" : "#f4f7ff");
-    }
-  }catch(_){}
-}
-
-function initTheme(){
-  let saved = null;
-  try{ saved = localStorage.getItem(THEME_KEY); }catch(_){}
-  const tgScheme = getTelegramScheme();
-  applyTheme(saved || tgScheme || "light", false);
-
-  // follow Telegram theme changes only if user didn't choose explicitly
-  try{
-    const tg = window.Telegram?.WebApp;
-    if(tg?.onEvent){
-      tg.onEvent("themeChanged", ()=>{
-        let s = null;
-        try{ s = localStorage.getItem(THEME_KEY); }catch(_){}
-        if(!s){
-          const next = getTelegramScheme();
-          if(next) applyTheme(next, false);
-        }
-      });
-    }
-  }catch(_){}
-}
-
-function toggleTheme(){
-  const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
-  const next = cur === "dark" ? "light" : "dark";
-  applyTheme(next, true);
-  try{ window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light"); }catch(_){}
-}
 function parseISODate(dateStr){
   const [y,m,d] = dateStr.split("-").map(Number);
   return {y, m, d};
@@ -3124,20 +3070,9 @@ function bindUI(){
 
   document.getElementById("voiceTopBtn")?.addEventListener("click", ()=> openVoiceModal(true));
 
-
-  // Theme toggle
-  const themeBtn = document.getElementById("themeToggle");
-  if(themeBtn){
-    const handler = (e)=>{ e.preventDefault(); toggleTheme(); };
-    themeBtn.addEventListener("click", handler, {passive:false});
-    themeBtn.addEventListener("touchend", handler, {passive:false});
-    themeBtn.addEventListener("pointerup", handler, {passive:false});
-  }
 }
 
 async function boot(){
-  initTheme();
-
   bindUI();
 
   // layout variables
@@ -3212,6 +3147,51 @@ function tgBackHide(handler){
 }
 
 (function(){
+  // Theme (light/dark)
+  const THEME_KEY = "sf_theme";
+  function getTelegramScheme(){
+    try{
+      if(window.Telegram && Telegram.WebApp && Telegram.WebApp.colorScheme){
+        return Telegram.WebApp.colorScheme === "dark" ? "dark" : "light";
+      }
+    }catch(e){}
+    return null;
+  }
+  function applyTheme(theme, persist=false){
+    const t = (theme === "dark") ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", t);
+    if(persist){
+      try{ localStorage.setItem(THEME_KEY, t); }catch(e){}
+    }
+    // update status bar colors if available
+    try{
+      if(window.Telegram && Telegram.WebApp){
+        Telegram.WebApp.setHeaderColor && Telegram.WebApp.setHeaderColor(t === "dark" ? "#0b1224" : "#f4f7ff");
+        Telegram.WebApp.setBackgroundColor && Telegram.WebApp.setBackgroundColor(t === "dark" ? "#0b1224" : "#f4f7ff");
+      }
+    }catch(e){}
+  }
+  function initTheme(){
+    let saved = null;
+    try{ saved = localStorage.getItem(THEME_KEY); }catch(e){}
+    const tg = getTelegramScheme();
+    applyTheme(saved || tg || "light", false);
+
+    // If Telegram theme changes and user didn't force a theme, follow it
+    try{
+      if(window.Telegram && Telegram.WebApp && Telegram.WebApp.onEvent){
+        Telegram.WebApp.onEvent("themeChanged", ()=>{
+          let s = null;
+          try{ s = localStorage.getItem(THEME_KEY); }catch(e){}
+          if(!s){
+            const tg2 = getTelegramScheme();
+            if(tg2) applyTheme(tg2, false);
+          }
+        });
+      }
+    }catch(e){}
+  }
+
   let backHandler = null;
 
   // Override with stable close behavior
@@ -3257,3 +3237,19 @@ window.addEventListener("visibilitychange", ()=>{
 window.addEventListener("orientationchange", ()=>{
   setTimeout(()=>{ try{ enforceActiveScreen(); }catch(e){} }, 50);
 });
+
+
+  function toggleTheme(){
+    const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+    const next = cur === "dark" ? "light" : "dark";
+    applyTheme(next, true);
+    // haptic
+    try{
+      if(window.Telegram && Telegram.WebApp && Telegram.WebApp.HapticFeedback){
+        Telegram.WebApp.HapticFeedback.impactOccurred("light");
+      }
+    }catch(e){}
+  }
+  if(themeToggle){
+    themeToggle.addEventListener("click", (e)=>{ e.preventDefault(); toggleTheme(); });
+  }
