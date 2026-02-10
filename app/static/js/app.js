@@ -309,6 +309,7 @@ function parseVoiceCommand(rawText, baseIso){
   };
 }
 
+let modalBackHandler = null;
 let voiceRec = null;
 let voiceListening = false;
 let voiceLast = null;
@@ -732,6 +733,47 @@ function getScreenEl(tab){
   if(tab==="tasks") return document.getElementById("screenTasks");
   return document.getElementById("screenWeek");
 }
+// ---------------- Stability helpers ----------------
+function hardResetScreens(){
+  const content = document.querySelector(".content");
+  if(content) content.style.height = "";
+
+  const ids = ["screenSchedule","screenTasks","screenWeek"];
+  for(const id of ids){
+    const el = document.getElementById(id);
+    if(!el) continue;
+    try{
+      el.getAnimations?.().forEach(a=>{ try{a.cancel();}catch(e){} });
+    }catch(e){}
+    el.classList.remove("swap");
+    // clear any inline styles left from swipe/slide
+    el.style.position = "";
+    el.style.left = "";
+    el.style.right = "";
+    el.style.top = "";
+    el.style.width = "";
+    el.style.height = "";
+    el.style.transform = "";
+    el.style.opacity = "";
+    el.style.display = "";
+    el.style.pointerEvents = "";
+  }
+}
+
+function enforceActiveScreen(){
+  // Ensure no leftovers from interrupted transitions
+  hardResetScreens();
+
+  const sc = document.getElementById("screenSchedule");
+  const ts = document.getElementById("screenTasks");
+  const wk = document.getElementById("screenWeek");
+
+  sc?.classList.toggle("active", state.tab==="schedule");
+  ts?.classList.toggle("active", state.tab==="tasks");
+  wk?.classList.toggle("active", state.tab==="calendar");
+}
+// ----------------------------------------------------
+
 
 function setHeaderForTab(){
   const titleEl = document.querySelector(".title");
@@ -790,12 +832,16 @@ function slideSwap(fromTab, toTab, dir){
     [{opacity:1, transform:"translateX(0px)"},{opacity:0, transform:`translateX(${outTo}px)`}],
     {duration: 200, easing:"cubic-bezier(.2,.9,.2,1)", fill:"forwards"}
   );
+  const safetyTimeout = setTimeout(()=>{ try{cleanup();}catch(e){} }, 420);
+
   const a2 = toEl.animate(
     [{opacity:0, transform:`translateX(${inFrom}px)`},{opacity:1, transform:"translateX(0px)"}],
     {duration: 220, easing:"cubic-bezier(.2,.9,.2,1)", fill:"forwards"}
   );
 
   const cleanup = ()=>{
+    try{ clearTimeout(safetyTimeout); }catch(e){}
+
     // Clear temporary styles
     content.style.height = "";
     fromEl.style.display = "";
@@ -816,9 +862,14 @@ function slideSwap(fromTab, toTab, dir){
     toEl.style.width = "";
     toEl.style.transform = "";
     toEl.style.opacity = "";
+
+    // final hard reset + active screen
+    enforceActiveScreen();
   };
 
   a2.onfinish = cleanup;
+  a2.oncancel = cleanup;
+  a1.oncancel = cleanup;
   return true;
 }
 
@@ -956,6 +1007,9 @@ function setTab(tab, opts={}){
   const prevTab = state.tab;
   if(tab === prevTab) return;
 
+  // prevent stacked screens when switching quickly
+  hardResetScreens();
+
   const transition = opts.transition || "fade"; // none | fade | slide
   const dir = (typeof opts.dir === "number") ? opts.dir : 0;
 
@@ -974,6 +1028,9 @@ function setTab(tab, opts={}){
   sc?.classList.toggle("active", tab==="schedule");
   ts?.classList.toggle("active", tab==="tasks");
   wk?.classList.toggle("active", tab==="calendar");
+
+  // guarantee only one screen remains active
+  enforceActiveScreen();
 
   document.querySelectorAll(".bottom .tab").forEach(b=>{
     b.classList.toggle("active", b.dataset.tab===tab);
@@ -1584,6 +1641,10 @@ function openModal(){
   document.getElementById("inpDate").value = state.dateStr;
   const modal = document.getElementById("modal");
   modal.setAttribute("aria-hidden","false");
+  document.documentElement.classList.add("modal-open");
+  // Telegram back button closes modal
+  modalBackHandler = ()=> closeModal();
+  tgBackShow(modalBackHandler);
 
   if(!prefersReducedMotion()){
     const sheet = modal.querySelector(".sheet");
@@ -1612,12 +1673,16 @@ function closeModal(){
     backdrop?.animate([{opacity:1},{opacity:0}], {duration: 160, easing:"ease", fill:"both"});
     const done = () => {
       modal.setAttribute("aria-hidden","true");
+      document.documentElement.classList.remove("modal-open");
+      if(modalBackHandler){ tgBackHide(modalBackHandler); modalBackHandler=null; }
       clearModal();
     };
     if(a2) a2.onfinish = done;
     else done();
   }else{
     modal.setAttribute("aria-hidden","true");
+    document.documentElement.classList.remove("modal-open");
+    if(modalBackHandler){ tgBackHide(modalBackHandler); modalBackHandler=null; }
     clearModal();
   }
 }
@@ -1857,6 +1922,9 @@ function initTabSwipe(){
     const toEl = getScreenEl(toTab);
     if(!content || !fromEl || !toEl) return false;
 
+    // kill any previous interrupted transitions
+    hardResetScreens();
+
     width = content.getBoundingClientRect().width || window.innerWidth;
 
     // show both
@@ -1924,10 +1992,8 @@ function initTabSwipe(){
       el.style.display = "";
     }
 
-    // ensure only active screen visible
-    document.getElementById("screenSchedule")?.classList.toggle("active", state.tab==="schedule");
-    document.getElementById("screenTasks")?.classList.toggle("active", state.tab==="tasks");
-    document.getElementById("screenWeek")?.classList.toggle("active", state.tab==="calendar");
+    // ensure only one active screen visible
+    enforceActiveScreen();
 
     activeFrom = null;
     activeTo = null;
@@ -2282,3 +2348,13 @@ function tgBackHide(handler){
     try{ if(typeof voiceUIReset === "function") voiceUIReset(true); }catch(_){}
   };
 })();
+
+// Stability: if app was backgrounded during animation, reset screens
+window.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState === "visible"){
+    try{ enforceActiveScreen(); }catch(e){}
+  }
+});
+window.addEventListener("orientationchange", ()=>{
+  setTimeout(()=>{ try{ enforceActiveScreen(); }catch(e){} }, 50);
+});
