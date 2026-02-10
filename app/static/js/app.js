@@ -499,7 +499,7 @@ function parseVoiceCommand(rawText, baseIso, tz){
     relStart = rel.startTime;
     dateISO = rel.dateISO;
     dateSpecified = true;
-    cleaned = cleaned.replace(/\bчерез\b[^\d]*(\d+|полчаса|полтора)\s*(мин|минута|минуты|минут|час|часа|часов)?\b/g, " ");
+    cleaned = cleaned.replace(/через\s+[^\d]*(\d+|полчаса|полтора)\s*(мин|минута|минуты|минут|час|часа|часов)?/gi, " ");
   }
 
   const {start, end} = extractTimes(cleaned);
@@ -520,7 +520,7 @@ function parseVoiceCommand(rawText, baseIso, tz){
   let endTime = end || null;
 
   // Determine intent: event vs task
-  const eventKeywords = /\b(встреча|созвон|звонок|урок|школа|репетитор|занятие|тренировка|событие|вебинар|интервью|приём|прием)\b/;
+  const eventKeywords = /(?:^|[\s\.,!?:;()])(встреча|созвон|звонок|урок|школа|репетитор|занятие|тренировка|событие|вебинар|интервью|приём|прием)(?:$|[\s\.,!?:;()])/i;
   let kind = "task";
 
   if(startTime || endTime || relStart) kind = "event";
@@ -757,18 +757,44 @@ function startVoiceListening(){
   voiceSetStatus("Слушаю…", "listen");
 
   let finalText = "";
+  let handled = false;
 
   voiceRec.onresult = (ev)=>{
     let text = "";
+    let sawFinal = false;
+
     for(let i=ev.resultIndex; i<ev.results.length; i++){
-      text += ev.results[i][0].transcript + " ";
-      if(ev.results[i].isFinal) finalText = text.trim();
+      const chunk = (ev.results[i][0].transcript || "").trim();
+      if(!chunk) continue;
+      text += chunk + " ";
+
+      if(ev.results[i].isFinal){
+        finalText = (finalText ? (finalText + " ") : "") + chunk;
+        sawFinal = true;
+      }
     }
-    // show interim
+
+    const shown = (finalText || text).trim();
+
     const tbox = document.getElementById("voiceText");
     if(tbox){
       tbox.hidden = false;
-      tbox.textContent = (finalText || text).trim();
+      tbox.textContent = shown;
+    }
+
+    // enable Add button even before finalization (iOS can delay onend)
+    const add = document.getElementById("voiceAdd");
+    if(add && shown){
+      add.classList.remove("is-disabled");
+      add.removeAttribute("aria-disabled");
+    }
+
+    // parse immediately when we receive final transcript (don't wait for onend)
+    if(sawFinal && finalText && !handled){
+      handled = true;
+      try{ voiceRec.stop(); }catch(_){}
+      try{ window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.(); }catch(_){}
+      onVoiceRecognized(finalText.trim());
     }
   };
 
@@ -786,6 +812,8 @@ function startVoiceListening(){
     mic?.classList.remove("listening");
     wave?.classList.remove("on");
     voiceListening = false;
+
+    if(handled) return;
 
     const text = (finalText || document.getElementById("voiceText")?.textContent || "").trim();
     if(!text){
@@ -884,6 +912,20 @@ function onVoiceRecognized(text){
 async function voiceAddNow(){
   const addBtn = document.getElementById("voiceAdd");
   const editBtn = document.getElementById("voiceEdit");
+
+  // If user presses Add while still listening, stop and use the current transcript
+  if(voiceListening){
+    stopVoiceListening();
+  }
+
+
+  if(!voiceLast){
+    const current = (document.getElementById("voiceText")?.textContent || "").trim();
+    if(current){
+      // parse synchronously to enable add right away
+      onVoiceRecognized(current);
+    }
+  }
 
   if(!voiceLast){
     voiceSetStatus("Сначала продиктуй фразу 🎙️", "warn");
