@@ -29,6 +29,7 @@ function clampInt(v, min, max){
   if(v > max) return max;
   return v;
 }
+
 function parseISODate(dateStr){
   const [y,m,d] = dateStr.split("-").map(Number);
   return {y, m, d};
@@ -536,6 +537,8 @@ function parseVoiceCommand(rawText, baseIso, tz){
   else if(eventKeywords.test(cleaned) || dur) kind = "event";
 
   let title = cleanTitle(cleaned);
+  // Fix: sometimes iOS speech returns minute token "00" that may leak into title
+  title = (title||"").replace(/(^|\s)00($|\s)/g, " ").replace(/[:\.]\s*00\b/g, "").replace(/\s+/g," ").trim();
   if(!title) title = (kind==="event" ? "Событие" : "Задача");
 
   // missing detection
@@ -3069,10 +3072,10 @@ function bindUI(){
 
 
   document.getElementById("voiceTopBtn")?.addEventListener("click", ()=> openVoiceModal(true));
-
 }
 
 async function boot(){
+
   bindUI();
 
   // layout variables

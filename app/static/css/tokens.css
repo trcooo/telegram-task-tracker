@@ -19,13 +19,21 @@
   --radius: 18px;
   --radius2: 22px;
 
+  --pill-bg: rgba(255,255,255,.72);
+  --pill-border: rgba(255,255,255,.60);
+  --pill-text: rgba(16,22,42,.74);
+  --pill-shadow: 0 14px 30px rgba(16,22,42,.10);
+
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bot: env(safe-area-inset-bottom, 0px);
   --bottom-h: 76px;
+
 }
 
 *{box-sizing:border-box}
 html,body{height:100%}
+
+
 body{
   margin:0;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji";

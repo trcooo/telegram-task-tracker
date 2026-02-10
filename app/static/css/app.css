@@ -2,7 +2,7 @@
 html, body{height:100%; margin:0;}
 body{background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; overflow:hidden;}
 
-.app{
+.app{ transition: background-color .22s ease;
   position: relative;
   max-width: 520px;
   margin: 0 auto;
@@ -172,7 +172,7 @@ body{background: var(--bg); color: var(--text); font-family: ui-sans-serif, syst
   box-shadow: 0 12px 24px rgba(59,108,255,.10);
 }
 
-.card{
+.card{ transition: background-color .22s ease, border-color .22s ease, box-shadow .22s ease;
   width: 100%;
   border-radius: 16px;
   background: var(--card);
@@ -283,7 +283,7 @@ body{background: var(--bg); color: var(--text); font-family: ui-sans-serif, syst
   display:flex;
   gap: 0;
   justify-content: space-between;
-  background: rgba(255,255,255,.72);
+  background: var(--pill-bg);
   backdrop-filter: blur(16px);
   border: 1px solid rgba(255,255,255,.55);
   border-radius: 22px;
@@ -345,7 +345,7 @@ body{background: var(--bg); color: var(--text); font-family: ui-sans-serif, syst
   backdrop-filter: blur(2px);
   z-index: 1;
 }
-.sheet{
+.sheet{ transition: background-color .22s ease, border-color .22s ease, box-shadow .22s ease;
   position: fixed;
   left: 10px;
   right: 10px;
@@ -360,7 +360,7 @@ body{background: var(--bg); color: var(--text); font-family: ui-sans-serif, syst
   z-index: 2;
   overflow:hidden;
 }
-.sheet{
+.sheet{ transition: background-color .22s ease, border-color .22s ease, box-shadow .22s ease;
   position: fixed;
   left: 10px;
   right: 10px;
@@ -768,7 +768,7 @@ body{background: var(--bg); color: var(--text); font-family: ui-sans-serif, syst
   backdrop-filter: blur(2px);
   z-index: 1;
 }
-.sheet{
+.sheet{ transition: background-color .22s ease, border-color .22s ease, box-shadow .22s ease;
   position: fixed;
   left: 10px;
   right: 10px;
@@ -783,7 +783,7 @@ body{background: var(--bg); color: var(--text); font-family: ui-sans-serif, syst
   z-index: 2;
   overflow:hidden;
 }
-.modal[aria-hidden="false"] .sheet{
+.modal[aria-hidden="false"] .sheet{ transition: background-color .22s ease, border-color .22s ease, box-shadow .22s ease;
   position: fixed;
   left: 10px;
   right: 10px;
@@ -821,15 +821,15 @@ body{background: var(--bg); color: var(--text); font-family: ui-sans-serif, syst
   gap: 10px;
 }
 .tzpill{
-  border: 1px solid rgba(255,255,255,.60);
-  background: rgba(255,255,255,.72);
+  border: 1px solid var(--pill-border);
+  background: var(--pill-bg);
   backdrop-filter: blur(12px);
   border-radius: 999px;
   padding: 9px 12px;
   font-weight: 950;
   font-size: 12px;
-  color: rgba(16,22,42,.74);
-  box-shadow: 0 14px 30px rgba(16,22,42,.10);
+  color: var(--pill-text);
+  box-shadow: var(--pill-shadow);
   transition: transform .16s ease, box-shadow .16s ease;
   -webkit-tap-highlight-color: transparent;
 }
@@ -1519,7 +1519,7 @@ nav.bottom > .tab.active .navicon{
   width: 100%;
   padding: 10px 12px;
   border-radius: 16px;
-  background: rgba(255,255,255,.72);
+  background: var(--pill-bg);
   border: 1px solid rgba(16,22,42,.08);
 }
 .voice-chiprow{
@@ -1550,25 +1550,26 @@ nav.bottom > .tab.active .navicon{
   width: 40px;
   height: 40px;
   border-radius: 14px;
-  border: 1px solid rgba(255,255,255,.60);
-  background: rgba(255,255,255,.72);
+  border: 1px solid var(--pill-border);
+  background: var(--pill-bg);
   backdrop-filter: blur(12px);
-  box-shadow: 0 14px 30px rgba(16,22,42,.10);
+  box-shadow: var(--pill-shadow);
   display:flex;
   align-items:center;
   justify-content:center;
   -webkit-tap-highlight-color: transparent;
 }
-.voiceTopBtn:active{ transform: scale(.98); }
-.voiceTopIcon{
-  width: 20px;
-  height: 20px;
-  stroke: rgba(16,22,42,.82);
-  stroke-width: 2.2;
-  fill:none;
+
+  width: 20px; height: 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+  position:absolute;
+  transition: opacity .18s ease, transform .28s cubic-bezier(.2,.9,.2,1);
 }
+
 
 /* If floating mic button is off-screen on some devices, keep it as optional */
 @media (max-height: 680px){
@@ -1610,10 +1611,10 @@ nav.bottom > .tab.active .navicon{
   width: 40px;
   height: 40px;
   border-radius: 14px;
-  border: 1px solid rgba(255,255,255,.60);
-  background: rgba(255,255,255,.72);
+  border: 1px solid var(--pill-border);
+  background: var(--pill-bg);
   backdrop-filter: blur(12px);
-  box-shadow: 0 14px 30px rgba(16,22,42,.10);
+  box-shadow: var(--pill-shadow);
   display:flex;
   align-items:center;
   justify-content:center;
@@ -1816,7 +1817,7 @@ body.dragging-task .content{
 }
 .week-day{
   border-radius: 22px;
-  background: rgba(255,255,255,.72);
+  background: var(--pill-bg);
   backdrop-filter: blur(14px);
   border: 1px solid rgba(59,108,255,.12);
   box-shadow: 0 22px 60px rgba(16,22,42,.10);
@@ -1892,7 +1893,7 @@ body.dragging-task .content{
 .we-main{ min-width:0; }
 .we-time{
   font-weight: 950;
-  color: rgba(16,22,42,.74);
+  color: var(--pill-text);
   font-size: 12px;
 }
 .we-title{
