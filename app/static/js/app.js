@@ -10,6 +10,13 @@ const state = {
   tasksSearch: "",
 };
 
+// UI state: pending swipe actions (for Undo)
+const pendingHiddenTaskIds = new Set();
+let undoToastTimer = null;
+let undoToastCommit = null;
+let undoToastUndo = null;
+
+
 let openSwipeEl = null;
 let isBooted = false;
 
@@ -579,6 +586,83 @@ function voiceEdit(){
 function escapeHtml(s){
   return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 }
+
+
+function ensureUndoToast(){
+  const t = document.getElementById("undoToast");
+  if(!t) return null;
+  return {
+    el: t,
+    msg: document.getElementById("undoToastMsg"),
+    btn: document.getElementById("undoToastBtn")
+  };
+}
+
+function hideUndoToast(){
+  const ui = ensureUndoToast();
+  if(!ui) return;
+  ui.el.setAttribute("aria-hidden","true");
+  if(undoToastTimer){ clearTimeout(undoToastTimer); undoToastTimer = null; }
+  undoToastCommit = null;
+  undoToastUndo = null;
+}
+
+function showUndoToast(message, onUndo, onCommit, ms=3600){
+  const ui = ensureUndoToast();
+  if(!ui) return;
+
+  // If a toast is already active, commit it immediately to avoid losing action
+  if(undoToastCommit){
+    try{ undoToastCommit(); }catch(e){}
+  }
+  if(undoToastTimer){ clearTimeout(undoToastTimer); undoToastTimer = null; }
+
+  undoToastUndo = onUndo || null;
+  undoToastCommit = onCommit || null;
+
+  ui.msg.textContent = message || "Готово";
+  ui.btn.onclick = ()=>{
+    try{
+      if(undoToastUndo) undoToastUndo();
+      try{ window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.(); }catch(_){}
+    }finally{
+      hideUndoToast();
+    }
+  };
+
+  ui.el.setAttribute("aria-hidden","false");
+
+  undoToastTimer = setTimeout(async ()=>{
+    const commit = undoToastCommit;
+    hideUndoToast();
+    if(commit){
+      try{ await commit(); }catch(e){}
+    }
+  }, ms);
+}
+
+async function recalcTasksDot(){
+  try{
+    const [inbox, today, upcoming] = await Promise.all([
+      API.listTasks("inbox"),
+      API.listTasks("today"),
+      API.listTasks("upcoming")
+    ]);
+    const map = new Map();
+    for(const t of [...inbox, ...today, ...upcoming]){
+      if(!t || t.status==="done") continue;
+      if(pendingHiddenTaskIds.has(t.id)) continue;
+      map.set(t.id, t);
+    }
+    updateTasksDot(map.size);
+  }catch(e){
+    // fallback: use current inbox if available
+    const approx = (state.tasks||[]).filter(t=>t.status!=="done" && !pendingHiddenTaskIds.has(t.id)).length;
+    updateTasksDot(approx);
+  }
+}
+
+
 function prefersReducedMotion(){
   return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
@@ -1389,51 +1473,71 @@ function startNowTicker(){
 }
 
 /* ---------------- Swipe to delete ---------------- */
-function attachSwipeToDelete(wrapperEl, onDelete){
+function attachSwipeToTaskSwipe(wrapperEl, handlers){
   const inner = wrapperEl.querySelector(".task-inner");
   if(!inner) return;
 
-  let startX=0, curX=0, dragging=false;
+  const btnDel = wrapperEl.querySelector(".swipe-btn.del");
+  const btnDone = wrapperEl.querySelector(".swipe-btn.done");
 
-  const close = () => wrapperEl.classList.remove("open");
-  const open = () => {
-    if(openSwipeEl && openSwipeEl !== wrapperEl){
-      openSwipeEl.classList.remove("open");
-    }
-    wrapperEl.classList.add("open");
-    openSwipeEl = wrapperEl;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  let startX=0, curX=0, dragging=false, active=false;
+
+  const reset = ()=>{
+    wrapperEl.classList.remove("dragging-x");
+    inner.style.transform = "";
+    active = false;
   };
 
   inner.addEventListener("touchstart", (e)=>{
     if(e.touches.length !== 1) return;
     dragging = true;
+    active = true;
     startX = e.touches[0].clientX;
     curX = startX;
   }, {passive:true});
 
   inner.addEventListener("touchmove", (e)=>{
-    if(!dragging) return;
+    if(!dragging || !active) return;
     curX = e.touches[0].clientX;
     const dx = curX - startX;
-    if(dx < -10) e.preventDefault();
+
+    // if horizontal intent, prevent scroll
+    if(Math.abs(dx) > 10) e.preventDefault();
+
+    wrapperEl.classList.add("dragging-x");
+    inner.style.transform = `translateX(${clamp(dx, -96, 96)}px)`;
   }, {passive:false});
 
   inner.addEventListener("touchend", ()=>{
-    if(!dragging) return;
+    if(!dragging || !active) return;
     dragging = false;
     const dx = curX - startX;
-    if(dx < -40) open();
-    else if(dx > 30) close();
-    else if(wrapperEl.classList.contains("open")) close();
+
+    // Commit by swipe direction
+    if(dx <= -70){
+      // delete
+      inner.style.transform = "translateX(-96px)";
+      setTimeout(()=>{ reset(); handlers?.onDelete?.(); }, 60);
+      return;
+    }
+    if(dx >= 70){
+      // complete
+      inner.style.transform = "translateX(96px)";
+      setTimeout(()=>{ reset(); handlers?.onComplete?.(); }, 60);
+      return;
+    }
+    reset();
   }, {passive:true});
 
-  const delBtn = wrapperEl.querySelector(".swipe-btn.del");
-  if(delBtn){
-    delBtn.addEventListener("click", async (e)=>{
-      e.stopPropagation();
-      await onDelete();
-      close();
-    });
+  inner.addEventListener("touchcancel", reset, {passive:true});
+
+  if(btnDel){
+    btnDel.addEventListener("click", (e)=>{ e.stopPropagation(); reset(); handlers?.onDelete?.(); });
+  }
+  if(btnDone){
+    btnDone.addEventListener("click", (e)=>{ e.stopPropagation(); reset(); handlers?.onComplete?.(); });
   }
 }
 document.addEventListener("touchstart", (e)=>{
@@ -1609,12 +1713,17 @@ function renderTasksTo(listEl, tasks){
   listEl.innerHTML = "";
 
   for(const t of tasks){
+    if(pendingHiddenTaskIds.has(t.id)) continue;
     const swipe = document.createElement("div");
     swipe.className = "swipe";
 
-    const actions = document.createElement("div");
-    actions.className = "swipe-actions";
-    actions.innerHTML = `<button class="swipe-btn del" type="button" title="Delete">🗑️</button>`;
+    const actionsL = document.createElement("div");
+    actionsL.className = "swipe-actions left";
+    actionsL.innerHTML = `<button class="swipe-btn done" type="button" title="Done">✓</button>`;
+
+    const actionsR = document.createElement("div");
+    actionsR.className = "swipe-actions right";
+    actionsR.innerHTML = `<button class="swipe-btn del" type="button" title="Delete">🗑️</button>`;
 
     const row = document.createElement("div");
     row.className = "task task-inner" + (t.status==="done" ? " done":"");
@@ -1634,13 +1743,26 @@ function renderTasksTo(listEl, tasks){
     chk.className = "chk";
     chk.type = "button";
     chk.textContent = t.status==="done" ? "✓" : "";
-    chk.onclick = async (e) => {
+    chk.onclick = (e) => {
       e.stopPropagation();
       if(t.status==="done") return;
-      await API.completeTask(t.id);
-      await refreshAll();
-      await refreshTasksScreen();
-      if(state.tab==="calendar") refreshWeekScreen();
+
+      // optimistic hide + undo
+      pendingHiddenTaskIds.add(t.id);
+      renderTasksTo(listEl, tasks);
+
+      showUndoToast("Задача выполнена", ()=>{
+        pendingHiddenTaskIds.delete(t.id);
+        renderTasksTo(listEl, tasks);
+        recalcTasksDot();
+      }, async ()=>{
+        await API.completeTask(t.id);
+        pendingHiddenTaskIds.delete(t.id);
+        await refreshAll();
+        await refreshTasksScreen();
+        if(state.tab==="calendar") refreshWeekScreen();
+      });
+      recalcTasksDot();
     };
 
     const info = document.createElement("div");
@@ -1663,16 +1785,45 @@ function renderTasksTo(listEl, tasks){
     row.appendChild(badge);
     row.appendChild(more);
 
-    swipe.appendChild(actions);
+    swipe.appendChild(actionsL);
+    swipe.appendChild(actionsR);
     swipe.appendChild(row);
 
-    attachSwipeToDelete(swipe, async ()=>{
-      if(!confirm("Удалить задачу?")) return;
-      await API.deleteTask(t.id);
-      await refreshAll();
-      await refreshTasksScreen();
-      if(state.tab==="calendar") refreshWeekScreen();
-      if(window.Telegram?.WebApp) window.Telegram.WebApp.HapticFeedback?.notificationOccurred("success");
+    attachSwipeToTaskSwipe(swipe, {
+      onDelete: ()=>{
+        pendingHiddenTaskIds.add(t.id);
+        renderTasksTo(listEl, tasks);
+
+        showUndoToast("Задача удалена", ()=>{
+          pendingHiddenTaskIds.delete(t.id);
+          renderTasksTo(listEl, tasks);
+          recalcTasksDot();
+        }, async ()=>{
+          await API.deleteTask(t.id);
+          pendingHiddenTaskIds.delete(t.id);
+          await refreshAll();
+          await refreshTasksScreen();
+          if(state.tab==="calendar") refreshWeekScreen();
+        });
+        recalcTasksDot();
+      },
+      onComplete: ()=>{
+        pendingHiddenTaskIds.add(t.id);
+        renderTasksTo(listEl, tasks);
+
+        showUndoToast("Задача выполнена", ()=>{
+          pendingHiddenTaskIds.delete(t.id);
+          renderTasksTo(listEl, tasks);
+          recalcTasksDot();
+        }, async ()=>{
+          await API.completeTask(t.id);
+          pendingHiddenTaskIds.delete(t.id);
+          await refreshAll();
+          await refreshTasksScreen();
+          if(state.tab==="calendar") refreshWeekScreen();
+        });
+        recalcTasksDot();
+      }
     });
 
     listEl.appendChild(swipe);
@@ -1687,15 +1838,8 @@ async function refreshAll(){
   state.events = await API.scheduleDay(state.dateStr);
   state.tasks = await API.listTasks("inbox");
 
-  // Update Tasks dot (undone count)
-  try{
-    const r = await API.tasksUndoneCount();
-    updateTasksDot(r.count || 0);
-  }catch(e){
-    // fallback: count inbox as approximation
-    const approx = (state.tasks||[]).filter(t=>t.status!=="done").length;
-    updateTasksDot(approx);
-  }
+  // Update Tasks dot (undone across filters)
+  await recalcTasksDot();
 
   renderEventsOnGrid();
   updateNowLine();
@@ -1714,7 +1858,7 @@ async function refreshTasksScreen(){
 
   const raw = await API.listTasks(state.tasksFilter);
   // refresh dot too
-  try{ const r = await API.tasksUndoneCount(); updateTasksDot(r.count||0); }catch(e){}
+  await recalcTasksDot();
   const q = (state.tasksSearch||"").trim().toLowerCase();
   const tasks = q ? raw.filter(t => (t.title||"").toLowerCase().includes(q)) : raw;
 
@@ -1739,59 +1883,128 @@ async function refreshWeekScreen(){
   const start = state.dateStr;
   const end = addDays(start, 6);
 
-  // One request for the whole week
   const all = await API.scheduleRange(start, end);
 
   // Group by local dateStr in selected timezone
-  const fmt = new Intl.DateTimeFormat("en-CA", {timeZone: state.timezone, year:"numeric", month:"2-digit", day:"2-digit"});
+  const fmtISO = new Intl.DateTimeFormat("en-CA", {timeZone: state.timezone, year:"numeric", month:"2-digit", day:"2-digit"});
   const groups = {};
   for(const ev of all){
-    const ds = fmt.format(new Date(ev.start_dt));
+    const ds = fmtISO.format(new Date(ev.start_dt));
     (groups[ds] ||= []).push(ev);
   }
+
+  const openDay = (ds)=>{
+    state.dateStr = ds;
+    setTab("schedule");
+    refreshAll();
+  };
+
+  const openAddEventForDay = (ds)=>{
+    setMode("event");
+    openModal();
+    document.getElementById("sheetTitle").textContent = "Добавить событие";
+    document.getElementById("saveBtn").dataset.editEventId = "";
+
+    document.getElementById("inpDate").value = ds;
+
+    // default start time
+    let st = "09:00";
+    if(ds === state.dateStr){
+      // nearest 30 min from now
+      const now = new Date();
+      const parts = new Intl.DateTimeFormat("en-CA", {timeZone: state.timezone, hour:"2-digit", minute:"2-digit", hour12:false}).formatToParts(now);
+      const map = {};
+      for(const p of parts){ if(p.type !== "literal") map[p.type]=p.value; }
+      const hh = Number(map.hour||"9");
+      const mm = Number(map.minute||"0");
+      const rounded = Math.min(23*60+30, hh*60 + Math.ceil(mm/30)*30);
+      st = `${pad2(Math.floor(rounded/60))}:${pad2(rounded%60)}`;
+    }
+    document.getElementById("inpTime").value = st;
+    document.getElementById("inpEndTime").value = addMinutesToTimeStr(st, 60);
+    document.getElementById("inpColor").value = "#6EA8FF";
+    document.getElementById("inpTitle").value = "";
+    try{ document.getElementById("inpTitle")?.focus({preventScroll:true}); }catch(err){}
+  };
+
+  const openEditEvent = (ev)=>{
+    const sHM = zonedHourMin(ev.start_dt, state.timezone);
+    const eHM = zonedHourMin(ev.end_dt, state.timezone);
+    const ds = fmtISO.format(new Date(ev.start_dt));
+
+    setMode("event");
+    openModal();
+    document.getElementById("inpTitle").value = ev.title;
+    document.getElementById("inpDate").value = ds;
+    document.getElementById("inpTime").value = `${pad2(sHM.h)}:${pad2(sHM.m)}`;
+    document.getElementById("inpEndTime").value = `${pad2(eHM.h)}:${pad2(eHM.m)}`;
+    document.getElementById("inpColor").value = ev.color || "#6EA8FF";
+    document.getElementById("saveBtn").dataset.editEventId = String(ev.id);
+    document.getElementById("sheetTitle").textContent = "Редактировать событие";
+    try{ document.getElementById("inpTitle")?.focus({preventScroll:true}); }catch(err){}
+  };
 
   for(let i=0;i<7;i++){
     const ds = addDays(start, i);
     const evs = (groups[ds] || []).slice().sort((a,b)=> new Date(a.start_dt) - new Date(b.start_dt));
 
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "week-item";
+    const day = document.createElement("div");
+    day.className = "week-day";
 
+    const head = document.createElement("div");
+    head.className = "week-day-head";
+
+    const headBtn = document.createElement("button");
+    headBtn.type = "button";
+    headBtn.className = "week-day-btn";
     const label = fmtDayPill(ds, state.timezone);
-    const left = document.createElement("div");
-    left.style.minWidth = "0";
-    left.innerHTML = `<div class="wdate">${label}</div><div class="wmeta">${ds===state.dateStr ? "Выбранный день" : ""}</div>`;
+    headBtn.innerHTML = `<div style="min-width:0"><div class="wd-title">${label}</div><div class="wd-sub">${evs.length ? (evs.length + " событий") : "Нет событий"}</div></div>`;
+    headBtn.onclick = ()=> openDay(ds);
 
-    const preview = document.createElement("div");
-    preview.className = "week-preview";
-    const top = evs.slice(0,2);
-    if(top.length === 0){
-      preview.innerHTML = `<div class="ev"><span class="dot"></span><span class="n">Нет событий</span></div>`;
+    const plus = document.createElement("button");
+    plus.type = "button";
+    plus.className = "week-plus";
+    plus.textContent = "+";
+    plus.onclick = (e)=>{ e.stopPropagation(); openAddEventForDay(ds); };
+
+    head.appendChild(headBtn);
+    head.appendChild(plus);
+
+    day.appendChild(head);
+
+    if(evs.length === 0){
+      const empty = document.createElement("div");
+      empty.className = "week-empty";
+      empty.textContent = "Пусто. Нажми + чтобы добавить событие.";
+      day.appendChild(empty);
     }else{
-      preview.innerHTML = top.map(ev=>{
-        return `<div class="ev"><span class="dot" style="background:${ev.color || 'rgba(16,22,42,.25)'}"></span><span class="t">${fmtTime(ev.start_dt, state.timezone)}</span><span class="n">${escapeHtml(ev.title)}</span></div>`;
-      }).join("");
+      const list = document.createElement("div");
+      list.className = "week-events";
+      for(const ev of evs){
+        const s = fmtTime(ev.start_dt, state.timezone);
+        const e = fmtTime(ev.end_dt, state.timezone);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "week-event";
+        const color = ev.color || "#6EA8FF";
+        btn.innerHTML = `
+          <div class="we-bar" style="background:${color}"></div>
+          <div class="we-main">
+            <div class="we-time">${s}–${e}</div>
+            <div class="we-title">${escapeHtml(ev.title)}</div>
+            <div class="we-meta">${ev.source === "task" ? "Task block" : "Event"}</div>
+          </div>
+        `;
+        btn.onclick = ()=> openEditEvent(ev);
+        list.appendChild(btn);
+      }
+      day.appendChild(list);
     }
-    left.appendChild(preview);
 
-    const count = document.createElement("div");
-    count.className = "wcount";
-    count.textContent = String(evs.length);
-
-    btn.appendChild(left);
-    btn.appendChild(count);
-
-    btn.onclick = () => {
-      state.dateStr = ds;
-      setTab("schedule");
-      refreshAll();
-    };
-
-    box.appendChild(btn);
+    box.appendChild(day);
   }
 
-  animateList(box, ".week-item");
+  animateList(box, ".week-day");
 }
 
 /* ---------------- Modal ---------------- */
@@ -2310,6 +2523,31 @@ function bindUI(){
       await refreshTasksScreen();
     });
   }
+
+  // Quick add task
+  const qi = document.getElementById("tasksQuickInput");
+  const qb = document.getElementById("tasksQuickBtn");
+  const submitQuick = async ()=>{
+    const title = (qi?.value || "").trim();
+    if(!title) return;
+    qi.value = "";
+    try{
+      await API.createTask({title, priority: 2, estimate_min: 30, project_id: null});
+      try{ window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success"); }catch(_){}
+      await refreshAll();
+      await refreshTasksScreen();
+    }catch(e){
+      try{ window.Telegram?.WebApp?.showAlert?.("Не удалось добавить задачу"); }catch(_){ alert("Не удалось добавить задачу"); }
+    }
+  };
+  qb?.addEventListener("click", submitQuick);
+  qi?.addEventListener("keydown", (e)=>{
+    if(e.key === "Enter"){
+      e.preventDefault();
+      submitQuick();
+    }
+  });
+
 
   // Buttons
   document.getElementById("btnToday")?.addEventListener("click", ()=>{

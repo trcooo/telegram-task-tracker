@@ -66,6 +66,11 @@
         </div>
       </div>
 
+      <div class="quick-add">
+        <input id="tasksQuickInput" type="text" inputmode="text" autocomplete="off" placeholder="Быстро добавить задачу…"/>
+        <button class="qaddbtn" id="tasksQuickBtn" type="button" aria-label="Добавить">+</button>
+      </div>
+
       <div class="search">
         <input id="tasksSearch" type="search" placeholder="Поиск задач…" />
       </div>
@@ -129,6 +134,14 @@
         <span class="lbl">Week</span>
       </button>
     </nav>
+
+    <div class="toast" id="undoToast" aria-hidden="true">
+      <div class="toast-inner">
+        <div class="toast-msg" id="undoToastMsg">Готово</div>
+        <button class="toast-btn" id="undoToastBtn" type="button">Undo</button>
+      </div>
+    </div>
+
 
     <button class="fab" id="fab">+</button>
     <button class="micfab" id="micFab" type="button" aria-label="Voice input">
