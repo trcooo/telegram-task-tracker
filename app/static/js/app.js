@@ -129,9 +129,68 @@ function parseDurationMin(txt){
 }
 
 function parseDateISO(txt, baseIso){
-  if(/\bсегодня\b/.test(txt)) return baseIso;
-  if(/\bпослезавтра\b/.test(txt)) return addDaysISO(baseIso, 2);
-  if(/\bзавтра\b/.test(txt)) return addDaysISO(baseIso, 1);
+  // Supports: today/tomorrow, weekdays, DD.MM.YYYY, DD.MM, DD/MM/YYYY, and "10 февраля 2026"
+  let t = txt;
+
+  // Absolute numeric date: 10.02.2026 / 10-02-2026 / 10/02/2026
+  let m = t.match(/\b([0-3]?\d)[.\-\/]([01]?\d)(?:[.\-\/](\d{2,4}))\b/);
+  if(m){
+    const dd = Number(m[1]);
+    const mm = Number(m[2]);
+    let yy = Number(m[3]);
+    if(yy < 100) yy = 2000 + yy; // simple heuristic for MVP
+    if(dd>=1 && dd<=31 && mm>=1 && mm<=12 && yy>=1970 && yy<=2100){
+      const dateISO = `${String(yy).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
+      t = t.replace(m[0], " ");
+      return {dateISO, cleanedText: t};
+    }
+  }
+
+  // Numeric date without year: 10.02 / 10-02 / 10/02 -> take year from baseIso
+  m = t.match(/\b([0-3]?\d)[.\-\/]([01]?\d)\b/);
+  if(m){
+    const dd = Number(m[1]);
+    const mm = Number(m[2]);
+    const baseYear = Number((baseIso||"").slice(0,4)) || (new Date()).getFullYear();
+    if(dd>=1 && dd<=31 && mm>=1 && mm<=12){
+      const dateISO = `${String(baseYear).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
+      t = t.replace(m[0], " ");
+      return {dateISO, cleanedText: t};
+    }
+  }
+
+  // Month names: "10 февраля 2026", "10 фев", "10 февраля"
+  const months = {
+    "янв":1,"январ":1,
+    "фев":2,"феврал":2,
+    "мар":3,"март":3,
+    "апр":4,"апрел":4,
+    "мая":5,"май":5,
+    "июн":6,"июнь":6,
+    "июл":7,"июль":7,
+    "авг":8,"август":8,
+    "сен":9,"сентябр":9,
+    "окт":10,"октябр":10,
+    "ноя":11,"ноябр":11,
+    "дек":12,"декабр":12
+  };
+  m = t.match(/\b([0-3]?\d)\s+(январ[ья]?|янв|феврал[ья]?|фев|март[а]?|мар|апрел[ья]?|апр|май[а]?|мая|июн[ья]?|июль|июл|июн|август[а]?|авг|сентябр[ья]?|сен|октябр[ья]?|окт|ноябр[ья]?|ноя|декабр[ья]?|дек)\s*(\d{2,4})?\b/);
+  if(m){
+    const dd = Number(m[1]);
+    const key = m[2].slice(0,5);
+    const mm = months[key] || months[m[2].slice(0,3)] || months[m[2].slice(0,6)];
+    let yy = m[3] ? Number(m[3]) : (Number((baseIso||"").slice(0,4)) || (new Date()).getFullYear());
+    if(yy < 100) yy = 2000 + yy;
+    if(dd>=1 && dd<=31 && mm>=1 && mm<=12){
+      const dateISO = `${String(yy).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
+      t = t.replace(m[0], " ");
+      return {dateISO, cleanedText: t};
+    }
+  }
+
+  if(/\bсегодня\b/.test(t)) return {dateISO: baseIso, cleanedText: t.replace(/\bсегодня\b/g," ")};
+  if(/\bпослезавтра\b/.test(t)) return {dateISO: addDaysISO(baseIso, 2), cleanedText: t.replace(/\bпослезавтра\b/g," ")};
+  if(/\bзавтра\b/.test(t)) return {dateISO: addDaysISO(baseIso, 1), cleanedText: t.replace(/\bзавтра\b/g," ")};
 
   const wd = [
     {re:/\b(в\s+)?пн\b|\bпонедельник\b/, dow:1},
@@ -143,17 +202,17 @@ function parseDateISO(txt, baseIso){
     {re:/\b(в\s+)?вс\b|\bвоскресенье\b/, dow:0},
   ];
   for(const w of wd){
-    if(w.re.test(txt)) return nextWeekdayISO(baseIso, w.dow);
+    if(w.re.test(t)) return {dateISO: nextWeekdayISO(baseIso, w.dow), cleanedText: t.replace(w.re," ")};
   }
-  return baseIso;
+  return {dateISO: baseIso, cleanedText: t};
 }
 
 function extractTimes(txt){
-  // prefer explicit range "14:00-15:00" or "с 14 до 15"
+  // prefer explicit range "14:00-15:00" or "с 14 до 15" or "15:00 16:00"
   let start = null, end = null;
 
-  // Range with hyphen (minutes optional on both sides)
-  let r = txt.match(/\b([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\s*-\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\b/);
+  // Range with hyphen: 8:00-14:00, 8-14, 8:00-14
+  let r = txt.match(/\b([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\s*-\s*([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\b/);
   if(r){
     start = parseTimeToken(r[1], r[2]||"00");
     end = parseTimeToken(r[3], r[4]||"00");
@@ -161,34 +220,34 @@ function extractTimes(txt){
   }
 
   // Range with "с ... до ..."
-  r = txt.match(/\bс\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\s*(?:до)\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\b/);
+  r = txt.match(/\bс\s*([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\s*(?:до)\s*([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\b/);
   if(r){
     start = parseTimeToken(r[1], r[2]||"00");
     end = parseTimeToken(r[3], r[4]||"00");
     return {start, end};
   }
 
-  // Two times present without explicit range keyword (e.g. "8:00 14:00")
-  const times = [...txt.matchAll(/\b([01]?\d|2[0-3])(?:[:. ]([0-5]\d))\b/g)].slice(0, 3);
-  if(times.length >= 2){
-    start = parseTimeToken(times[0][1], times[0][2]);
-    end = parseTimeToken(times[1][1], times[1][2]);
+  // Two times рядом: "15:00 16:00"
+  r = txt.match(/\b([01]?\d|2[0-3])[: ]([0-5]\d)\s+([01]?\d|2[0-3])[: ]([0-5]\d)\b/);
+  if(r){
+    start = parseTimeToken(r[1], r[2]);
+    end = parseTimeToken(r[3], r[4]);
     return {start, end};
   }
 
   // Single time "в 14:30" or "в 14"
-  r = txt.match(/\bв\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\b/);
+  r = txt.match(/\bв\s*([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\b/);
   if(r){
     start = parseTimeToken(r[1], r[2]||"00");
   }else{
     // fallback any HH:MM in string
-    r = txt.match(/\b([01]?\d|2[0-3])[:. ]([0-5]\d)\b/);
+    r = txt.match(/\b([01]?\d|2[0-3])[: ]([0-5]\d)\b/);
     if(r) start = parseTimeToken(r[1], r[2]);
   }
 
   // End time with "до 15:00" if start already found
   if(start){
-    const e = txt.match(/\bдо\s*([01]?\d|2[0-3])(?:[:. ]([0-5]\d))?\b/);
+    const e = txt.match(/\bдо\s*([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\b/);
     if(e) end = parseTimeToken(e[1], e[2]||"00");
   }
 
@@ -211,8 +270,13 @@ function cleanTitle(txt){
 }
 
 function parseVoiceCommand(rawText, baseIso){
-  const txt = normalizeVoiceText(rawText);
-  const dateISO = parseDateISO(txt, baseIso);
+  const txt0 = normalizeVoiceText(rawText);
+
+  // Parse date first and remove it from text, so DD.MM doesn't become time like 10:02
+  const dres = parseDateISO(txt0, baseIso);
+  const dateISO = dres.dateISO;
+  const txt = normalizeVoiceText(dres.cleanedText);
+
   const {start, end} = extractTimes(txt);
   const dur = parseDurationMin(txt);
 
@@ -229,10 +293,8 @@ function parseVoiceCommand(rawText, baseIso){
     if(!endTime){
       const mins = dur ?? 60;
       endTime = addMinutesToTimeStr(startTime, mins);
-      // prevent crossing midnight: clamp to 23:59
       if(endTime < startTime) endTime = "23:59";
     }else{
-      // if range crosses midnight (e.g. 23:00-01:00), clamp for MVP
       if(endTime <= startTime) endTime = "23:59";
     }
   }
@@ -243,7 +305,7 @@ function parseVoiceCommand(rawText, baseIso){
     dateISO,
     startTime,
     endTime,
-    confidenceHint: txt
+    confidenceHint: txt0
   };
 }
 
