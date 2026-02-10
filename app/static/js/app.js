@@ -217,7 +217,7 @@ function parseDateISO(txt, baseIso){
     }
   }
 
-  // Month names: "10 февраля 2026", "10 фев", "10 февраля"
+  // Month names (robust token scan): "11 февраля 2026", "11 фев", "11 февраля"
   const monthMap = {
     "янв":1,"январ":1,"январь":1,"января":1,
     "фев":2,"феврал":2,"февраль":2,"февраля":2,
@@ -232,18 +232,39 @@ function parseDateISO(txt, baseIso){
     "ноя":11,"ноябр":11,"ноябрь":11,"ноября":11,
     "дек":12,"декабр":12,"декабрь":12,"декабря":12
   };
+  const monthKeys = Object.keys(monthMap).sort((a,b)=>b.length-a.length);
+  const monthFrom = (tok)=>{
+    const w = (tok||"").toLowerCase().replace(/[^a-zа-яё]/gi,"");
+    if(!w) return null;
+    for(const k of monthKeys){
+      if(w.startsWith(k)) return monthMap[k];
+    }
+    return null;
+  };
 
-  m = t.match(/\b([0-3]?\d)\s+(январ[ья]?|янв|феврал[ья]?|фев|март[а]?|мар|апрел[ья]?|апр|май[а]?|мая|июн[ья]?|июль|июл|июн|август[а]?|авг|сентябр[ья]?|сен|октябр[ья]?|окт|ноябр[ья]?|ноя|декабр[ья]?|дек)\s*(\d{2,4})?\b/);
-  if(m){
-    const dd = Number(m[1]);
-    const token = m[2];
-    // pick key by checking prefixes
-    const mm = monthMap[token] || monthMap[token.slice(0,3)] || monthMap[token.slice(0,5)] || monthMap[token.slice(0,6)];
-    let yy = m[3] ? Number(m[3]) : (Number((baseIso||"").slice(0,4)) || (new Date()).getFullYear());
-    if(yy < 100) yy = 2000 + yy;
-    if(dd>=1 && dd<=31 && mm>=1 && mm<=12){
+  const parts = t.split(/\s+/).filter(Boolean);
+  for(let i=0;i<parts.length;i++){
+    const a = parts[i];
+    if(!/^\d{1,2}$/.test(a)) continue;
+    const dd = Number(a);
+    if(dd<1 || dd>31) continue;
+    const mm = monthFrom(parts[i+1]);
+    if(!mm) continue;
+
+    // optional year in next token
+    let yy = null;
+    const yTok = parts[i+2];
+    if(yTok && /^\d{2,4}$/.test(yTok)){
+      yy = Number(yTok);
+      if(yy < 100) yy = 2000 + yy;
+    }else{
+      yy = Number((baseIso||"").slice(0,4)) || (new Date()).getFullYear();
+    }
+    if(yy>=1970 && yy<=2100){
       const dateISO = `${String(yy).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
-      t = t.replace(m[0], " ");
+      // Remove the used tokens from original text conservatively (replace just that sequence)
+      const seq = yy && yTok && /^\d{2,4}$/.test(yTok) ? `${a} ${parts[i+1]} ${yTok}` : `${a} ${parts[i+1]}`;
+      t = t.replace(new RegExp(seq.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), " ");
       specified = true;
       return {dateISO, cleanedText: t, specified};
     }
@@ -364,6 +385,7 @@ function parseVoiceCommand(rawText, baseIso, tz){
     /\b(сегодня|завтра|послезавтра|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье|пн|вт|ср|чт|пт|сб|вс)\b/.test(txt0);
 
   const mentionTimeLike = /\b([01]?\d|2[0-3])[:. ]([0-5]\d)\b/.test(txt0) ||
+    /\b(с|в|до)\s+(один|одного|два|двух|три|трех|трёх|четыре|четырех|четырёх|пять|пяти|шесть|шести|семь|семи|восемь|восьми|девять|девяти|десять|десяти|одиннадцать|одиннадцати|двенадцать|двенадцати|тринадцать|тринадцати|четырнадцать|четырнадцати|пятнадцать|пятнадцати|шестнадцать|шестнадцати|семнадцать|семнадцати|восемнадцать|восемнадцати|девятнадцать|девятнадцати|двадцать|двадцати|полдень|полночь|час)\b/.test(txt0) ||
     /\b([01]?\d|2[0-3])\s*-\s*([01]?\d|2[0-3])\b/.test(txt0) ||
     /\bс\s*([01]?\d|2[0-3])\b/.test(txt0) ||
     /\bдо\s*([01]?\d|2[0-3])\b/.test(txt0) ||
