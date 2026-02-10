@@ -179,45 +179,56 @@ function parseRelativeStart(txt, tz){
 
 
 function parseDateISO(txt, baseIso){
-  // Supports: today/tomorrow, weekdays, DD.MM.YYYY, DD.MM, DD/MM/YYYY, and "10 февраля 2026"
   // Returns: {dateISO, cleanedText, specified}
-  let t = txt || "";
+  let t = (txt || "").toLowerCase();
   let specified = false;
 
-  // Normalize spoken year like "две тысячи 26-е" -> "2026"
-  t = t.replace(/\bдве\s+тысячи\s+(\d{2})(?:-?е)?\b/g, (_m, yy)=>`202${yy}`);
-  t = t.replace(/\bдве\s+тысячи\s+(\d{4})\b/g, (_m, y)=>String(y));
+  // Normalize punctuation
+  t = t.replace(/[–—]/g,"-").replace(/[,]/g," ").replace(/[ ]/g," ").replace(/\s+/g," ").trim();
+
+  // Normalize "после завтра" -> "послезавтра"
+  t = t.replace(/после\s*-?\s*завтра/g, "послезавтра");
+
+  // Helper: token containment with unicode-friendly boundaries
+  const pad = (s)=>" " + (s||"") + " ";
+  const hasTok = (word)=> new RegExp(`(?:^|[\\s\\.,!?:;()])${word}(?:$|[\\s\\.,!?:;()])`, "i").test(pad(t));
+  const rmTok = (word)=>{
+    t = pad(t).replace(new RegExp(`(?:^|[\\s\\.,!?:;()])${word}(?:$|[\\s\\.,!?:;()])`, "ig"), " ");
+    t = t.replace(/\s+/g," ").trim();
+  };
+
+  // Spoken year like "две тысячи 26-е" -> 2026
+  t = t.replace(/две\s+тысячи\s+(\d{2})(?:-?е)?/g, (_m, yy)=>`202${yy}`);
+  t = t.replace(/две\s+тысячи\s+(\d{4})/g, (_m, y)=>String(y));
 
   // Absolute numeric date: 10.02.2026 / 10-02-2026 / 10/02/2026
-  let m = t.match(/\b([0-3]?\d)[.\-\/]([01]?\d)(?:[.\-\/](\d{2,4}))\b/);
+  let m = t.match(/(^|\s)([0-3]?\d)[.\-\/]([01]?\d)(?:[.\-\/](\d{2,4}))(?:$|\s)/);
   if(m){
-    const dd = Number(m[1]);
-    const mm = Number(m[2]);
-    let yy = Number(m[3]);
-    if(yy < 100) yy = 2000 + yy; // heuristic
+    const dd = Number(m[2]), mm = Number(m[3]);
+    let yy = Number(m[4]);
+    if(yy < 100) yy = 2000 + yy;
     if(dd>=1 && dd<=31 && mm>=1 && mm<=12 && yy>=1970 && yy<=2100){
-      const dateISO = `${String(yy).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
-      t = t.replace(m[0], " ");
       specified = true;
+      const dateISO = `${String(yy).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
+      t = t.replace(m[0]+m[2]+"."+m[3]+"."+m[4], " ").replace(/\s+/g," ").trim();
       return {dateISO, cleanedText: t, specified};
     }
   }
 
-  // Numeric date without year: 10.02 / 10-02 / 10/02 -> take year from baseIso
-  m = t.match(/\b([0-3]?\d)[.\-\/]([01]?\d)\b/);
+  // Numeric without year: 10.02 / 10-02 / 10/02
+  m = t.match(/(^|\s)([0-3]?\d)[.\-\/]([01]?\d)(?:$|\s)/);
   if(m){
-    const dd = Number(m[1]);
-    const mm = Number(m[2]);
+    const dd = Number(m[2]), mm = Number(m[3]);
     const baseYear = Number((baseIso||"").slice(0,4)) || (new Date()).getFullYear();
     if(dd>=1 && dd<=31 && mm>=1 && mm<=12){
-      const dateISO = `${String(baseYear).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
-      t = t.replace(m[0], " ");
       specified = true;
+      const dateISO = `${String(baseYear).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
+      t = t.replace(m[0]+m[2]+"."+m[3], " ").replace(/\s+/g," ").trim();
       return {dateISO, cleanedText: t, specified};
     }
   }
 
-  // Month names (robust token scan): "11 февраля 2026", "11 фев", "11 февраля"
+  // Month names token scan: "11 февраля 2026", "11 фев"
   const monthMap = {
     "янв":1,"январ":1,"январь":1,"января":1,
     "фев":2,"феврал":2,"февраль":2,"февраля":2,
@@ -244,62 +255,62 @@ function parseDateISO(txt, baseIso){
 
   const parts = t.split(/\s+/).filter(Boolean);
   for(let i=0;i<parts.length;i++){
-    const a = parts[i];
-    if(!/^\d{1,2}$/.test(a)) continue;
-    const dd = Number(a);
-    if(dd<1 || dd>31) continue;
+    if(!/^\d{1,2}$/.test(parts[i])) continue;
+    const dd = Number(parts[i]);
     const mm = monthFrom(parts[i+1]);
-    if(!mm) continue;
+    if(!mm || dd<1 || dd>31) continue;
 
-    // optional year in next token
-    let yy = null;
-    const yTok = parts[i+2];
-    if(yTok && /^\d{2,4}$/.test(yTok)){
-      yy = Number(yTok);
+    let yy;
+    if(parts[i+2] && /^\d{2,4}$/.test(parts[i+2])){
+      yy = Number(parts[i+2]);
       if(yy < 100) yy = 2000 + yy;
     }else{
       yy = Number((baseIso||"").slice(0,4)) || (new Date()).getFullYear();
     }
     if(yy>=1970 && yy<=2100){
-      const dateISO = `${String(yy).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
-      // Remove the used tokens from original text conservatively (replace just that sequence)
-      const seq = yy && yTok && /^\d{2,4}$/.test(yTok) ? `${a} ${parts[i+1]} ${yTok}` : `${a} ${parts[i+1]}`;
-      t = t.replace(new RegExp(seq.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), " ");
       specified = true;
+      const dateISO = `${String(yy).padStart(4,"0")}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
+      // Remove tokens
+      const seq = parts[i+2] && /^\d{2,4}$/.test(parts[i+2]) ? `${parts[i]} ${parts[i+1]} ${parts[i+2]}` : `${parts[i]} ${parts[i+1]}`;
+      t = pad(t).replace(new RegExp(seq.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"i"), " ").replace(/\s+/g," ").trim();
       return {dateISO, cleanedText: t, specified};
     }
   }
 
-  // Relative keywords (support: 'сегодня', 'на сегодня', 'завтра', 'на завтра', 'послезавтра', 'после завтра')
-  // normalize variants like 'после завтра' / 'после-завтра'
-  t = t.replace(/\bпосле\s*-?\s*завтра\b/g, "послезавтра");
+  // Relative words (no \b)
+  if(hasTok("сегодня") || hasTok("на\\s+сегодня")){
+    specified = true;
+    rmTok("на\\s+сегодня"); rmTok("сегодня");
+    return {dateISO: baseIso, cleanedText: t, specified};
+  }
+  if(hasTok("послезавтра") || hasTok("на\\s+послезавтра")){
+    specified = true;
+    rmTok("на\\s+послезавтра"); rmTok("послезавтра");
+    return {dateISO: addDaysISO(baseIso, 2), cleanedText: t, specified};
+  }
+  if(hasTok("завтра") || hasTok("на\\s+завтра")){
+    specified = true;
+    rmTok("на\\s+завтра"); rmTok("завтра");
+    return {dateISO: addDaysISO(baseIso, 1), cleanedText: t, specified};
+  }
 
-  if(/\b(на\s+)?сегодня\b/.test(t)){
-    specified = true;
-    return {dateISO: baseIso, cleanedText: t.replace(/\b(на\s+)?сегодня\b/g," "), specified};
-  }
-  if(/\b(на\s+)?послезавтра\b/.test(t)){
-    specified = true;
-    return {dateISO: addDaysISO(baseIso, 2), cleanedText: t.replace(/\b(на\s+)?послезавтра\b/g," "), specified};
-  }
-  if(/\b(на\s+)?завтра\b/.test(t)){
-    specified = true;
-    return {dateISO: addDaysISO(baseIso, 1), cleanedText: t.replace(/\b(на\s+)?завтра\b/g," "), specified};
-  }
-
+  // Weekdays
   const wd = [
-    {re:/\b(в\s+)?пн\b|\bпонедельник\b/, dow:1},
-    {re:/\b(в\s+)?вт\b|\bвторник\b/, dow:2},
-    {re:/\b(в\s+)?ср\b|\bсреда\b/, dow:3},
-    {re:/\b(в\s+)?чт\b|\bчетверг\b/, dow:4},
-    {re:/\b(в\s+)?пт\b|\bпятница\b/, dow:5},
-    {re:/\b(в\s+)?сб\b|\bсуббота\b/, dow:6},
-    {re:/\b(в\s+)?вс\b|\bвоскресенье\b/, dow:0},
+    {keys:["понедельник","пн"], dow:1},
+    {keys:["вторник","вт"], dow:2},
+    {keys:["среда","ср"], dow:3},
+    {keys:["четверг","чт"], dow:4},
+    {keys:["пятница","пт"], dow:5},
+    {keys:["суббота","сб"], dow:6},
+    {keys:["воскресенье","вс"], dow:0},
   ];
   for(const w of wd){
-    if(w.re.test(t)){
-      specified = true;
-      return {dateISO: nextWeekdayISO(baseIso, w.dow), cleanedText: t.replace(w.re," "), specified};
+    for(const k of w.keys){
+      if(hasTok(k)){
+        specified = true;
+        rmTok(k);
+        return {dateISO: nextWeekdayISO(baseIso, w.dow), cleanedText: t, specified};
+      }
     }
   }
 
@@ -307,32 +318,12 @@ function parseDateISO(txt, baseIso){
 }
 
 function extractTimes(txt){
-  // prefer explicit range "14:00-15:00" or "с 14 до 15" or "15:00 16:00"
-  let start = null, end = null;
+  let t = normalizeVoiceText(txt);
 
-  const monthWords = /(январ[ья]?|янв|феврал[ья]?|фев|март[а]?|мар|апрел[ья]?|апр|май[а]?|мая|июн[ья]?|июл[ья]?|июн|июль|июл|август[а]?|авг|сентябр[ья]?|сен|октябр[ья]?|окт|ноябр[ья]?|ноя|декабр[ья]?|дек)\b/gi;
-
-  const normalizeTimeWords = (s)=>{
-    let t = normalizeVoiceText(s || "");
-
-    // Remove month words from time parsing context to avoid collisions like "11 февраля"
-    t = t.replace(monthWords, " ");
-
-    // special cases
-    t = t.replace(/\bполдень\b/g, "12");
-    t = t.replace(/\bполночь\b/g, "0");
-
-    // "в час" / "с часа" / "до часа"
-    t = t.replace(/\b(в|с|до)\s+час\b/g, "$1 1");
-    t = t.replace(/\b(в|с|до)\s+часа\b/g, "$1 1");
-
-    // multiword 21-23 after markers
-    t = t.replace(/\b(с|в|до)\s+двадцать\s+один\b/g, "$1 21");
-    t = t.replace(/\b(с|в|до)\s+двадцать\s+два\b/g, "$1 22");
-    t = t.replace(/\b(с|в|до)\s+двадцать\s+три\b/g, "$1 23");
-
+  const wordToNum = (w)=>{
     const map = {
-      "один":1,"одного":1,"первого":1,"первый":1,
+      "ноль":0,"нул":0,
+      "один":1,"одного":1,"первого":1,"первый":1,"час":1,
       "два":2,"двух":2,
       "три":3,"трех":3,"трёх":3,
       "четыре":4,"четырех":4,"четырёх":4,
@@ -353,60 +344,87 @@ function extractTimes(txt){
       "девятнадцать":19,"девятнадцати":19,
       "двадцать":20,"двадцати":20
     };
-
-    // Replace after markers (с/в/до)
-    t = t.replace(/\b(с|в|до)\s+([a-zа-яё]+)\b/gi, (m, pre, w)=>{
-      const key = (w||"").toLowerCase();
-      if(map[key] != null) return `${pre} ${map[key]}`;
-      return m;
-    });
-
-    return t;
+    return map[w] ?? null;
   };
 
-  const t = normalizeTimeWords(txt);
+  const normalizeWordHours = (s)=>{
+    let x = " " + s + " ";
+    x = x.replace(/после\s*-?\s*завтра/gi,"послезавтра");
+    // special
+    x = x.replace(/(?:^|[\s\.,!?:;()])полдень(?:$|[\s\.,!?:;()])/gi," 12 ");
+    x = x.replace(/(?:^|[\s\.,!?:;()])полночь(?:$|[\s\.,!?:;()])/gi," 0 ");
 
-  // Range with hyphen: 8:00-14:00, 8-14, 8:00-14
-  let r = t.match(/\b([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\s*-\s*([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\b/);
-  if(r){
-    start = parseTimeToken(r[1], r[2]||"00");
-    end = parseTimeToken(r[3], r[4]||"00");
-    return {start, end};
+    // 21-23
+    x = x.replace(/(?:^|[\s\.,!?:;()])(с|в|до)\s+двадцать\s+один(?:$|[\s\.,!?:;()])/gi, " $1 21 ");
+    x = x.replace(/(?:^|[\s\.,!?:;()])(с|в|до)\s+двадцать\s+два(?:$|[\s\.,!?:;()])/gi, " $1 22 ");
+    x = x.replace(/(?:^|[\s\.,!?:;()])(с|в|до)\s+двадцать\s+три(?:$|[\s\.,!?:;()])/gi, " $1 23 ");
+
+    // replace after prepositions (с/в/до)
+    x = x.replace(/(?:^|[\s\.,!?:;()])(с|в|до)\s+([a-zа-яё]+)(?=$|[\s\.,!?:;()])/gi, (m, pre, w)=>{
+      const k = String(w).toLowerCase();
+      const n = wordToNum(k);
+      if(n == null) return m;
+      return ` ${pre} ${n} `;
+    });
+
+    // replace plain hour words in "8-14" style: "восемь-14"
+    x = x.replace(/(?:^|[\s\.,!?:;()])([a-zа-яё]+)\s*-\s*(\d{1,2})(?:$|[\s\.,!?:;()])/gi, (m, w, n2)=>{
+      const n1 = wordToNum(String(w).toLowerCase());
+      if(n1 == null) return m;
+      return ` ${n1}-${n2} `;
+    });
+
+    // also "8-четырнадцати"
+    x = x.replace(/(?:^|[\s\.,!?:;()])(\d{1,2})\s*-\s*([a-zа-яё]+)(?:$|[\s\.,!?:;()])/gi, (m, n1, w)=>{
+      const n2 = wordToNum(String(w).toLowerCase());
+      if(n2 == null) return m;
+      return ` ${n1}-${n2} `;
+    });
+
+    return x.replace(/\s+/g," ").trim();
+  };
+
+  t = normalizeWordHours(t);
+
+  // Range: "с 8 до 14" / "с 8-14" (minutes optional)
+  let m = (" " + t + " ").match(/(?:^|[\s\.,!?:;()])с\s*(\d{1,2})(?::(\d{2}))?\s*(?:до|-)\s*(\d{1,2})(?::(\d{2}))?(?:$|[\s\.,!?:;()])/i);
+  if(m){
+    const sh = clampInt(Number(m[1]),0,23);
+    const sm = clampInt(Number(m[2]||0),0,59);
+    const eh = clampInt(Number(m[3]),0,23);
+    const em = clampInt(Number(m[4]||0),0,59);
+    return {start: `${pad2(sh)}:${pad2(sm)}`, end: `${pad2(eh)}:${pad2(em)}`};
   }
 
-  // Range with "с ... до ..."
-  r = t.match(/\bс\s*([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\s*(?:до)\s*([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\b/);
-  if(r){
-    start = parseTimeToken(r[1], r[2]||"00");
-    end = parseTimeToken(r[3], r[4]||"00");
-    return {start, end};
+  // Compact: "8-14"
+  m = t.match(/(?:^|\s)(\d{1,2})\s*-\s*(\d{1,2})(?:$|\s)/);
+  if(m){
+    const sh = clampInt(Number(m[1]),0,23);
+    const eh = clampInt(Number(m[2]),0,23);
+    return {start: `${pad2(sh)}:00`, end: `${pad2(eh)}:00`};
   }
 
-  // Two times рядом: "15:00 16:00"
-  r = t.match(/\b([01]?\d|2[0-3])[: ]([0-5]\d)\s+([01]?\d|2[0-3])[: ]([0-5]\d)\b/);
-  if(r){
-    start = parseTimeToken(r[1], r[2]);
-    end = parseTimeToken(r[3], r[4]);
-    return {start, end};
+  // Two times: "14:00 15:00" or "в 14:00 15:00"
+  const times = [];
+  const reT = /(\d{1,2})[:. ](\d{2})/g;
+  let mm;
+  while((mm = reT.exec(t)) && times.length < 2){
+    times.push({h: Number(mm[1]), m: Number(mm[2])});
+  }
+  if(times.length >= 2){
+    const a = times[0], b = times[1];
+    return {start: `${pad2(clampInt(a.h,0,23))}:${pad2(clampInt(a.m,0,59))}`, end: `${pad2(clampInt(b.h,0,23))}:${pad2(clampInt(b.m,0,59))}`};
   }
 
-  // Single time "в 14:30" or "в 14"
-  r = t.match(/\bв\s*([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\b/);
-  if(r){
-    start = parseTimeToken(r[1], r[2]||"00");
-  }else{
-    // fallback any HH:MM in string
-    r = t.match(/\b([01]?\d|2[0-3])[: ]([0-5]\d)\b/);
-    if(r) start = parseTimeToken(r[1], r[2]);
+  // Single time: "в 14" / "в 14:00"
+  m = t.match(/(?:^|\s)в\s*(\d{1,2})(?::(\d{2}))?(?:$|\s)/);
+  if(m){
+    const sh = clampInt(Number(m[1]),0,23);
+    const sm = clampInt(Number(m[2]||0),0,59);
+    return {start: `${pad2(sh)}:${pad2(sm)}`, end: null};
   }
 
-  // End time with "до 15:00" if start already found
-  if(start){
-    const e = t.match(/\bдо\s*([01]?\d|2[0-3])(?:[: ]([0-5]\d))?\b/);
-    if(e) end = parseTimeToken(e[1], e[2]||"00");
-  }
-
-  return {start, end};
+  return {start:null, end:null};
 }
 
 function cleanTitle(txt){
@@ -450,16 +468,16 @@ function parseVoiceCommand(rawText, baseIso, tz){
   const {start, end} = extractTimes(cleaned);
   const dur = parseDurationMin(cleaned);
 
-  const mentionDateLike = /\b([0-3]?\d)[.\-\/]([01]?\d)(?:[.\-\/]\d{2,4})?\b/.test(txt0) ||
-    /\b(январ|янв|феврал|фев|март|мар|апрел|апр|май|мая|июн|июл|август|авг|сентябр|сен|октябр|окт|ноябр|ноя|декабр|дек)\b/.test(txt0) ||
-    /\b(сегодня|завтра|послезавтра|после\s+завтра|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье|пн|вт|ср|чт|пт|сб|вс)\b/.test(txt0);
+  const mentionDateLike =
+    /([0-3]?\d)[.\-\/]([01]?\d)(?:[.\-\/]\d{2,4})?/.test(txt0) ||
+    /(январ|янв|феврал|фев|март|мар|апрел|апр|май|мая|июн|июл|август|авг|сентябр|сен|октябр|окт|ноябр|ноя|декабр|дек)/.test(txt0) ||
+    /(сегодня|завтра|послезавтра|после\s+завтра|пн|вт|ср|чт|пт|сб|вс|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье)/.test(txt0);
 
-  const mentionTimeLike = /\b([01]?\d|2[0-3])[:. ]([0-5]\d)\b/.test(txt0) ||
-    /\b(с|в|до)\s+(один|одного|два|двух|три|трех|трёх|четыре|четырех|четырёх|пять|пяти|шесть|шести|семь|семи|восемь|восьми|девять|девяти|десять|десяти|одиннадцать|одиннадцати|двенадцать|двенадцати|тринадцать|тринадцати|четырнадцать|четырнадцати|пятнадцать|пятнадцати|шестнадцать|шестнадцати|семнадцать|семнадцати|восемнадцать|восемнадцати|девятнадцать|девятнадцати|двадцать|двадцати|полдень|полночь|час)\b/.test(txt0) ||
-    /\b([01]?\d|2[0-3])\s*-\s*([01]?\d|2[0-3])\b/.test(txt0) ||
-    /\bс\s*([01]?\d|2[0-3])\b/.test(txt0) ||
-    /\bдо\s*([01]?\d|2[0-3])\b/.test(txt0) ||
-    /\bчерез\s+/.test(txt0);
+  const mentionTimeLike =
+    /(\d{1,2})[:. ](\d{2})/.test(txt0) ||
+    /(\d{1,2})\s*-\s*(\d{1,2})/.test(txt0) ||
+    /(с\s+|до\s+|в\s+|через\s+)/.test(txt0);
+
 
   let startTime = start || relStart || null;
   let endTime = end || null;
